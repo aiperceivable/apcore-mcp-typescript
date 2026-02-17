@@ -1,0 +1,243 @@
+import { describe, it, expect, vi } from "vitest";
+import { RegistryListener } from "../../src/server/listener.js";
+import { MCPServerFactory } from "../../src/server/factory.js";
+import type { Registry, ModuleDescriptor } from "../../src/types.js";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeDescriptor(
+  overrides: Partial<ModuleDescriptor> = {},
+): ModuleDescriptor {
+  return {
+    module_id: overrides.module_id ?? "test.module",
+    description: overrides.description ?? "A test module",
+    input_schema: overrides.input_schema ?? {
+      type: "object",
+      properties: {
+        input: { type: "string" },
+      },
+      required: ["input"],
+    },
+    output_schema: overrides.output_schema ?? {
+      type: "object",
+      properties: {
+        output: { type: "string" },
+      },
+    },
+    annotations: overrides.annotations !== undefined
+      ? overrides.annotations
+      : null,
+  };
+}
+
+function createMockRegistryWithCallbacks() {
+  const callbacks: Record<string, Function[]> = {};
+  const registry: Registry = {
+    list: () => [],
+    get_definition: vi.fn().mockReturnValue(null),
+    get: () => null,
+    on: (event: string, cb: (...args: unknown[]) => void) => {
+      if (!callbacks[event]) callbacks[event] = [];
+      callbacks[event].push(cb);
+    },
+  };
+  return { registry, callbacks };
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe("RegistryListener", () => {
+  // TC-LISTENER-001
+  it("start() subscribes to registry 'register' and 'unregister' events", () => {
+    const { registry, callbacks } = createMockRegistryWithCallbacks();
+    const factory = new MCPServerFactory();
+    const listener = new RegistryListener(registry, factory);
+
+    listener.start();
+
+    expect(callbacks["register"]).toBeDefined();
+    expect(callbacks["register"]).toHaveLength(1);
+    expect(callbacks["unregister"]).toBeDefined();
+    expect(callbacks["unregister"]).toHaveLength(1);
+  });
+
+  // TC-LISTENER-002
+  it("start() is idempotent - calling twice does not double-subscribe", () => {
+    const { registry, callbacks } = createMockRegistryWithCallbacks();
+    const factory = new MCPServerFactory();
+    const listener = new RegistryListener(registry, factory);
+
+    listener.start();
+    listener.start();
+
+    expect(callbacks["register"]).toHaveLength(1);
+    expect(callbacks["unregister"]).toHaveLength(1);
+  });
+
+  // TC-LISTENER-003
+  it("stop() prevents event handling - callbacks become no-ops", () => {
+    const descriptor = makeDescriptor({ module_id: "mod.stopped" });
+    const { registry, callbacks } = createMockRegistryWithCallbacks();
+    (registry.get_definition as ReturnType<typeof vi.fn>).mockReturnValue(
+      descriptor,
+    );
+    const factory = new MCPServerFactory();
+    const listener = new RegistryListener(registry, factory);
+
+    listener.start();
+    listener.stop();
+
+    // Simulate a register event after stop
+    const registerCb = callbacks["register"][0];
+    registerCb("mod.stopped");
+
+    // The tool should NOT have been added because the listener is stopped
+    expect(listener.tools.size).toBe(0);
+  });
+
+  // TC-LISTENER-004
+  it("_onRegister adds tool to internal tools map", () => {
+    const descriptor = makeDescriptor({ module_id: "mod.new" });
+    const { registry, callbacks } = createMockRegistryWithCallbacks();
+    (registry.get_definition as ReturnType<typeof vi.fn>).mockReturnValue(
+      descriptor,
+    );
+    const factory = new MCPServerFactory();
+    const listener = new RegistryListener(registry, factory);
+
+    // Suppress console.log for the registration message
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    listener._onRegister("mod.new");
+
+    expect(listener.tools.has("mod.new")).toBe(true);
+    const tool = listener.tools.get("mod.new");
+    expect(tool).toBeDefined();
+    expect(tool!.name).toBe("mod.new");
+
+    logSpy.mockRestore();
+  });
+
+  // TC-LISTENER-005
+  it("_onRegister skips null definition and logs a warning", () => {
+    const { registry } = createMockRegistryWithCallbacks();
+    // get_definition already mocked to return null by default
+    const factory = new MCPServerFactory();
+    const listener = new RegistryListener(registry, factory);
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    listener._onRegister("mod.missing");
+
+    expect(listener.tools.has("mod.missing")).toBe(false);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("mod.missing"),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("definition is null"),
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  // TC-LISTENER-006
+  it("_onUnregister removes tool from internal tools map", () => {
+    const descriptor = makeDescriptor({ module_id: "mod.removable" });
+    const { registry } = createMockRegistryWithCallbacks();
+    (registry.get_definition as ReturnType<typeof vi.fn>).mockReturnValue(
+      descriptor,
+    );
+    const factory = new MCPServerFactory();
+    const listener = new RegistryListener(registry, factory);
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    // First register the tool
+    listener._onRegister("mod.removable");
+    expect(listener.tools.has("mod.removable")).toBe(true);
+
+    // Now unregister it
+    listener._onUnregister("mod.removable");
+    expect(listener.tools.has("mod.removable")).toBe(false);
+
+    logSpy.mockRestore();
+  });
+
+  // TC-LISTENER-EVENT-REGISTER: Register callback triggered via event system
+  it("register callback triggered via registry events adds the tool", () => {
+    const descriptor = makeDescriptor({ module_id: "evented.module" });
+    const { registry, callbacks } = createMockRegistryWithCallbacks();
+    (registry.get_definition as ReturnType<typeof vi.fn>).mockReturnValue(
+      descriptor,
+    );
+    const factory = new MCPServerFactory();
+    const listener = new RegistryListener(registry, factory);
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    listener.start();
+
+    // Trigger the register callback via the event system
+    const registerCb = callbacks["register"][0];
+    registerCb("evented.module");
+
+    expect(listener.tools.has("evented.module")).toBe(true);
+    logSpy.mockRestore();
+  });
+
+  // TC-LISTENER-EVENT-UNREGISTER: Unregister callback triggered via event system
+  it("unregister callback triggered via registry events removes the tool", () => {
+    const descriptor = makeDescriptor({ module_id: "evented.remove" });
+    const { registry, callbacks } = createMockRegistryWithCallbacks();
+    (registry.get_definition as ReturnType<typeof vi.fn>).mockReturnValue(
+      descriptor,
+    );
+    const factory = new MCPServerFactory();
+    const listener = new RegistryListener(registry, factory);
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    listener.start();
+
+    // Register first
+    callbacks["register"][0]("evented.remove");
+    expect(listener.tools.has("evented.remove")).toBe(true);
+
+    // Trigger unregister via event
+    callbacks["unregister"][0]("evented.remove");
+    expect(listener.tools.has("evented.remove")).toBe(false);
+
+    logSpy.mockRestore();
+  });
+
+  // TC-LISTENER-007
+  it("tools getter returns a snapshot copy - modifying it does not affect internal state", () => {
+    const descriptor = makeDescriptor({ module_id: "mod.snapshot" });
+    const { registry } = createMockRegistryWithCallbacks();
+    (registry.get_definition as ReturnType<typeof vi.fn>).mockReturnValue(
+      descriptor,
+    );
+    const factory = new MCPServerFactory();
+    const listener = new RegistryListener(registry, factory);
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    listener._onRegister("mod.snapshot");
+
+    // Get a snapshot and modify it
+    const snapshot = listener.tools;
+    snapshot.delete("mod.snapshot");
+    snapshot.set("mod.injected", { name: "injected" } as any);
+
+    // Internal state should be unaffected
+    const freshSnapshot = listener.tools;
+    expect(freshSnapshot.has("mod.snapshot")).toBe(true);
+    expect(freshSnapshot.has("mod.injected")).toBe(false);
+
+    logSpy.mockRestore();
+  });
+});

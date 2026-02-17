@@ -1,0 +1,125 @@
+{
+  "project": "apcore-mcp",
+  "language": "typescript",
+  "features": {
+    "schema-converter": {
+      "plan": "planning/schema-converter.plan.md",
+      "target": "src/adapters/schema.ts",
+      "status": "completed",
+      "tests": 15,
+      "tasks": {
+        "total": 6,
+        "done": 6
+      }
+    },
+    "annotation-mapper": {
+      "plan": "planning/annotation-mapper.plan.md",
+      "target": "src/adapters/annotations.ts",
+      "status": "completed",
+      "tests": 12,
+      "tasks": {
+        "total": 4,
+        "done": 4
+      }
+    },
+    "error-mapper": {
+      "plan": "planning/error-mapper.plan.md",
+      "target": "src/adapters/errors.ts",
+      "status": "completed",
+      "tests": 11,
+      "tasks": {
+        "total": 5,
+        "done": 5
+      }
+    },
+    "id-normalizer": {
+      "plan": "planning/id-normalizer.plan.md",
+      "target": "src/adapters/idNormalizer.ts",
+      "status": "completed",
+      "tests": 7,
+      "tasks": {
+        "total": 3,
+        "done": 3
+      }
+    },
+    "openai-converter": {
+      "plan": "planning/openai-converter.plan.md",
+      "target": "src/converters/openai.ts",
+      "status": "completed",
+      "tests": 12,
+      "tasks": {
+        "total": 4,
+        "done": 4
+      }
+    },
+    "server-factory": {
+      "plan": "planning/server-factory.plan.md",
+      "target": "src/server/factory.ts",
+      "status": "completed",
+      "tests": 11,
+      "tasks": {
+        "total": 5,
+        "done": 5
+      }
+    },
+    "execution-router": {
+      "plan": "planning/execution-router.plan.md",
+      "target": "src/server/router.ts",
+      "status": "completed",
+      "tests": 7,
+      "tasks": {
+        "total": 4,
+        "done": 4
+      }
+    },
+    "transport-manager": {
+      "plan": "planning/transport-manager.plan.md",
+      "target": "src/server/transport.ts",
+      "status": "completed",
+      "tests": 18,
+      "tasks": {
+        "total": 5,
+        "done": 5
+      }
+    },
+    "registry-listener": {
+      "plan": "planning/registry-listener.plan.md",
+      "target": "src/server/listener.ts",
+      "status": "completed",
+      "tests": 9,
+      "tasks": {
+        "total": 6,
+        "done": 6
+      }
+    },
+    "public-api": {
+      "plan": "planning/public-api.plan.md",
+      "target": "src/index.ts",
+      "status": "completed",
+      "tests": 8,
+      "tasks": {
+        "total": 5,
+        "done": 5
+      }
+    },
+    "cli": {
+      "plan": "planning/cli.plan.md",
+      "target": "src/cli.ts",
+      "status": "completed",
+      "tests": 0,
+      "tasks": {
+        "total": 5,
+        "done": 5
+      },
+      "notes": "excluded from coverage, requires integration testing with real apcore"
+    }
+  },
+  "summary": {
+    "total_features": 11,
+    "completed": 11,
+    "partial": 0,
+    "pending": 0,
+    "total_tests": 110,
+    "coverage": "96%+"
+  }
+}
