@@ -147,9 +147,72 @@ describe("SchemaConverter", () => {
       },
     });
 
-    // structuredClone of recursive structure will cause infinite recursion
-    // or a stack overflow when inlining refs
-    expect(() => converter.convertInputSchema(descriptor)).toThrow();
+    expect(() => converter.convertInputSchema(descriptor)).toThrow(
+      "Circular $ref detected",
+    );
+  });
+
+  // TC-SCHEMA-004b: Mutual circular $ref detection (A → B → A)
+  it("throws on mutual circular $ref (A → B → A)", () => {
+    const descriptor = makeDescriptor({
+      type: "object",
+      properties: {
+        a: { $ref: "#/$defs/TypeA" },
+      },
+      $defs: {
+        TypeA: {
+          type: "object",
+          properties: {
+            b: { $ref: "#/$defs/TypeB" },
+          },
+        },
+        TypeB: {
+          type: "object",
+          properties: {
+            a: { $ref: "#/$defs/TypeA" },
+          },
+        },
+      },
+    });
+
+    expect(() => converter.convertInputSchema(descriptor)).toThrow(
+      "Circular $ref detected",
+    );
+  });
+
+  // TC-SCHEMA-004c: Diamond pattern (same type in multiple non-circular positions)
+  it("resolves same type used in multiple non-circular positions (diamond pattern)", () => {
+    const descriptor = makeDescriptor({
+      type: "object",
+      properties: {
+        first: { $ref: "#/$defs/Shared" },
+        second: { $ref: "#/$defs/Shared" },
+        nested: {
+          type: "object",
+          properties: {
+            third: { $ref: "#/$defs/Shared" },
+          },
+        },
+      },
+      $defs: {
+        Shared: {
+          type: "object",
+          properties: {
+            value: { type: "string" },
+          },
+        },
+      },
+    });
+
+    const result = converter.convertInputSchema(descriptor);
+
+    const expected = { type: "object", properties: { value: { type: "string" } } };
+    const props = result.properties as Record<string, Record<string, unknown>>;
+    expect(props.first).toEqual(expected);
+    expect(props.second).toEqual(expected);
+    const nested = props.nested as Record<string, unknown>;
+    const nestedProps = nested.properties as Record<string, Record<string, unknown>>;
+    expect(nestedProps.third).toEqual(expected);
   });
 
   // TC-SCHEMA-005: Empty input_schema

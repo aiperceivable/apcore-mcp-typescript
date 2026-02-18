@@ -20,15 +20,48 @@ export interface HttpTransportOptions {
   endpoint?: string;
 }
 
+/** Default maximum request body size in bytes (4MB). */
+const DEFAULT_MAX_BODY_BYTES = 4 * 1024 * 1024;
+
+/** Maximum request body size in bytes. Configurable via APCORE_MAX_BODY_BYTES env var. */
+const MAX_BODY_BYTES = (() => {
+  const env = process.env.APCORE_MAX_BODY_BYTES;
+  if (env === undefined) return DEFAULT_MAX_BODY_BYTES;
+  const parsed = Number.parseInt(env, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_MAX_BODY_BYTES;
+  return parsed;
+})();
+
 /**
  * Read the full request body as a string.
+ *
+ * Enforces a maximum byte size to prevent memory exhaustion.
+ * @param req - The incoming HTTP request
+ * @param maxBytes - Maximum allowed body size in bytes (default: MAX_BODY_BYTES)
  */
-function readBody(req: IncomingMessage): Promise<string> {
+function readBody(req: IncomingMessage, maxBytes: number = MAX_BODY_BYTES): Promise<string> {
   return new Promise((resolve, reject) => {
     let data = "";
-    req.on("data", (chunk: Buffer) => (data += chunk.toString()));
-    req.on("end", () => resolve(data));
-    req.on("error", reject);
+    let bytes = 0;
+    let rejected = false;
+    req.on("data", (chunk: Buffer) => {
+      if (rejected) return;
+      bytes += chunk.length;
+      if (bytes > maxBytes) {
+        rejected = true;
+        // Resume to drain remaining data, allowing the response to be sent
+        req.resume();
+        reject(new Error("Request body too large"));
+        return;
+      }
+      data += chunk.toString();
+    });
+    req.on("end", () => {
+      if (!rejected) resolve(data);
+    });
+    req.on("error", (err) => {
+      if (!rejected) reject(err);
+    });
   });
 }
 
@@ -90,7 +123,14 @@ export class TransportManager {
         }
       } catch (err) {
         if (!res.headersSent) {
-          res.writeHead(500).end("Internal Server Error");
+          const message = err instanceof Error ? err.message : "";
+          if (message === "Request body too large") {
+            res.writeHead(413).end("Request Entity Too Large");
+          } else if (err instanceof SyntaxError) {
+            res.writeHead(400).end("Bad Request");
+          } else {
+            res.writeHead(500).end("Internal Server Error");
+          }
         }
       }
     });
@@ -164,7 +204,14 @@ export class TransportManager {
           await transport.handlePostMessage(req, res, parsed);
         } catch (err) {
           if (!res.headersSent) {
-            res.writeHead(500).end("Internal Server Error");
+            const message = err instanceof Error ? err.message : "";
+            if (message === "Request body too large") {
+              res.writeHead(413).end("Request Entity Too Large");
+            } else if (err instanceof SyntaxError) {
+              res.writeHead(400).end("Bad Request");
+            } else {
+              res.writeHead(500).end("Internal Server Error");
+            }
           }
         }
       } else {

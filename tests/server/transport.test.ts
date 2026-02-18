@@ -141,6 +141,29 @@ describe("TransportManager", () => {
       const res = await fetch(`http://127.0.0.1:${addr.port}/mcp`);
       expect(res.status).toBe(404);
     });
+
+    it("returns 413 when request body exceeds size limit", async () => {
+      mgr = new TransportManager();
+      vi.spyOn(mgr, "_validateHostPort").mockImplementation(() => {});
+      const mockServer = {
+        connect: vi.fn().mockResolvedValue(undefined),
+      } as unknown as Server;
+
+      await mgr.runStreamableHttp(mockServer, {
+        host: "127.0.0.1",
+        port: 0,
+      });
+
+      const addr = mgr.httpServer!.address() as AddressInfo;
+      // 5MB body exceeds the 4MB default limit
+      const largeBody = "x".repeat(5 * 1024 * 1024);
+      const res = await fetch(`http://127.0.0.1:${addr.port}/mcp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: largeBody,
+      });
+      expect(res.status).toBe(413);
+    });
   });
 
   describe("runSse", () => {

@@ -33,8 +33,8 @@ export class SchemaConverter {
     const defs = (copied["$defs"] as Record<string, JsonSchema>) ?? {};
     delete copied["$defs"];
 
-    // Inline all $ref references
-    const inlined = this._inlineRefs(copied, defs) as JsonSchema;
+    // Inline all $ref references (with circular ref detection)
+    const inlined = this._inlineRefs(copied, defs, new Set<string>()) as JsonSchema;
 
     // Ensure the top-level schema has type: "object"
     return this._ensureObjectType(inlined);
@@ -49,9 +49,10 @@ export class SchemaConverter {
   _inlineRefs(
     node: unknown,
     defs: Record<string, JsonSchema>,
+    activeRefs: Set<string>,
   ): unknown {
     if (Array.isArray(node)) {
-      return node.map((item) => this._inlineRefs(item, defs));
+      return node.map((item) => this._inlineRefs(item, defs, activeRefs));
     }
 
     if (node !== null && typeof node === "object") {
@@ -59,9 +60,21 @@ export class SchemaConverter {
 
       // If this object is a $ref, resolve it
       if (typeof obj["$ref"] === "string") {
-        const resolved = this._resolveRef(obj["$ref"], defs);
-        // Recursively inline refs within the resolved schema
-        return this._inlineRefs(resolved, defs);
+        const refPath = obj["$ref"];
+
+        // Detect circular references
+        if (activeRefs.has(refPath)) {
+          throw new Error(`Circular $ref detected: ${refPath}`);
+        }
+
+        const resolved = this._resolveRef(refPath, defs);
+
+        // Track this ref as active during recursion
+        activeRefs.add(refPath);
+        const result = this._inlineRefs(resolved, defs, activeRefs);
+        activeRefs.delete(refPath);
+
+        return result;
       }
 
       // Otherwise, recurse into each key (skip $defs)
@@ -70,7 +83,7 @@ export class SchemaConverter {
         if (key === "$defs") {
           continue;
         }
-        result[key] = this._inlineRefs(value, defs);
+        result[key] = this._inlineRefs(value, defs, activeRefs);
       }
       return result;
     }
