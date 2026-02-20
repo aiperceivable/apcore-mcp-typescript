@@ -297,7 +297,11 @@ describe("MCPServerFactory", () => {
         params: { name: "test.module", arguments: null },
       });
 
-      expect(mockRouter.handleCall).toHaveBeenCalledWith("test.module", {});
+      expect(mockRouter.handleCall).toHaveBeenCalledWith(
+        "test.module",
+        {},
+        expect.objectContaining({ sendNotification: undefined, _meta: undefined }),
+      );
     });
   });
 

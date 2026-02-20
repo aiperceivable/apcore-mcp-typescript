@@ -39,7 +39,7 @@ export { REGISTRY_EVENTS, ErrorCodes, MODULE_ID_PATTERN } from "./types.js";
 // ─── Building Block Exports ──────────────────────────────────────────────────
 export { MCPServerFactory } from "./server/factory.js";
 export { ExecutionRouter } from "./server/router.js";
-export type { CallResult } from "./server/router.js";
+export type { CallResult, HandleCallExtra } from "./server/router.js";
 export { RegistryListener } from "./server/listener.js";
 export { TransportManager } from "./server/transport.js";
 export { AnnotationMapper } from "./adapters/annotations.js";

@@ -44,6 +44,7 @@ export interface ModuleAnnotations {
   idempotent: boolean;
   requiresApproval: boolean;
   openWorld: boolean;
+  streaming: boolean;
 }
 
 export interface ModuleDescriptor {
@@ -72,6 +73,7 @@ export interface Executor {
   registry: Registry;
   call(moduleId: string, inputs: Record<string, unknown>): Promise<Record<string, unknown>>;
   callAsync?(moduleId: string, inputs: Record<string, unknown>): Promise<Record<string, unknown>>;
+  stream?(moduleId: string, inputs: Record<string, unknown>): AsyncIterable<Record<string, unknown>>;
 }
 
 // ─── Error Type ──────────────────────────────────────────────────────────────

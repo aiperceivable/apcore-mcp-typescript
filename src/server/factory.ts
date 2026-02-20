@@ -22,6 +22,7 @@ import { SchemaConverter } from "../adapters/schema.js";
 import { AnnotationMapper } from "../adapters/annotations.js";
 import type { Registry, ModuleDescriptor } from "../types.js";
 import type { ExecutionRouter } from "./router.js";
+import type { HandleCallExtra } from "./router.js";
 
 /** Options for filtering when building tools from a registry. */
 export interface BuildToolsOptions {
@@ -92,10 +93,17 @@ export class MCPServerFactory {
       },
     };
 
-    if (hasApproval) {
-      (tool as Tool & { _meta?: Record<string, unknown> })._meta = {
-        requiresApproval: true,
-      };
+    const hasStreaming = descriptor.annotations?.streaming === true;
+
+    if (hasApproval || hasStreaming) {
+      const meta: Record<string, unknown> = {};
+      if (hasApproval) {
+        meta.requiresApproval = true;
+      }
+      if (hasStreaming) {
+        meta.streaming = true;
+      }
+      (tool as Tool & { _meta?: Record<string, unknown> })._meta = meta;
     }
 
     return tool;
@@ -152,11 +160,26 @@ export class MCPServerFactory {
     });
 
     // Handle tools/call requests
-    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       const { name, arguments: args } = request.params;
       const toolArgs = (args ?? {}) as Record<string, unknown>;
 
-      const [content, isError] = await router.handleCall(name, toolArgs);
+      // Build HandleCallExtra from MCP SDK extra
+      const handleCallExtra: HandleCallExtra = {
+        sendNotification: extra?.sendNotification
+          ? (notification: Record<string, unknown>) =>
+              extra.sendNotification(notification as any)
+          : undefined,
+        _meta: extra?._meta
+          ? { progressToken: extra._meta.progressToken }
+          : undefined,
+      };
+
+      const [content, isError] = await router.handleCall(
+        name,
+        toolArgs,
+        handleCallExtra,
+      );
 
       if (isError) {
         throw new Error(content[0].text);
