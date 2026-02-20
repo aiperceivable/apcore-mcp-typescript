@@ -11,22 +11,22 @@ function createDescriptor(
   description: string = "A test module",
 ): ModuleDescriptor {
   return {
-    module_id: moduleId,
+    moduleId,
     description,
-    input_schema: {
+    inputSchema: {
       type: "object",
       properties: {
         value: { type: "string" },
       },
       required: ["value"],
     },
-    output_schema: {},
+    outputSchema: {},
     annotations: {
       readonly: false,
       destructive: false,
       idempotent: true,
-      requires_approval: false,
-      open_world: true,
+      requiresApproval: false,
+      openWorld: true,
     },
   };
 }
@@ -42,8 +42,7 @@ function createMockRegistry(
       }
       return ids;
     },
-    get_definition: (id: string) => descriptors[id] ?? null,
-    get: (id: string) => descriptors[id] ?? null,
+    getDefinition: (id: string) => descriptors[id] ?? null,
     on: () => {},
   };
 }
@@ -53,8 +52,7 @@ function createMockExecutor(
 ): Executor {
   return {
     registry,
-    call: vi.fn(),
-    call_async: vi.fn().mockResolvedValue({ status: "ok" }),
+    call: vi.fn().mockResolvedValue({ status: "ok" }),
   };
 }
 

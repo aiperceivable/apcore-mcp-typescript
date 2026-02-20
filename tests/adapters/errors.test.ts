@@ -25,8 +25,8 @@ describe("ErrorMapper", () => {
   it("maps unknown exceptions to INTERNAL_ERROR with generic message", () => {
     const result = mapper.toMcpError(new TypeError("something unexpected"));
 
-    expect(result.is_error).toBe(true);
-    expect(result.error_type).toBe("INTERNAL_ERROR");
+    expect(result.isError).toBe(true);
+    expect(result.errorType).toBe("INTERNAL_ERROR");
     expect(result.message).toBe("Internal error occurred");
     expect(result.details).toBeNull();
   });
@@ -40,8 +40,8 @@ describe("ErrorMapper", () => {
 
     const result = mapper.toMcpError(error);
 
-    expect(result.is_error).toBe(true);
-    expect(result.error_type).toBe("MODULE_NOT_FOUND");
+    expect(result.isError).toBe(true);
+    expect(result.errorType).toBe("MODULE_NOT_FOUND");
     expect(result.message).toBe("Module 'image.resize' not found");
     expect(result.details).toBeNull();
   });
@@ -61,8 +61,8 @@ describe("ErrorMapper", () => {
 
     const result = mapper.toMcpError(error);
 
-    expect(result.is_error).toBe(true);
-    expect(result.error_type).toBe("SCHEMA_VALIDATION_ERROR");
+    expect(result.isError).toBe(true);
+    expect(result.errorType).toBe("SCHEMA_VALIDATION_ERROR");
     expect(result.message).toContain("Schema validation failed");
     expect(result.message).toContain("width: must be a positive integer");
     expect(result.message).toContain(
@@ -81,8 +81,8 @@ describe("ErrorMapper", () => {
 
     const result = mapper.toMcpError(error);
 
-    expect(result.is_error).toBe(true);
-    expect(result.error_type).toBe("ACL_DENIED");
+    expect(result.isError).toBe(true);
+    expect(result.errorType).toBe("ACL_DENIED");
     expect(result.message).toBe("Access denied");
     expect(result.details).toBeNull();
     expect(result.message).not.toContain("admin@corp.com");
@@ -97,8 +97,8 @@ describe("ErrorMapper", () => {
 
     const result = mapper.toMcpError(error);
 
-    expect(result.is_error).toBe(true);
-    expect(result.error_type).toBe("MODULE_TIMEOUT");
+    expect(result.isError).toBe(true);
+    expect(result.errorType).toBe("MODULE_TIMEOUT");
     expect(result.message).toBe("Module execution timed out after 30s");
   });
 
@@ -111,8 +111,8 @@ describe("ErrorMapper", () => {
 
     const result = mapper.toMcpError(error);
 
-    expect(result.is_error).toBe(true);
-    expect(result.error_type).toBe("CALL_DEPTH_EXCEEDED");
+    expect(result.isError).toBe(true);
+    expect(result.errorType).toBe("CALL_DEPTH_EXCEEDED");
     expect(result.message).toBe("Internal error occurred");
     expect(result.details).toBeNull();
   });
@@ -126,8 +126,8 @@ describe("ErrorMapper", () => {
 
     const result = mapper.toMcpError(error);
 
-    expect(result.is_error).toBe(true);
-    expect(result.error_type).toBe("CIRCULAR_CALL");
+    expect(result.isError).toBe(true);
+    expect(result.errorType).toBe("CIRCULAR_CALL");
     expect(result.message).toBe("Internal error occurred");
     expect(result.details).toBeNull();
   });
@@ -141,14 +141,14 @@ describe("ErrorMapper", () => {
 
     const result = mapper.toMcpError(error);
 
-    expect(result.is_error).toBe(true);
-    expect(result.error_type).toBe("CALL_FREQUENCY_EXCEEDED");
+    expect(result.isError).toBe(true);
+    expect(result.errorType).toBe("CALL_FREQUENCY_EXCEEDED");
     expect(result.message).toBe("Internal error occurred");
     expect(result.details).toBeNull();
   });
 
-  // TC-ERROR-009: All responses have is_error: true
-  it("always sets is_error to true for all error types", () => {
+  // TC-ERROR-009: All responses have isError: true
+  it("always sets isError to true for all error types", () => {
     const scenarios = [
       new TypeError("unexpected"),
       createModuleError("MODULE_NOT_FOUND", "not found"),
@@ -168,7 +168,7 @@ describe("ErrorMapper", () => {
 
     for (const err of scenarios) {
       const result = mapper.toMcpError(err);
-      expect(result.is_error).toBe(true);
+      expect(result.isError).toBe(true);
     }
   });
 
@@ -182,8 +182,8 @@ describe("ErrorMapper", () => {
 
     const result = mapper.toMcpError(error);
 
-    expect(result.is_error).toBe(true);
-    expect(result.error_type).toBe("SCHEMA_VALIDATION_ERROR");
+    expect(result.isError).toBe(true);
+    expect(result.errorType).toBe("SCHEMA_VALIDATION_ERROR");
     expect(result.message).toBe("Schema validation failed");
   });
 
@@ -197,8 +197,8 @@ describe("ErrorMapper", () => {
 
     const result = mapper.toMcpError(error);
 
-    expect(result.is_error).toBe(true);
-    expect(result.error_type).toBe("SCHEMA_VALIDATION_ERROR");
+    expect(result.isError).toBe(true);
+    expect(result.errorType).toBe("SCHEMA_VALIDATION_ERROR");
     expect(result.message).toBe("Schema validation failed");
   });
 });

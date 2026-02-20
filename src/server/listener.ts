@@ -6,6 +6,7 @@
  */
 
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { REGISTRY_EVENTS } from "../types.js";
 import type { Registry } from "../types.js";
 import { MCPServerFactory } from "./factory.js";
 
@@ -50,13 +51,13 @@ export class RegistryListener {
 
     this._active = true;
 
-    this._registry.on("register", (...args: unknown[]) => {
+    this._registry.on(REGISTRY_EVENTS.REGISTER, (...args: unknown[]) => {
       if (!this._active) return;
       const moduleId = args[0] as string;
       this._onRegister(moduleId);
     });
 
-    this._registry.on("unregister", (...args: unknown[]) => {
+    this._registry.on(REGISTRY_EVENTS.UNREGISTER, (...args: unknown[]) => {
       if (!this._active) return;
       const moduleId = args[0] as string;
       this._onUnregister(moduleId);
@@ -82,7 +83,7 @@ export class RegistryListener {
    */
   _onRegister(moduleId: string): void {
     try {
-      const descriptor = this._registry.get_definition(moduleId);
+      const descriptor = this._registry.getDefinition(moduleId);
       if (descriptor === null) {
         console.warn(
           `RegistryListener: cannot build tool for "${moduleId}": definition is null`,

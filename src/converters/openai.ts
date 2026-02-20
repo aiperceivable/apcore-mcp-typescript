@@ -58,10 +58,10 @@ export class OpenAIConverter {
    * Convert all modules in a Registry to OpenAI tool definitions.
    *
    * Iterates registry.list() with optional tag/prefix filtering,
-   * calls registry.get_definition() for each module ID, skips null
+   * calls registry.getDefinition() for each module ID, skips null
    * definitions (race-condition guard), and converts each descriptor.
    *
-   * @param registry - apcore Registry with list() and get_definition() methods.
+   * @param registry - apcore Registry with list() and getDefinition() methods.
    * @param options  - Optional filtering and conversion options.
    * @returns Array of OpenAI-compatible tool definition objects.
    */
@@ -82,7 +82,7 @@ export class OpenAIConverter {
     const tools: OpenAIToolDef[] = [];
 
     for (const moduleId of moduleIds) {
-      const descriptor = registry.get_definition(moduleId);
+      const descriptor = registry.getDefinition(moduleId);
       if (descriptor === null) {
         continue;
       }
@@ -97,13 +97,13 @@ export class OpenAIConverter {
   /**
    * Convert a single ModuleDescriptor to an OpenAI tool definition.
    *
-   * - Normalizes the module_id via ModuleIDNormalizer (dots -> dashes).
-   * - Converts the input_schema via SchemaConverter.
+   * - Normalizes the moduleId via ModuleIDNormalizer (dots -> dashes).
+   * - Converts the inputSchema via SchemaConverter.
    * - Optionally appends an annotation suffix to the description.
    * - Optionally applies strict-mode transformations to the schema.
    *
-   * @param descriptor - Module descriptor with module_id, description,
-   *                     input_schema, and optional annotations.
+   * @param descriptor - Module descriptor with moduleId, description,
+   *                     inputSchema, and optional annotations.
    * @param options    - Optional conversion flags.
    * @returns OpenAI-compatible tool definition object.
    */
@@ -114,7 +114,7 @@ export class OpenAIConverter {
     const embedAnnotations = options?.embedAnnotations ?? false;
     const strict = options?.strict ?? false;
 
-    const name = this._idNormalizer.normalize(descriptor.module_id);
+    const name = this._idNormalizer.normalize(descriptor.moduleId);
     let parameters = this._schemaConverter.convertInputSchema(descriptor);
 
     // Build description with optional annotation suffix

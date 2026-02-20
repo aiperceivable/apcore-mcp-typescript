@@ -12,8 +12,7 @@ function createMockExecutor(
 ): Executor {
   return {
     registry: {} as any,
-    call: vi.fn(),
-    call_async: error
+    call: error
       ? vi.fn().mockRejectedValue(error)
       : vi.fn().mockResolvedValue(result ?? {}),
   };
@@ -39,7 +38,7 @@ function makeModuleError(
 
 describe("ExecutionRouter", () => {
   // TC-ROUTER-001
-  it("returns successful result with text content and is_error=false", async () => {
+  it("returns successful result with text content and isError=false", async () => {
     const result = { summary: "Hello world", score: 0.95 };
     const executor = createMockExecutor(result);
     const router = new ExecutionRouter(executor);
@@ -53,7 +52,7 @@ describe("ExecutionRouter", () => {
     expect(content[0].type).toBe("text");
     expect(content[0].text).toBe(JSON.stringify(result));
 
-    expect(executor.call_async).toHaveBeenCalledWith("text.summarize", {
+    expect(executor.call).toHaveBeenCalledWith("text.summarize", {
       text: "Hello world",
     });
   });
@@ -154,6 +153,6 @@ describe("ExecutionRouter", () => {
     const [content, isError] = await router.handleCall("test.module", {});
 
     expect(isError).toBe(false);
-    expect(executor.call_async).toHaveBeenCalledWith("test.module", {});
+    expect(executor.call).toHaveBeenCalledWith("test.module", {});
   });
 });

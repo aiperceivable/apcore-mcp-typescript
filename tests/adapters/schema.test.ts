@@ -11,10 +11,10 @@ function makeDescriptor(
   outputSchema: Record<string, unknown> = {},
 ) {
   return {
-    module_id: "test.module",
+    moduleId: "test.module",
     description: "Test module",
-    input_schema: inputSchema,
-    output_schema: outputSchema,
+    inputSchema: inputSchema,
+    outputSchema: outputSchema,
     annotations: null,
   };
 }
@@ -152,8 +152,8 @@ describe("SchemaConverter", () => {
     );
   });
 
-  // TC-SCHEMA-004b: Mutual circular $ref detection (A → B → A)
-  it("throws on mutual circular $ref (A → B → A)", () => {
+  // TC-SCHEMA-004b: Mutual circular $ref detection (A -> B -> A)
+  it("throws on mutual circular $ref (A -> B -> A)", () => {
     const descriptor = makeDescriptor({
       type: "object",
       properties: {
@@ -215,8 +215,8 @@ describe("SchemaConverter", () => {
     expect(nestedProps.third).toEqual(expected);
   });
 
-  // TC-SCHEMA-005: Empty input_schema
-  it("converts empty input_schema to {type: 'object', properties: {}}", () => {
+  // TC-SCHEMA-005: Empty inputSchema
+  it("converts empty inputSchema to {type: 'object', properties: {}}", () => {
     const descriptor = makeDescriptor({});
 
     const result = converter.convertInputSchema(descriptor);
@@ -377,8 +377,8 @@ describe("SchemaConverter", () => {
     ).toEqual({ $ref: "#/$defs/Config" });
   });
 
-  // TC-SCHEMA-011: output_schema conversion works the same as input_schema
-  it("converts output_schema the same way as input_schema", () => {
+  // TC-SCHEMA-011: outputSchema conversion works the same as inputSchema
+  it("converts outputSchema the same way as inputSchema", () => {
     const descriptor = makeDescriptor(
       {},
       {

@@ -7,8 +7,8 @@ const defaultAnnotations = {
   readonly: false,
   destructive: false,
   idempotent: false,
-  requires_approval: false,
-  open_world: true,
+  requiresApproval: false,
+  openWorld: true,
 };
 
 describe("AnnotationMapper", () => {
@@ -18,53 +18,53 @@ describe("AnnotationMapper", () => {
       const result = mapper.toMcpAnnotations(null);
 
       expect(result).toEqual({
-        read_only_hint: false,
-        destructive_hint: false,
-        idempotent_hint: false,
-        open_world_hint: true,
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
         title: null,
       });
     });
 
-    // TC-ANNOT-002: destructive=true -> destructive_hint=true
-    it("maps destructive=true to destructive_hint=true", () => {
+    // TC-ANNOT-002: destructive=true -> destructiveHint=true
+    it("maps destructive=true to destructiveHint=true", () => {
       const result = mapper.toMcpAnnotations({
         ...defaultAnnotations,
         destructive: true,
       });
 
-      expect(result.destructive_hint).toBe(true);
-      expect(result.read_only_hint).toBe(false);
+      expect(result.destructiveHint).toBe(true);
+      expect(result.readOnlyHint).toBe(false);
     });
 
-    // TC-ANNOT-003: readonly=true -> read_only_hint=true
-    it("maps readonly=true to read_only_hint=true", () => {
+    // TC-ANNOT-003: readonly=true -> readOnlyHint=true
+    it("maps readonly=true to readOnlyHint=true", () => {
       const result = mapper.toMcpAnnotations({
         ...defaultAnnotations,
         readonly: true,
       });
 
-      expect(result.read_only_hint).toBe(true);
+      expect(result.readOnlyHint).toBe(true);
     });
 
-    // TC-ANNOT-004: idempotent=true -> idempotent_hint=true
-    it("maps idempotent=true to idempotent_hint=true", () => {
+    // TC-ANNOT-004: idempotent=true -> idempotentHint=true
+    it("maps idempotent=true to idempotentHint=true", () => {
       const result = mapper.toMcpAnnotations({
         ...defaultAnnotations,
         idempotent: true,
       });
 
-      expect(result.idempotent_hint).toBe(true);
+      expect(result.idempotentHint).toBe(true);
     });
 
-    // TC-ANNOT-005: open_world=false -> open_world_hint=false
-    it("maps open_world=false to open_world_hint=false", () => {
+    // TC-ANNOT-005: openWorld=false -> openWorldHint=false
+    it("maps openWorld=false to openWorldHint=false", () => {
       const result = mapper.toMcpAnnotations({
         ...defaultAnnotations,
-        open_world: false,
+        openWorld: false,
       });
 
-      expect(result.open_world_hint).toBe(false);
+      expect(result.openWorldHint).toBe(false);
     });
 
     // TC-ANNOT-006: All annotations set
@@ -73,15 +73,15 @@ describe("AnnotationMapper", () => {
         readonly: true,
         destructive: true,
         idempotent: true,
-        requires_approval: true,
-        open_world: false,
+        requiresApproval: true,
+        openWorld: false,
       });
 
       expect(result).toEqual({
-        read_only_hint: true,
-        destructive_hint: true,
-        idempotent_hint: true,
-        open_world_hint: false,
+        readOnlyHint: true,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
         title: null,
       });
     });
@@ -93,22 +93,22 @@ describe("AnnotationMapper", () => {
       expect(mapper.hasRequiresApproval(null)).toBe(false);
     });
 
-    // TC-ANNOT-008: requires_approval=true -> true
-    it("returns true when requires_approval is true", () => {
+    // TC-ANNOT-008: requiresApproval=true -> true
+    it("returns true when requiresApproval is true", () => {
       expect(
         mapper.hasRequiresApproval({
           ...defaultAnnotations,
-          requires_approval: true,
+          requiresApproval: true,
         }),
       ).toBe(true);
     });
 
-    // TC-ANNOT-009: requires_approval=false -> false
-    it("returns false when requires_approval is false", () => {
+    // TC-ANNOT-009: requiresApproval=false -> false
+    it("returns false when requiresApproval is false", () => {
       expect(
         mapper.hasRequiresApproval({
           ...defaultAnnotations,
-          requires_approval: false,
+          requiresApproval: false,
         }),
       ).toBe(false);
     });
@@ -126,8 +126,8 @@ describe("AnnotationMapper", () => {
         readonly: true,
         destructive: false,
         idempotent: true,
-        requires_approval: false,
-        open_world: true,
+        requiresApproval: false,
+        openWorld: true,
       });
 
       expect(suffix).toContain("[Annotations:");

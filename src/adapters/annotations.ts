@@ -13,28 +13,28 @@ export class AnnotationMapper {
    * Convert apcore module annotations to MCP annotations dict.
    *
    * Returns default values when annotations are null:
-   * - read_only_hint: false
-   * - destructive_hint: false
-   * - idempotent_hint: false
-   * - open_world_hint: true
+   * - readOnlyHint: false
+   * - destructiveHint: false
+   * - idempotentHint: false
+   * - openWorldHint: true
    * - title: null
    */
   toMcpAnnotations(annotations: ModuleAnnotations | null): McpAnnotationsDict {
     if (annotations === null) {
       return {
-        read_only_hint: false,
-        destructive_hint: false,
-        idempotent_hint: false,
-        open_world_hint: true,
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
         title: null,
       };
     }
 
     return {
-      read_only_hint: annotations.readonly,
-      destructive_hint: annotations.destructive,
-      idempotent_hint: annotations.idempotent,
-      open_world_hint: annotations.open_world,
+      readOnlyHint: annotations.readonly,
+      destructiveHint: annotations.destructive,
+      idempotentHint: annotations.idempotent,
+      openWorldHint: annotations.openWorld,
       title: null,
     };
   }
@@ -56,8 +56,8 @@ export class AnnotationMapper {
       `readonly=${annotations.readonly}`,
       `destructive=${annotations.destructive}`,
       `idempotent=${annotations.idempotent}`,
-      `requires_approval=${annotations.requires_approval}`,
-      `open_world=${annotations.open_world}`,
+      `requires_approval=${annotations.requiresApproval}`,
+      `open_world=${annotations.openWorld}`,
     ];
 
     return `\n\n[Annotations: ${parts.join(", ")}]`;
@@ -73,6 +73,6 @@ export class AnnotationMapper {
       return false;
     }
 
-    return annotations.requires_approval;
+    return annotations.requiresApproval;
   }
 }

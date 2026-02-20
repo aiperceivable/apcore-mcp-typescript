@@ -9,17 +9,17 @@ import type { JsonSchema, ModuleDescriptor } from "../types.js";
 
 export class SchemaConverter {
   /**
-   * Convert a module descriptor's input_schema to an MCP-compatible schema.
+   * Convert a module descriptor's inputSchema to an MCP-compatible schema.
    */
   convertInputSchema(descriptor: ModuleDescriptor): JsonSchema {
-    return this._convertSchema(descriptor.input_schema);
+    return this._convertSchema(descriptor.inputSchema);
   }
 
   /**
-   * Convert a module descriptor's output_schema to an MCP-compatible schema.
+   * Convert a module descriptor's outputSchema to an MCP-compatible schema.
    */
   convertOutputSchema(descriptor: ModuleDescriptor): JsonSchema {
-    return this._convertSchema(descriptor.output_schema);
+    return this._convertSchema(descriptor.outputSchema);
   }
 
   /**

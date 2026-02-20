@@ -17,8 +17,7 @@ function createMockRegistry(
       }
       return ids;
     },
-    get_definition: (id: string) => descriptors[id] ?? null,
-    get: (id: string) => descriptors[id] ?? null,
+    getDefinition: (id: string) => descriptors[id] ?? null,
     on: () => {},
   };
 }
@@ -27,16 +26,16 @@ function makeDescriptor(
   overrides: Partial<ModuleDescriptor> = {},
 ): ModuleDescriptor {
   return {
-    module_id: overrides.module_id ?? "test.module",
+    moduleId: overrides.moduleId ?? "test.module",
     description: overrides.description ?? "A test module",
-    input_schema: overrides.input_schema ?? {
+    inputSchema: overrides.inputSchema ?? {
       type: "object",
       properties: {
         name: { type: "string" },
       },
       required: ["name"],
     },
-    output_schema: overrides.output_schema ?? {
+    outputSchema: overrides.outputSchema ?? {
       type: "object",
       properties: {
         result: { type: "string" },
@@ -59,9 +58,9 @@ describe("OpenAIConverter", () => {
   // TC-OPENAI-001
   it("converts a single descriptor to an OpenAI tool definition", () => {
     const descriptor = makeDescriptor({
-      module_id: "text.summarize",
+      moduleId: "text.summarize",
       description: "Summarize text",
-      input_schema: {
+      inputSchema: {
         type: "object",
         properties: {
           text: { type: "string", description: "Input text" },
@@ -96,7 +95,7 @@ describe("OpenAIConverter", () => {
   // TC-OPENAI-003
   it("normalizes module IDs by replacing dots with dashes", () => {
     const descriptor = makeDescriptor({
-      module_id: "image.resize",
+      moduleId: "image.resize",
     });
 
     const tool = converter.convertDescriptor(descriptor);
@@ -111,8 +110,8 @@ describe("OpenAIConverter", () => {
         readonly: true,
         destructive: false,
         idempotent: true,
-        requires_approval: false,
-        open_world: false,
+        requiresApproval: false,
+        openWorld: false,
       },
     });
 
@@ -135,8 +134,8 @@ describe("OpenAIConverter", () => {
         readonly: true,
         destructive: false,
         idempotent: true,
-        requires_approval: false,
-        open_world: false,
+        requiresApproval: false,
+        openWorld: false,
       },
     });
 
@@ -148,7 +147,7 @@ describe("OpenAIConverter", () => {
   // TC-OPENAI-006
   it("applies strict mode: adds strict flag, additionalProperties false, all props required", () => {
     const descriptor = makeDescriptor({
-      input_schema: {
+      inputSchema: {
         type: "object",
         properties: {
           name: { type: "string" },
@@ -170,7 +169,7 @@ describe("OpenAIConverter", () => {
   // TC-OPENAI-007
   it("strict mode makes optional fields nullable with [type, 'null']", () => {
     const descriptor = makeDescriptor({
-      input_schema: {
+      inputSchema: {
         type: "object",
         properties: {
           name: { type: "string" },
@@ -202,7 +201,7 @@ describe("OpenAIConverter", () => {
   // TC-OPENAI-008
   it("strict mode removes default values", () => {
     const descriptor = makeDescriptor({
-      input_schema: {
+      inputSchema: {
         type: "object",
         properties: {
           count: { type: "integer", default: 10 },
@@ -224,9 +223,9 @@ describe("OpenAIConverter", () => {
   // TC-OPENAI-009
   it("converts a registry with multiple modules", () => {
     const registry = createMockRegistry({
-      "mod.a": makeDescriptor({ module_id: "mod.a", description: "Module A" }),
-      "mod.b": makeDescriptor({ module_id: "mod.b", description: "Module B" }),
-      "mod.c": makeDescriptor({ module_id: "mod.c", description: "Module C" }),
+      "mod.a": makeDescriptor({ moduleId: "mod.a", description: "Module A" }),
+      "mod.b": makeDescriptor({ moduleId: "mod.b", description: "Module B" }),
+      "mod.c": makeDescriptor({ moduleId: "mod.c", description: "Module C" }),
     });
 
     const tools = converter.convertRegistry(registry);
@@ -241,14 +240,14 @@ describe("OpenAIConverter", () => {
   // TC-OPENAI-010
   it("skips null definitions returned by the registry", () => {
     const descriptors: Record<string, ModuleDescriptor> = {
-      "mod.a": makeDescriptor({ module_id: "mod.a" }),
-      "mod.b": makeDescriptor({ module_id: "mod.b" }),
+      "mod.a": makeDescriptor({ moduleId: "mod.a" }),
+      "mod.b": makeDescriptor({ moduleId: "mod.b" }),
     };
 
-    // Override get_definition to return null for mod.b
+    // Override getDefinition to return null for mod.b
     const registry = createMockRegistry(descriptors);
-    const originalGetDef = registry.get_definition.bind(registry);
-    registry.get_definition = (id: string) => {
+    const originalGetDef = registry.getDefinition.bind(registry);
+    registry.getDefinition = (id: string) => {
       if (id === "mod.b") return null;
       return originalGetDef(id);
     };
@@ -262,9 +261,9 @@ describe("OpenAIConverter", () => {
   // TC-OPENAI-011
   it("filters modules by prefix", () => {
     const registry = createMockRegistry({
-      "image.resize": makeDescriptor({ module_id: "image.resize" }),
-      "image.crop": makeDescriptor({ module_id: "image.crop" }),
-      "text.summarize": makeDescriptor({ module_id: "text.summarize" }),
+      "image.resize": makeDescriptor({ moduleId: "image.resize" }),
+      "image.crop": makeDescriptor({ moduleId: "image.crop" }),
+      "text.summarize": makeDescriptor({ moduleId: "text.summarize" }),
     });
 
     const tools = converter.convertRegistry(registry, { prefix: "image" });
@@ -285,8 +284,7 @@ describe("OpenAIConverter", () => {
         capturedTags = opts?.tags;
         return [];
       },
-      get_definition: () => null,
-      get: () => null,
+      getDefinition: () => null,
       on: () => {},
     };
 

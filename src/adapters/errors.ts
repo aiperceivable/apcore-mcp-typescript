@@ -6,13 +6,14 @@
  * field-level detail.
  */
 
+import { ErrorCodes } from "../types.js";
 import type { McpErrorResponse } from "../types.js";
 
 /** Internal error codes that should be sanitized to a generic message. */
-const INTERNAL_ERROR_CODES = new Set([
-  "CALL_DEPTH_EXCEEDED",
-  "CIRCULAR_CALL",
-  "CALL_FREQUENCY_EXCEEDED",
+const INTERNAL_ERROR_CODES: Set<string> = new Set([
+  ErrorCodes.CALL_DEPTH_EXCEEDED,
+  ErrorCodes.CIRCULAR_CALL,
+  ErrorCodes.CALL_FREQUENCY_EXCEEDED,
 ]);
 
 export class ErrorMapper {
@@ -31,29 +32,29 @@ export class ErrorMapper {
       // Internal error codes -> generic message
       if (INTERNAL_ERROR_CODES.has(code)) {
         return {
-          is_error: true,
-          error_type: code,
+          isError: true,
+          errorType: code,
           message: "Internal error occurred",
           details: null,
         };
       }
 
       // ACL denied -> sanitized access denied
-      if (code === "ACL_DENIED") {
+      if (code === ErrorCodes.ACL_DENIED) {
         return {
-          is_error: true,
-          error_type: "ACL_DENIED",
+          isError: true,
+          errorType: ErrorCodes.ACL_DENIED,
           message: "Access denied",
           details: null,
         };
       }
 
       // Schema validation error -> formatted with field-level details
-      if (code === "SCHEMA_VALIDATION_ERROR") {
+      if (code === ErrorCodes.SCHEMA_VALIDATION_ERROR) {
         const message = this._formatValidationError(details);
         return {
-          is_error: true,
-          error_type: "SCHEMA_VALIDATION_ERROR",
+          isError: true,
+          errorType: ErrorCodes.SCHEMA_VALIDATION_ERROR,
           message,
           details,
         };
@@ -61,8 +62,8 @@ export class ErrorMapper {
 
       // Other known ModuleError codes -> pass through
       return {
-        is_error: true,
-        error_type: code,
+        isError: true,
+        errorType: code,
         message: error.message,
         details,
       };
@@ -70,8 +71,8 @@ export class ErrorMapper {
 
     // Unknown/unexpected exceptions -> generic error
     return {
-      is_error: true,
-      error_type: "INTERNAL_ERROR",
+      isError: true,
+      errorType: ErrorCodes.INTERNAL_ERROR,
       message: "Internal error occurred",
       details: null,
     };

@@ -1,7 +1,7 @@
 /**
  * ExecutionRouter - Routes MCP tool calls to apcore module execution.
  *
- * Bridges the MCP tools/call protocol with apcore's Executor.call_async(),
+ * Bridges the MCP tools/call protocol with apcore's Executor.call() or callAsync(),
  * handling success/error formatting for MCP text content responses.
  */
 
@@ -18,7 +18,7 @@ export class ExecutionRouter {
   /**
    * Create an ExecutionRouter.
    *
-   * @param executor - Duck-typed executor with call_async(module_id, inputs)
+   * @param executor - Duck-typed executor with call(moduleId, inputs) or callAsync(moduleId, inputs)
    */
   constructor(executor: Executor) {
     this._executor = executor;
@@ -28,7 +28,9 @@ export class ExecutionRouter {
   /**
    * Handle an MCP tools/call request by routing to the executor.
    *
-   * @param toolName - The MCP tool name (maps to apcore module_id)
+   * Tries executor.call() first, then falls back to executor.callAsync().
+   *
+   * @param toolName - The MCP tool name (maps to apcore moduleId)
    * @param args - The tool call arguments
    * @returns Tuple of [content, isError] where content is an array of text content dicts
    */
@@ -37,7 +39,13 @@ export class ExecutionRouter {
     args: Record<string, unknown>,
   ): Promise<CallResult> {
     try {
-      const result = await this._executor.call_async(toolName, args);
+      const callFn = this._executor.call
+        ? this._executor.call.bind(this._executor)
+        : this._executor.callAsync?.bind(this._executor);
+      if (!callFn) {
+        throw new Error("Executor must implement call() or callAsync()");
+      }
+      const result = await callFn(toolName, args);
 
       const content: TextContentDict[] = [
         {

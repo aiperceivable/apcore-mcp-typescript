@@ -59,29 +59,44 @@ export class MCPServerFactory {
    * Build an MCP Tool object from an apcore module descriptor.
    *
    * Maps descriptor fields to MCP Tool format:
-   * - name = descriptor.module_id
+   * - name = descriptor.moduleId
    * - description = descriptor.description
    * - inputSchema = converted via SchemaConverter
    * - annotations = mapped from AnnotationMapper with camelCase keys
    */
   buildTool(descriptor: ModuleDescriptor): Tool {
+    if (!descriptor.moduleId || typeof descriptor.moduleId !== "string") {
+      throw new Error("ModuleDescriptor.moduleId is required and must be a string");
+    }
+    if (!descriptor.description || typeof descriptor.description !== "string") {
+      throw new Error("ModuleDescriptor.description is required and must be a string");
+    }
+
     const mcpAnnotations = this._annotationMapper.toMcpAnnotations(
       descriptor.annotations,
     );
 
     const convertedSchema = this._schemaConverter.convertInputSchema(descriptor);
 
+    const hasApproval = this._annotationMapper.hasRequiresApproval(descriptor.annotations);
+
     const tool: Tool = {
-      name: descriptor.module_id,
+      name: descriptor.moduleId,
       description: descriptor.description,
       inputSchema: convertedSchema as Tool["inputSchema"],
       annotations: {
-        readOnlyHint: mcpAnnotations.read_only_hint,
-        destructiveHint: mcpAnnotations.destructive_hint,
-        idempotentHint: mcpAnnotations.idempotent_hint,
-        openWorldHint: mcpAnnotations.open_world_hint,
+        readOnlyHint: mcpAnnotations.readOnlyHint,
+        destructiveHint: mcpAnnotations.destructiveHint,
+        idempotentHint: mcpAnnotations.idempotentHint,
+        openWorldHint: mcpAnnotations.openWorldHint,
       },
     };
+
+    if (hasApproval) {
+      (tool as Tool & { _meta?: Record<string, unknown> })._meta = {
+        requiresApproval: true,
+      };
+    }
 
     return tool;
   }
@@ -101,10 +116,10 @@ export class MCPServerFactory {
 
     for (const moduleId of moduleIds) {
       try {
-        const descriptor = registry.get_definition(moduleId);
+        const descriptor = registry.getDefinition(moduleId);
         if (descriptor === null) {
           console.warn(
-            `Skipping module "${moduleId}": get_definition returned null`,
+            `Skipping module "${moduleId}": getDefinition returned null`,
           );
           continue;
         }

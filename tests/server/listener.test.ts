@@ -11,16 +11,16 @@ function makeDescriptor(
   overrides: Partial<ModuleDescriptor> = {},
 ): ModuleDescriptor {
   return {
-    module_id: overrides.module_id ?? "test.module",
+    moduleId: overrides.moduleId ?? "test.module",
     description: overrides.description ?? "A test module",
-    input_schema: overrides.input_schema ?? {
+    inputSchema: overrides.inputSchema ?? {
       type: "object",
       properties: {
         input: { type: "string" },
       },
       required: ["input"],
     },
-    output_schema: overrides.output_schema ?? {
+    outputSchema: overrides.outputSchema ?? {
       type: "object",
       properties: {
         output: { type: "string" },
@@ -36,8 +36,7 @@ function createMockRegistryWithCallbacks() {
   const callbacks: Record<string, Function[]> = {};
   const registry: Registry = {
     list: () => [],
-    get_definition: vi.fn().mockReturnValue(null),
-    get: () => null,
+    getDefinition: vi.fn().mockReturnValue(null),
     on: (event: string, cb: (...args: unknown[]) => void) => {
       if (!callbacks[event]) callbacks[event] = [];
       callbacks[event].push(cb);
@@ -80,9 +79,9 @@ describe("RegistryListener", () => {
 
   // TC-LISTENER-003
   it("stop() prevents event handling - callbacks become no-ops", () => {
-    const descriptor = makeDescriptor({ module_id: "mod.stopped" });
+    const descriptor = makeDescriptor({ moduleId: "mod.stopped" });
     const { registry, callbacks } = createMockRegistryWithCallbacks();
-    (registry.get_definition as ReturnType<typeof vi.fn>).mockReturnValue(
+    (registry.getDefinition as ReturnType<typeof vi.fn>).mockReturnValue(
       descriptor,
     );
     const factory = new MCPServerFactory();
@@ -101,9 +100,9 @@ describe("RegistryListener", () => {
 
   // TC-LISTENER-004
   it("_onRegister adds tool to internal tools map", () => {
-    const descriptor = makeDescriptor({ module_id: "mod.new" });
+    const descriptor = makeDescriptor({ moduleId: "mod.new" });
     const { registry, callbacks } = createMockRegistryWithCallbacks();
-    (registry.get_definition as ReturnType<typeof vi.fn>).mockReturnValue(
+    (registry.getDefinition as ReturnType<typeof vi.fn>).mockReturnValue(
       descriptor,
     );
     const factory = new MCPServerFactory();
@@ -125,7 +124,7 @@ describe("RegistryListener", () => {
   // TC-LISTENER-005
   it("_onRegister skips null definition and logs a warning", () => {
     const { registry } = createMockRegistryWithCallbacks();
-    // get_definition already mocked to return null by default
+    // getDefinition already mocked to return null by default
     const factory = new MCPServerFactory();
     const listener = new RegistryListener(registry, factory);
 
@@ -146,9 +145,9 @@ describe("RegistryListener", () => {
 
   // TC-LISTENER-006
   it("_onUnregister removes tool from internal tools map", () => {
-    const descriptor = makeDescriptor({ module_id: "mod.removable" });
+    const descriptor = makeDescriptor({ moduleId: "mod.removable" });
     const { registry } = createMockRegistryWithCallbacks();
-    (registry.get_definition as ReturnType<typeof vi.fn>).mockReturnValue(
+    (registry.getDefinition as ReturnType<typeof vi.fn>).mockReturnValue(
       descriptor,
     );
     const factory = new MCPServerFactory();
@@ -169,9 +168,9 @@ describe("RegistryListener", () => {
 
   // TC-LISTENER-EVENT-REGISTER: Register callback triggered via event system
   it("register callback triggered via registry events adds the tool", () => {
-    const descriptor = makeDescriptor({ module_id: "evented.module" });
+    const descriptor = makeDescriptor({ moduleId: "evented.module" });
     const { registry, callbacks } = createMockRegistryWithCallbacks();
-    (registry.get_definition as ReturnType<typeof vi.fn>).mockReturnValue(
+    (registry.getDefinition as ReturnType<typeof vi.fn>).mockReturnValue(
       descriptor,
     );
     const factory = new MCPServerFactory();
@@ -191,9 +190,9 @@ describe("RegistryListener", () => {
 
   // TC-LISTENER-EVENT-UNREGISTER: Unregister callback triggered via event system
   it("unregister callback triggered via registry events removes the tool", () => {
-    const descriptor = makeDescriptor({ module_id: "evented.remove" });
+    const descriptor = makeDescriptor({ moduleId: "evented.remove" });
     const { registry, callbacks } = createMockRegistryWithCallbacks();
-    (registry.get_definition as ReturnType<typeof vi.fn>).mockReturnValue(
+    (registry.getDefinition as ReturnType<typeof vi.fn>).mockReturnValue(
       descriptor,
     );
     const factory = new MCPServerFactory();
@@ -216,9 +215,9 @@ describe("RegistryListener", () => {
 
   // TC-LISTENER-007
   it("tools getter returns a snapshot copy - modifying it does not affect internal state", () => {
-    const descriptor = makeDescriptor({ module_id: "mod.snapshot" });
+    const descriptor = makeDescriptor({ moduleId: "mod.snapshot" });
     const { registry } = createMockRegistryWithCallbacks();
-    (registry.get_definition as ReturnType<typeof vi.fn>).mockReturnValue(
+    (registry.getDefinition as ReturnType<typeof vi.fn>).mockReturnValue(
       descriptor,
     );
     const factory = new MCPServerFactory();

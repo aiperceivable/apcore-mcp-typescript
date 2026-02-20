@@ -6,6 +6,7 @@
  * - toOpenaiTools(registryOrExecutor, options?) - Export OpenAI tool definitions
  */
 
+import { createRequire } from "node:module";
 import { OpenAIConverter } from "./converters/openai.js";
 import type { ConvertRegistryOptions } from "./converters/openai.js";
 import { MCPServerFactory } from "./server/factory.js";
@@ -18,10 +19,36 @@ import type {
   OpenAIToolDef,
 } from "./types.js";
 
-export const VERSION = "0.1.0";
+const require = createRequire(import.meta.url);
+const pkg = require("../package.json") as { version: string };
+export const VERSION: string = pkg.version;
 
+// ─── Type Exports ────────────────────────────────────────────────────────────
 export type { Registry, Executor, RegistryOrExecutor, OpenAIToolDef } from "./types.js";
-export type { ModuleDescriptor, ModuleAnnotations, JsonSchema } from "./types.js";
+export type {
+  ModuleDescriptor,
+  ModuleAnnotations,
+  JsonSchema,
+  ModuleError,
+  McpAnnotationsDict,
+  McpErrorResponse,
+  TextContentDict,
+} from "./types.js";
+export { REGISTRY_EVENTS, ErrorCodes, MODULE_ID_PATTERN } from "./types.js";
+
+// ─── Building Block Exports ──────────────────────────────────────────────────
+export { MCPServerFactory } from "./server/factory.js";
+export { ExecutionRouter } from "./server/router.js";
+export type { CallResult } from "./server/router.js";
+export { RegistryListener } from "./server/listener.js";
+export { TransportManager } from "./server/transport.js";
+export { AnnotationMapper } from "./adapters/annotations.js";
+export { SchemaConverter } from "./adapters/schema.js";
+export { ErrorMapper } from "./adapters/errors.js";
+export { ModuleIDNormalizer } from "./adapters/idNormalizer.js";
+export { OpenAIConverter } from "./converters/openai.js";
+export type { ConvertOptions, ConvertRegistryOptions } from "./converters/openai.js";
+export type { BuildToolsOptions } from "./server/factory.js";
 
 /**
  * Extract Registry from either a Registry or Executor instance.
@@ -39,7 +66,7 @@ function resolveRegistry(registryOrExecutor: RegistryOrExecutor): Registry {
  * Get or create an Executor from either a Registry or Executor instance.
  */
 function resolveExecutor(registryOrExecutor: RegistryOrExecutor): Executor {
-  if ("call_async" in registryOrExecutor) {
+  if ("call" in registryOrExecutor || "callAsync" in registryOrExecutor) {
     // Already an Executor
     return registryOrExecutor as Executor;
   }
@@ -63,6 +90,10 @@ export interface ServeOptions {
   name?: string;
   /** MCP server version. Default: package version */
   version?: string;
+  /** Enable dynamic tool registration/unregistration. Default: false */
+  dynamic?: boolean;
+  /** Enable input validation against schemas. Default: false */
+  validateInputs?: boolean;
 }
 
 /**

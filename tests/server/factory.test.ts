@@ -16,8 +16,7 @@ function createMockRegistry(
   return {
     list: (opts?: { tags?: string[] | null; prefix?: string | null }) =>
       Object.keys(descriptors),
-    get_definition: (id: string) => descriptors[id] ?? null,
-    get: (id: string) => descriptors[id] ?? null,
+    getDefinition: (id: string) => descriptors[id] ?? null,
     on: () => {},
   };
 }
@@ -26,16 +25,16 @@ function makeDescriptor(
   overrides: Partial<ModuleDescriptor> = {},
 ): ModuleDescriptor {
   return {
-    module_id: overrides.module_id ?? "test.module",
+    moduleId: overrides.moduleId ?? "test.module",
     description: overrides.description ?? "A test module",
-    input_schema: overrides.input_schema ?? {
+    inputSchema: overrides.inputSchema ?? {
       type: "object",
       properties: {
         input: { type: "string" },
       },
       required: ["input"],
     },
-    output_schema: overrides.output_schema ?? {
+    outputSchema: overrides.outputSchema ?? {
       type: "object",
       properties: {
         output: { type: "string" },
@@ -65,9 +64,9 @@ describe("MCPServerFactory", () => {
   // TC-FACTORY-002
   it("buildTool creates a correct Tool with name, description, inputSchema, and annotations", () => {
     const descriptor = makeDescriptor({
-      module_id: "text.analyze",
+      moduleId: "text.analyze",
       description: "Analyze text content",
-      input_schema: {
+      inputSchema: {
         type: "object",
         properties: {
           text: { type: "string" },
@@ -78,8 +77,8 @@ describe("MCPServerFactory", () => {
         readonly: true,
         destructive: false,
         idempotent: true,
-        requires_approval: false,
-        open_world: false,
+        requiresApproval: false,
+        openWorld: false,
       },
     });
 
@@ -99,8 +98,8 @@ describe("MCPServerFactory", () => {
         readonly: true,
         destructive: false,
         idempotent: true,
-        requires_approval: false,
-        open_world: true,
+        requiresApproval: false,
+        openWorld: true,
       },
     });
 
@@ -131,9 +130,9 @@ describe("MCPServerFactory", () => {
   // TC-FACTORY-005
   it("buildTools iterates registry and returns correct number of tools", () => {
     const registry = createMockRegistry({
-      "mod.a": makeDescriptor({ module_id: "mod.a", description: "Module A" }),
-      "mod.b": makeDescriptor({ module_id: "mod.b", description: "Module B" }),
-      "mod.c": makeDescriptor({ module_id: "mod.c", description: "Module C" }),
+      "mod.a": makeDescriptor({ moduleId: "mod.a", description: "Module A" }),
+      "mod.b": makeDescriptor({ moduleId: "mod.b", description: "Module B" }),
+      "mod.c": makeDescriptor({ moduleId: "mod.c", description: "Module C" }),
     });
 
     const tools = factory.buildTools(registry);
@@ -150,14 +149,13 @@ describe("MCPServerFactory", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const descriptors: Record<string, ModuleDescriptor> = {
-      "mod.a": makeDescriptor({ module_id: "mod.a" }),
+      "mod.a": makeDescriptor({ moduleId: "mod.a" }),
     };
 
     // Create a registry where one module returns null
     const registry: Registry = {
       list: () => ["mod.a", "mod.missing"],
-      get_definition: (id: string) => descriptors[id] ?? null,
-      get: (id: string) => descriptors[id] ?? null,
+      getDefinition: (id: string) => descriptors[id] ?? null,
       on: () => {},
     };
 
@@ -178,13 +176,12 @@ describe("MCPServerFactory", () => {
 
     const registry: Registry = {
       list: () => ["mod.ok", "mod.broken"],
-      get_definition: (id: string) => {
+      getDefinition: (id: string) => {
         if (id === "mod.broken") {
           throw new Error("Descriptor retrieval failed");
         }
-        return makeDescriptor({ module_id: "mod.ok" });
+        return makeDescriptor({ moduleId: "mod.ok" });
       },
-      get: () => null,
       on: () => {},
     };
 
@@ -206,7 +203,7 @@ describe("MCPServerFactory", () => {
   describe("registerHandlers", () => {
     it("registers handlers that return tools on list and route calls", async () => {
       const descriptor = makeDescriptor({
-        module_id: "test.handler",
+        moduleId: "test.handler",
         description: "Handler test",
       });
       const tools = [factory.buildTool(descriptor)];
