@@ -1,80 +1,105 @@
 /**
- * Internal type definitions and type aliases for apcore-mcp.
+ * APCore MCP Bridge — Type Definitions
  *
- * These types define the interfaces that apcore-mcp expects from the
- * apcore SDK. By using duck-typing interfaces rather than importing
- * concrete classes, we decouple from the apcore package at compile time.
+ * All interfaces use camelCase to match apcore-typescript conventions.
+ * The protocol spec uses snake_case as canonical; this file maps to TypeScript idioms.
  */
 
-/** JSON Schema type alias */
-export type JsonSchema = Record<string, unknown>;
+// ─── Type Aliases ────────────────────────────────────────────────────────────
 
-/** Module annotations from apcore */
+export type JsonSchema = Record<string, unknown>;
+export type RegistryOrExecutor = Registry | Executor;
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+/** Standard registry event names. */
+export const REGISTRY_EVENTS = Object.freeze({
+  REGISTER: "register",
+  UNREGISTER: "unregister",
+} as const);
+
+/** Framework error codes used by ErrorMapper. */
+export const ErrorCodes = Object.freeze({
+  MODULE_NOT_FOUND: "MODULE_NOT_FOUND",
+  SCHEMA_VALIDATION_ERROR: "SCHEMA_VALIDATION_ERROR",
+  ACL_DENIED: "ACL_DENIED",
+  CALL_DEPTH_EXCEEDED: "CALL_DEPTH_EXCEEDED",
+  CIRCULAR_CALL: "CIRCULAR_CALL",
+  CALL_FREQUENCY_EXCEEDED: "CALL_FREQUENCY_EXCEEDED",
+  INTERNAL_ERROR: "INTERNAL_ERROR",
+  MODULE_TIMEOUT: "MODULE_TIMEOUT",
+  MODULE_LOAD_ERROR: "MODULE_LOAD_ERROR",
+  MODULE_EXECUTE_ERROR: "MODULE_EXECUTE_ERROR",
+  GENERAL_INVALID_INPUT: "GENERAL_INVALID_INPUT",
+} as const);
+
+/** Valid module ID pattern. No hyphens allowed. */
+export const MODULE_ID_PATTERN = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/;
+
+// ─── Module Types ────────────────────────────────────────────────────────────
+
 export interface ModuleAnnotations {
   readonly: boolean;
   destructive: boolean;
   idempotent: boolean;
-  requires_approval: boolean;
-  open_world: boolean;
+  requiresApproval: boolean;
+  openWorld: boolean;
 }
 
-/** Module descriptor from apcore */
 export interface ModuleDescriptor {
-  module_id: string;
+  moduleId: string;
   description: string;
-  input_schema: JsonSchema;
-  output_schema: JsonSchema;
+  inputSchema: JsonSchema;
+  outputSchema: JsonSchema;
   annotations: ModuleAnnotations | null;
-  name?: string | null;
   documentation?: string | null;
   tags?: string[];
   version?: string;
   examples?: unknown[];
 }
 
-/** apcore Registry interface (duck-typed) */
+// ─── Core Interfaces (duck-typed for apcore-typescript compatibility) ────────
+
 export interface Registry {
   list(options?: { tags?: string[] | null; prefix?: string | null }): string[];
-  get_definition(module_id: string): ModuleDescriptor | null;
-  get(module_id: string): unknown | null;
+  getDefinition(moduleId: string): ModuleDescriptor | null;
+  has?(moduleId: string): boolean;
   on(event: string, callback: (...args: unknown[]) => void): void;
   discover?(): number;
 }
 
-/** apcore Executor interface (duck-typed) */
 export interface Executor {
   registry: Registry;
-  call(module_id: string, inputs: Record<string, unknown>): Record<string, unknown>;
-  call_async(module_id: string, inputs: Record<string, unknown>): Promise<Record<string, unknown>>;
+  call(moduleId: string, inputs: Record<string, unknown>): Promise<Record<string, unknown>>;
+  callAsync?(moduleId: string, inputs: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
 
-/** Accept either Registry or Executor */
-export type RegistryOrExecutor = Registry | Executor;
+// ─── Error Type ──────────────────────────────────────────────────────────────
 
-/** apcore ModuleError interface (duck-typed) */
 export interface ModuleError extends Error {
   code: string;
   details: Record<string, unknown> | null;
 }
 
-/** MCP annotations dict returned by AnnotationMapper */
+// ─── MCP Types ───────────────────────────────────────────────────────────────
+
 export interface McpAnnotationsDict {
-  read_only_hint: boolean;
-  destructive_hint: boolean;
-  idempotent_hint: boolean;
-  open_world_hint: boolean;
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+  idempotentHint: boolean;
+  openWorldHint: boolean;
   title: string | null;
 }
 
-/** MCP error response from ErrorMapper */
 export interface McpErrorResponse {
-  is_error: true;
-  error_type: string;
+  isError: true;
+  errorType: string;
   message: string;
   details: Record<string, unknown> | null;
 }
 
-/** OpenAI tool definition */
+// ─── OpenAI Types ────────────────────────────────────────────────────────────
+
 export interface OpenAIToolDef {
   type: "function";
   function: {
@@ -85,7 +110,8 @@ export interface OpenAIToolDef {
   };
 }
 
-/** Text content for MCP responses */
+// ─── Utility Types ───────────────────────────────────────────────────────────
+
 export interface TextContentDict {
   type: "text";
   text: string;
