@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-02-20
+
+### Changed
+
+- **Breaking: All TypeScript interfaces now use camelCase** — Updated all type definitions in `types.ts` to follow TypeScript conventions (e.g., `module_id` → `moduleId`, `input_schema` → `inputSchema`, `get_definition` → `getDefinition`, `call_async` → `callAsync`). MCP hint properties also updated (e.g., `read_only_hint` → `readOnlyHint`).
+- All adapters, converters, and server components refactored to use the new camelCase property names.
+- All test files updated to match the new interface signatures (113 tests passing across 10 test files).
+
+### Added
+
+- New constants in `types.ts`: `REGISTRY_EVENTS`, `ErrorCodes`, and `MODULE_ID_PATTERN` for standardized error codes and validation.
+- New type alias `RegistryOrExecutor` for accepting either Registry or Executor.
+- `has?()` method on Registry interface for optional module existence checking.
+- Improved JSDoc comments in `types.ts` with section dividers and clearer documentation.
+
 ## [0.1.1] - 2026-02-18
 
 ### Fixed
