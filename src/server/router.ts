@@ -11,6 +11,9 @@
 
 import { ErrorMapper } from "../adapters/errors.js";
 import type { Executor, TextContentDict } from "../types.js";
+import { createBridgeContext } from "./context.js";
+import { MCP_PROGRESS_KEY, MCP_ELICIT_KEY } from "../helpers.js";
+import type { ElicitResult } from "../helpers.js";
 
 /** Tuple of [content array, isError flag] returned from handleCall. */
 export type CallResult = [TextContentDict[], boolean];
@@ -20,10 +23,12 @@ export type CallResult = [TextContentDict[], boolean];
  *
  * Mirrors the relevant subset of the SDK's `RequestHandlerExtra`:
  * - `sendNotification` — sends an out-of-band notification on the current session
+ * - `sendRequest` — sends a request to the client (used for elicitation)
  * - `_meta.progressToken` — opaque token the client attached to the request
  */
 export interface HandleCallExtra {
   sendNotification?: (notification: Record<string, unknown>) => Promise<void>;
+  sendRequest?: (request: Record<string, unknown>, resultSchema: unknown) => Promise<unknown>;
   _meta?: { progressToken?: string | number };
 }
 
@@ -63,10 +68,60 @@ export class ExecutionRouter {
     extra?: HandleCallExtra,
   ): Promise<CallResult> {
     try {
-      // ── Streaming path ────────────────────────────────────────────────
+      // ── Build context with MCP callbacks ──────────────────────────────
       const progressToken = extra?._meta?.progressToken;
       const sendNotification = extra?.sendNotification;
+      const sendRequest = extra?.sendRequest;
 
+      const contextData: Record<string, unknown> = {};
+      let hasCallbacks = false;
+
+      // Inject progress callback if progressToken + sendNotification available
+      if (progressToken !== undefined && sendNotification) {
+        hasCallbacks = true;
+        contextData[MCP_PROGRESS_KEY] = async (
+          progress: number,
+          total?: number,
+          message?: string,
+        ): Promise<void> => {
+          await sendNotification({
+            method: "notifications/progress",
+            params: {
+              progressToken,
+              progress,
+              total: total ?? 0,
+              ...(message !== undefined ? { message } : {}),
+            },
+          });
+        };
+      }
+
+      // Inject elicitation callback if sendRequest available
+      if (sendRequest) {
+        hasCallbacks = true;
+        contextData[MCP_ELICIT_KEY] = async (
+          message: string,
+          requestedSchema?: Record<string, unknown>,
+        ): Promise<ElicitResult | null> => {
+          const result = await sendRequest(
+            {
+              method: "elicitation/create",
+              params: {
+                message,
+                ...(requestedSchema ? { requestedSchema } : {}),
+              },
+            },
+            {},
+          );
+          return (result as ElicitResult) ?? null;
+        };
+      }
+
+      const context = hasCallbacks
+        ? createBridgeContext(contextData)
+        : undefined;
+
+      // ── Streaming path ────────────────────────────────────────────────
       if (
         this._executor.stream &&
         progressToken !== undefined &&
@@ -75,7 +130,7 @@ export class ExecutionRouter {
         let accumulated: Record<string, unknown> = {};
         let chunkIndex = 0;
 
-        for await (const chunk of this._executor.stream(toolName, args)) {
+        for await (const chunk of this._executor.stream(toolName, args, context)) {
           // Shallow-merge each chunk into the accumulated result
           accumulated = { ...accumulated, ...chunk };
 
@@ -109,7 +164,7 @@ export class ExecutionRouter {
       if (!callFn) {
         throw new Error("Executor must implement call() or callAsync()");
       }
-      const result = await callFn(toolName, args);
+      const result = await callFn(toolName, args, context);
 
       const content: TextContentDict[] = [
         {

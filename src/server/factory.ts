@@ -170,6 +170,10 @@ export class MCPServerFactory {
           ? (notification: Record<string, unknown>) =>
               extra.sendNotification(notification as any)
           : undefined,
+        sendRequest: extra?.sendRequest
+          ? (request: Record<string, unknown>, resultSchema: unknown) =>
+              (extra.sendRequest as Function)(request, resultSchema)
+          : undefined,
         _meta: extra?._meta
           ? { progressToken: extra._meta.progressToken }
           : undefined,

@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { ExecutionRouter } from "../../src/server/router.js";
+import type { HandleCallExtra } from "../../src/server/router.js";
 import type { Executor } from "../../src/types.js";
+import { MCP_PROGRESS_KEY, MCP_ELICIT_KEY } from "../../src/helpers.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -52,9 +54,12 @@ describe("ExecutionRouter", () => {
     expect(content[0].type).toBe("text");
     expect(content[0].text).toBe(JSON.stringify(result));
 
-    expect(executor.call).toHaveBeenCalledWith("text.summarize", {
-      text: "Hello world",
-    });
+    // No extra → no callbacks → context is undefined
+    expect(executor.call).toHaveBeenCalledWith(
+      "text.summarize",
+      { text: "Hello world" },
+      undefined,
+    );
   });
 
   // TC-ROUTER-002
@@ -153,6 +158,118 @@ describe("ExecutionRouter", () => {
     const [content, isError] = await router.handleCall("test.module", {});
 
     expect(isError).toBe(false);
-    expect(executor.call).toHaveBeenCalledWith("test.module", {});
+    // No extra → context is undefined
+    expect(executor.call).toHaveBeenCalledWith("test.module", {}, undefined);
+  });
+
+  // TC-ROUTER-008: context has _mcp_progress when progressToken + sendNotification present
+  it("builds context with _mcp_progress when progressToken and sendNotification present", async () => {
+    const executor = createMockExecutor({ ok: true });
+    const router = new ExecutionRouter(executor);
+
+    const extra: HandleCallExtra = {
+      sendNotification: vi.fn().mockResolvedValue(undefined),
+      _meta: { progressToken: "tok-1" },
+    };
+
+    // Non-streaming executor → goes to call path
+    await router.handleCall("test.module", {}, extra);
+
+    // executor.call should receive a context with _mcp_progress in data
+    const callArgs = (executor.call as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(callArgs[0]).toBe("test.module");
+    expect(callArgs[1]).toEqual({});
+    const context = callArgs[2] as { data: Record<string, unknown> };
+    expect(context).toBeDefined();
+    expect(typeof context.data[MCP_PROGRESS_KEY]).toBe("function");
+  });
+
+  // TC-ROUTER-009: context has _mcp_elicit when sendRequest present
+  it("builds context with _mcp_elicit when sendRequest present", async () => {
+    const executor = createMockExecutor({ ok: true });
+    const router = new ExecutionRouter(executor);
+
+    const extra: HandleCallExtra = {
+      sendRequest: vi.fn().mockResolvedValue({ action: "accept" }),
+    };
+
+    await router.handleCall("test.module", {}, extra);
+
+    const callArgs = (executor.call as ReturnType<typeof vi.fn>).mock.calls[0];
+    const context = callArgs[2] as { data: Record<string, unknown> };
+    expect(context).toBeDefined();
+    expect(typeof context.data[MCP_ELICIT_KEY]).toBe("function");
+  });
+
+  // TC-ROUTER-010: no context when no extra provided (backward compat)
+  it("passes undefined context when no extra provided", async () => {
+    const executor = createMockExecutor({ ok: true });
+    const router = new ExecutionRouter(executor);
+
+    await router.handleCall("test.module", {});
+
+    expect(executor.call).toHaveBeenCalledWith("test.module", {}, undefined);
+  });
+
+  // TC-ROUTER-011: elicit callback sends elicitation/create request
+  it("elicit callback sends elicitation/create request via sendRequest", async () => {
+    const executor: Executor = {
+      registry: {} as any,
+      call: vi.fn().mockImplementation(async (_id, _inputs, ctx) => {
+        // Simulate module calling elicit
+        const elicitFn = ctx.data[MCP_ELICIT_KEY] as Function;
+        const result = await elicitFn("Continue?", { type: "object" });
+        return { elicitResult: result };
+      }),
+    };
+
+    const sendRequest = vi.fn().mockResolvedValue({ action: "accept", content: { ok: true } });
+    const router = new ExecutionRouter(executor);
+
+    const extra: HandleCallExtra = {
+      sendRequest,
+    };
+
+    const [content, isError] = await router.handleCall("test.module", {}, extra);
+
+    expect(isError).toBe(false);
+    expect(sendRequest).toHaveBeenCalledTimes(1);
+    const [request] = sendRequest.mock.calls[0];
+    expect(request.method).toBe("elicitation/create");
+    expect(request.params.message).toBe("Continue?");
+    expect(request.params.requestedSchema).toEqual({ type: "object" });
+  });
+
+  // TC-ROUTER-012: progress callback sends notifications/progress
+  it("progress callback sends notifications/progress via sendNotification", async () => {
+    const executor: Executor = {
+      registry: {} as any,
+      call: vi.fn().mockImplementation(async (_id, _inputs, ctx) => {
+        // Simulate module calling reportProgress
+        const progressFn = ctx.data[MCP_PROGRESS_KEY] as Function;
+        await progressFn(5, 10, "halfway");
+        return { done: true };
+      }),
+    };
+
+    const sendNotification = vi.fn().mockResolvedValue(undefined);
+    const router = new ExecutionRouter(executor);
+
+    const extra: HandleCallExtra = {
+      sendNotification,
+      _meta: { progressToken: "tok-progress" },
+    };
+
+    const [content, isError] = await router.handleCall("test.module", {}, extra);
+
+    expect(isError).toBe(false);
+    expect(sendNotification).toHaveBeenCalledTimes(1);
+    const notification = sendNotification.mock.calls[0][0] as Record<string, unknown>;
+    expect(notification.method).toBe("notifications/progress");
+    const params = notification.params as Record<string, unknown>;
+    expect(params.progressToken).toBe("tok-progress");
+    expect(params.progress).toBe(5);
+    expect(params.total).toBe(10);
+    expect(params.message).toBe("halfway");
   });
 });

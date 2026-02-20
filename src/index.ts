@@ -36,6 +36,12 @@ export type {
 } from "./types.js";
 export { REGISTRY_EVENTS, ErrorCodes, MODULE_ID_PATTERN } from "./types.js";
 
+// ─── Extension Helpers ───────────────────────────────────────────────────────
+export { reportProgress, elicit, MCP_PROGRESS_KEY, MCP_ELICIT_KEY } from "./helpers.js";
+export type { ElicitResult } from "./helpers.js";
+export { createBridgeContext } from "./server/context.js";
+export type { BridgeContext } from "./server/context.js";
+
 // ─── Building Block Exports ──────────────────────────────────────────────────
 export { MCPServerFactory } from "./server/factory.js";
 export { ExecutionRouter } from "./server/router.js";

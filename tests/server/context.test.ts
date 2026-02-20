@@ -1,0 +1,68 @@
+import { describe, it, expect } from "vitest";
+import { createBridgeContext } from "../../src/server/context.js";
+
+describe("createBridgeContext", () => {
+  it("has all required fields", () => {
+    const data = { foo: "bar" };
+    const ctx = createBridgeContext(data);
+
+    expect(ctx.traceId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    expect(ctx.callerId).toBeNull();
+    expect(ctx.callChain).toEqual([]);
+    expect(ctx.executor).toBeNull();
+    expect(ctx.identity).toBeNull();
+    expect(ctx.redactedInputs).toEqual({});
+    expect(ctx.data).toBe(data);
+    expect(typeof ctx.child).toBe("function");
+  });
+
+  it("child() returns new context with shared data reference", () => {
+    const data = { key: "value" };
+    const parent = createBridgeContext(data);
+    const child = parent.child("mod.a");
+
+    // Different object
+    expect(child).not.toBe(parent);
+
+    // Same data reference
+    expect(child.data).toBe(parent.data);
+
+    // Mutating data is visible in both
+    child.data["added"] = true;
+    expect(parent.data["added"]).toBe(true);
+  });
+
+  it("child() updates callChain and callerId correctly", () => {
+    const parent = createBridgeContext({});
+    const child1 = parent.child("mod.a");
+    const child2 = child1.child("mod.b");
+
+    expect(child1.callerId).toBe("mod.a");
+    expect(child1.callChain).toEqual(["mod.a"]);
+
+    expect(child2.callerId).toBe("mod.b");
+    expect(child2.callChain).toEqual(["mod.a", "mod.b"]);
+  });
+
+  it("child() preserves traceId from parent", () => {
+    const parent = createBridgeContext({});
+    const child = parent.child("mod.a");
+    const grandchild = child.child("mod.b");
+
+    expect(child.traceId).toBe(parent.traceId);
+    expect(grandchild.traceId).toBe(parent.traceId);
+  });
+
+  it("child() does not mutate parent's callChain", () => {
+    const parent = createBridgeContext({});
+    const child = parent.child("mod.a");
+
+    expect(parent.callChain).toEqual([]);
+    expect(child.callChain).toEqual(["mod.a"]);
+
+    child.child("mod.b");
+    expect(child.callChain).toEqual(["mod.a"]);
+  });
+});

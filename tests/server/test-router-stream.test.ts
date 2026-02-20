@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { ExecutionRouter } from "../../src/server/router.js";
 import type { HandleCallExtra } from "../../src/server/router.js";
 import type { Executor } from "../../src/types.js";
+import { MCP_PROGRESS_KEY } from "../../src/helpers.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -20,6 +21,7 @@ function createStreamingExecutor(
     async *stream(
       _moduleId: string,
       _inputs: Record<string, unknown>,
+      _context?: unknown,
     ): AsyncGenerator<Record<string, unknown>> {
       for (const chunk of chunks) {
         yield chunk;
@@ -143,11 +145,17 @@ describe("ExecutionRouter — streaming", () => {
     expect(isError).toBe(false);
     expect(JSON.parse(content[0].text)).toEqual(result);
 
-    // sendNotification should NOT have been called
+    // sendNotification should NOT have been called (for streaming chunks)
+    // Note: it may be used for explicit progress via context callback
     expect(extra.sendNotification).not.toHaveBeenCalled();
 
-    // call() should have been invoked
-    expect(executor.call).toHaveBeenCalledWith("test.nostream", { q: "?" });
+    // call() should have been invoked with context (has progress callback)
+    const callArgs = (executor.call as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(callArgs[0]).toBe("test.nostream");
+    expect(callArgs[1]).toEqual({ q: "?" });
+    // Context should exist because extra has sendNotification + progressToken
+    expect(callArgs[2]).toBeDefined();
+    expect(typeof callArgs[2].data[MCP_PROGRESS_KEY]).toBe("function");
   });
 
   // TC-STREAM-004: Falls back to call() when no progressToken provided
@@ -174,8 +182,8 @@ describe("ExecutionRouter — streaming", () => {
     // sendNotification should NOT have been called
     expect(extra.sendNotification).not.toHaveBeenCalled();
 
-    // call() should have been invoked instead of stream()
-    expect(executor.call).toHaveBeenCalledWith("test.noprogress", {});
+    // call() should have been invoked — no progressToken means no context callbacks
+    expect(executor.call).toHaveBeenCalledWith("test.noprogress", {}, undefined);
   });
 
   // TC-STREAM-005: Falls back to call() when no extra provided at all
@@ -192,7 +200,7 @@ describe("ExecutionRouter — streaming", () => {
 
     expect(isError).toBe(false);
     expect(JSON.parse(content[0].text)).toEqual(callResult);
-    expect(executor.call).toHaveBeenCalledWith("test.noextra", {});
+    expect(executor.call).toHaveBeenCalledWith("test.noextra", {}, undefined);
   });
 
   // TC-STREAM-006: Numeric progressToken works
@@ -234,5 +242,31 @@ describe("ExecutionRouter — streaming", () => {
     expect(isError).toBe(false);
     expect(JSON.parse(content[0].text)).toEqual({});
     expect(extra.sendNotification).not.toHaveBeenCalled();
+  });
+
+  // TC-STREAM-008: Context with _mcp_progress is passed to stream()
+  it("passes context with _mcp_progress to executor.stream()", async () => {
+    let receivedContext: unknown = null;
+    const executor: Executor = {
+      registry: {} as any,
+      call: vi.fn().mockResolvedValue({}),
+      async *stream(
+        _moduleId: string,
+        _inputs: Record<string, unknown>,
+        context?: unknown,
+      ): AsyncGenerator<Record<string, unknown>> {
+        receivedContext = context;
+        yield { done: true };
+      },
+    };
+
+    const router = new ExecutionRouter(executor);
+    const extra = createExtra("tok-ctx");
+
+    await router.handleCall("test.ctx", {}, extra);
+
+    expect(receivedContext).toBeDefined();
+    const ctx = receivedContext as { data: Record<string, unknown> };
+    expect(typeof ctx.data[MCP_PROGRESS_KEY]).toBe("function");
   });
 });
