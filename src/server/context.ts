@@ -15,13 +15,13 @@ import { randomUUID } from "node:crypto";
 
 /** Shape of the bridge context object. */
 export interface BridgeContext {
-  traceId: string;
-  callerId: string | null;
-  callChain: string[];
-  executor: unknown;
-  identity: Record<string, unknown> | null;
-  redactedInputs: Record<string, unknown>;
-  data: Record<string, unknown>;
+  readonly traceId: string;
+  readonly callerId: string | null;
+  readonly callChain: readonly string[];
+  readonly executor: unknown;
+  readonly identity: Record<string, unknown> | null;
+  redactedInputs: Record<string, unknown> | null;
+  readonly data: Record<string, unknown>;
   child(moduleId: string): BridgeContext;
 }
 
@@ -47,10 +47,12 @@ function _buildContext(
     callChain,
     executor: null,
     identity: null,
-    redactedInputs: {},
+    redactedInputs: null,
     data,
     child(moduleId: string): BridgeContext {
-      return _buildContext(data, traceId, moduleId, [...callChain, moduleId]);
+      // Match real Context.child(): callerId = last element of current callChain
+      const newCallerId = callChain.length > 0 ? callChain[callChain.length - 1] : null;
+      return _buildContext(data, traceId, newCallerId, [...callChain, moduleId]);
     },
   };
 }

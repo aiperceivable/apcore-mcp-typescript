@@ -13,7 +13,7 @@ describe("createBridgeContext", () => {
     expect(ctx.callChain).toEqual([]);
     expect(ctx.executor).toBeNull();
     expect(ctx.identity).toBeNull();
-    expect(ctx.redactedInputs).toEqual({});
+    expect(ctx.redactedInputs).toBeNull();
     expect(ctx.data).toBe(data);
     expect(typeof ctx.child).toBe("function");
   });
@@ -39,10 +39,11 @@ describe("createBridgeContext", () => {
     const child1 = parent.child("mod.a");
     const child2 = child1.child("mod.b");
 
-    expect(child1.callerId).toBe("mod.a");
+    // callerId = last element of parent's callChain (who called me)
+    expect(child1.callerId).toBeNull(); // parent has empty callChain
     expect(child1.callChain).toEqual(["mod.a"]);
 
-    expect(child2.callerId).toBe("mod.b");
+    expect(child2.callerId).toBe("mod.a"); // child1's callChain = ["mod.a"]
     expect(child2.callChain).toEqual(["mod.a", "mod.b"]);
   });
 
