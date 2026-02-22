@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-02-22
+
+### Added
+
+- **Streaming execution support** — The MCP bridge layer now supports streaming execution. When an executor implements `stream()` and the client provides a `progressToken`, chunks are forwarded as `notifications/progress` and shallow-merged into the final result. Falls back to `call()` when streaming is not available or not requested.
+- **Elicitation and progress reporting** — New `helpers.ts` module with `reportProgress()` and `elicit()` functions for modules to report progress and request user input during execution.
+- **BridgeContext** — New duck-typed context object that carries shared data through call chains, with support for MCP callbacks and progress reporting.
+- `stream?()` method added to `Executor` interface for streaming support.
+- `HandleCallExtra` interface for MCP SDK callbacks (`sendNotification`, `sendRequest`, `_meta`).
+- `context?: unknown` parameter added to Executor interface methods (`call`, `stream`, `getDefinition`) for backward-compatible context passing.
+- `_meta.streaming` property added to OpenAI tool definitions when module descriptor has `annotations.streaming`.
+- Exported `helpers`, `BridgeContext` type, and `createBridgeContext` from public API.
+- 7 streaming router tests covering chunks, fallback, and edge cases.
+
+### Changed
+
+- `ExecutionRouter` now builds context with MCP callbacks and passes it to executors.
+- `factory.ts` wired to pass MCP SDK extra parameters to router for streaming and elicitation support.
+
+### Fixed
+
+- **BridgeContext.child() callerId alignment** — `callerId` now equals the last element of parent's `callChain` (who called me), matching apcore-typescript Context.child() behavior.
+- `redactedInputs` is now nullable (null initial) to match real Context behavior.
+- Added `readonly` modifiers to BridgeContext properties to match real Context's immutability contract.
+
 ## [0.2.0] - 2026-02-20
 
 ### Changed
