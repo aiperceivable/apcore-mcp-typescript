@@ -12,6 +12,7 @@ import type { ConvertRegistryOptions } from "./converters/openai.js";
 import { MCPServerFactory } from "./server/factory.js";
 import { ExecutionRouter } from "./server/router.js";
 import { TransportManager } from "./server/transport.js";
+import type { MetricsExporter } from "./server/transport.js";
 import type {
   RegistryOrExecutor,
   Registry,
@@ -45,9 +46,10 @@ export type { BridgeContext } from "./server/context.js";
 // ─── Building Block Exports ──────────────────────────────────────────────────
 export { MCPServerFactory } from "./server/factory.js";
 export { ExecutionRouter } from "./server/router.js";
-export type { CallResult, HandleCallExtra } from "./server/router.js";
+export type { CallResult, HandleCallExtra, ExecutionRouterOptions } from "./server/router.js";
 export { RegistryListener } from "./server/listener.js";
 export { TransportManager } from "./server/transport.js";
+export type { MetricsExporter } from "./server/transport.js";
 export { AnnotationMapper } from "./adapters/annotations.js";
 export { SchemaConverter } from "./adapters/schema.js";
 export { ErrorMapper } from "./adapters/errors.js";
@@ -70,17 +72,28 @@ function resolveRegistry(registryOrExecutor: RegistryOrExecutor): Registry {
 
 /**
  * Get or create an Executor from either a Registry or Executor instance.
+ *
+ * If a bare Registry is passed, attempts to dynamically import the Executor
+ * from apcore and create a default instance (matching Python's resolve_executor).
  */
 function resolveExecutor(registryOrExecutor: RegistryOrExecutor): Executor {
   if ("call" in registryOrExecutor || "callAsync" in registryOrExecutor) {
     // Already an Executor
     return registryOrExecutor as Executor;
   }
-  // It's a Registry — the caller must provide an Executor
-  // Since we don't import apcore directly, we create a minimal wrapper
+  // It's a bare Registry — create a default Executor
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const apcore = require("apcore");
+    const ExecutorClass = apcore.Executor ?? apcore.default?.Executor;
+    if (ExecutorClass) {
+      return new ExecutorClass(registryOrExecutor) as Executor;
+    }
+  } catch {
+    // apcore not installed — fall through to error
+  }
   throw new Error(
-    "serve() requires an Executor instance when not using a Registry with a built-in executor. " +
-      "Please pass an Executor instead of a Registry.",
+    "serve() requires an Executor instance, or apcore must be installed to auto-create one from a Registry.",
   );
 }
 
@@ -100,6 +113,18 @@ export interface ServeOptions {
   dynamic?: boolean;
   /** Enable input validation against schemas. Default: false */
   validateInputs?: boolean;
+  /** Filter modules by tags. Default: null (no filtering) */
+  tags?: string[] | null;
+  /** Filter modules by prefix. Default: null (no filtering) */
+  prefix?: string | null;
+  /** Minimum log level. Suppresses console methods below this level. Default: undefined (no suppression) */
+  logLevel?: "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
+  /** Callback invoked before the server starts. */
+  onStartup?: () => void | Promise<void>;
+  /** Callback invoked after the server stops (or on error). */
+  onShutdown?: () => void | Promise<void>;
+  /** Optional MetricsCollector for Prometheus /metrics endpoint. */
+  metricsCollector?: MetricsExporter;
 }
 
 /**
@@ -118,7 +143,48 @@ export async function serve(
     port = 8000,
     name = "apcore-mcp",
     version = VERSION,
+    validateInputs,
+    tags,
+    prefix,
+    logLevel,
+    onStartup,
+    onShutdown,
+    metricsCollector,
   } = options;
+
+  // Input validation (matching Python's checks)
+  if (!name || name.length === 0) {
+    throw new Error("name must not be empty");
+  }
+  if (name.length > 255) {
+    throw new Error("name must not exceed 255 characters");
+  }
+  if (tags) {
+    for (const tag of tags) {
+      if (!tag || tag.length === 0) {
+        throw new Error("tags must not contain empty strings");
+      }
+    }
+  }
+  if (prefix !== undefined && prefix !== null && prefix.length === 0) {
+    throw new Error("prefix must not be empty if provided");
+  }
+
+  // Save original console methods before suppression
+  const origDebug = console.debug;
+  const origInfo = console.info;
+  const origWarn = console.warn;
+  const origError = console.error;
+
+  // Apply log-level suppression
+  if (logLevel) {
+    const levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
+    const minLevel = levels.indexOf(logLevel);
+    if (minLevel > 0) console.debug = () => {};
+    if (minLevel > 1) console.info = () => {};
+    if (minLevel > 2) console.warn = () => {};
+    if (minLevel > 3) console.error = () => {};
+  }
 
   const registry = resolveRegistry(registryOrExecutor);
   const executor = resolveExecutor(registryOrExecutor);
@@ -126,27 +192,43 @@ export async function serve(
   // Build MCP server components
   const factory = new MCPServerFactory();
   const server = factory.createServer(name, version);
-  const tools = factory.buildTools(registry);
-  const router = new ExecutionRouter(executor);
+  const tools = factory.buildTools(registry, { tags, prefix });
+  const router = new ExecutionRouter(executor, { validateInputs });
   factory.registerHandlers(server, tools, router);
+  factory.registerResourceHandlers(server, registry);
 
-  console.info(
+  origInfo(
     `Starting MCP server '${name}' v${version} with ${tools.length} tools via ${transport}`,
   );
 
+  // Invoke startup callback
+  await onStartup?.();
+
   // Select and run transport
   const transportManager = new TransportManager();
+  transportManager.setModuleCount(tools.length);
+  if (metricsCollector) {
+    transportManager.setMetricsCollector(metricsCollector);
+  }
 
-  if (transport === "stdio") {
-    await transportManager.runStdio(server);
-  } else if (transport === "streamable-http") {
-    await transportManager.runStreamableHttp(server, { host, port });
-  } else if (transport === "sse") {
-    await transportManager.runSse(server, { host, port });
-  } else {
-    throw new Error(
-      `Unknown transport: '${transport as string}'. Expected 'stdio', 'streamable-http', or 'sse'.`,
-    );
+  try {
+    if (transport === "stdio") {
+      await transportManager.runStdio(server);
+    } else if (transport === "streamable-http") {
+      await transportManager.runStreamableHttp(server, { host, port });
+    } else if (transport === "sse") {
+      await transportManager.runSse(server, { host, port });
+    } else {
+      throw new Error(
+        `Unknown transport: '${transport as string}'. Expected 'stdio', 'streamable-http', or 'sse'.`,
+      );
+    }
+  } finally {
+    console.debug = origDebug;
+    console.info = origInfo;
+    console.warn = origWarn;
+    console.error = origError;
+    await onShutdown?.();
   }
 }
 

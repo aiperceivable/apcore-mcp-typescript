@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-02-23
+
+### Added
+
+- **MCP Resources support** — New `registerResourceHandlers()` on `MCPServerFactory`. Modules with a `documentation` field are exposed as `docs://{moduleId}` MCP resources via `resources/list` and `resources/read`. Server now advertises `resources: {}` capability.
+- **`/health` endpoint** — HTTP transports (`streamable-http`, `sse`) now serve a `/health` route returning JSON `{ status, uptime_seconds, module_count }` for readiness probing.
+- **`/metrics` Prometheus endpoint** — HTTP transports (`streamable-http`, `sse`) now serve a `/metrics` route returning Prometheus text format when a `metricsCollector` is provided. Returns 404 when no collector is configured.
+- **`MetricsExporter` interface** — Duck-typed interface for implementing custom Prometheus metrics exporters. Exported from public API.
+- **`metricsCollector` option in `ServeOptions`** — Accepts a `MetricsExporter` instance to enable the `/metrics` endpoint on HTTP transports.
+- **`Executor.validate?()` optional method** — New optional `validate(moduleId, inputs)` method on the `Executor` interface for pre-execution input validation.
+- **`validateInputs` option in `ExecutionRouterOptions`** — When `true`, `ExecutionRouter` calls `executor.validate?.()` before execution and returns a formatted validation error response on failure. Exported from public API.
+- **`tags` and `prefix` filtering in `ServeOptions`** — Pass `tags` and/or `prefix` to `serve()` to restrict which registry modules are exposed as MCP tools.
+- **`logLevel` option in `ServeOptions`** — Suppresses `console` output below the specified level (`DEBUG` | `INFO` | `WARNING` | `ERROR`) during `serve()`. All suppressed methods are restored after shutdown.
+- **`onStartup` / `onShutdown` lifecycle callbacks in `ServeOptions`** — Async hooks invoked before the transport starts and after it stops (including on error).
+- **`--log-level` validation in CLI** — The `apcore-mcp` CLI now validates `--log-level` against the allowed set and passes it to `serve()`.
+- **`streaming` field in `ModuleAnnotations`** — New boolean field to declare streaming capability in module metadata.
+- New test suite `tests/serve-features.test.ts` — covers `tags`/`prefix` filtering (F1), `logLevel` suppression (F2), and `onStartup`/`onShutdown` lifecycle hooks (F4).
+- New test suite `tests/server/metrics-endpoint.test.ts` — covers `/metrics` endpoint for both `streamable-http` and `sse` transports (200, 404, 500, content-type).
+- New test suite `tests/server/router-validate.test.ts` — covers input validation in `ExecutionRouter` (F3).
+- New test suite `tests/server/transport.test.ts` — covers `/health` endpoint for both transports, including `setModuleCount()` reflection.
+
+### Changed
+
+- **`toDescriptionSuffix` omits default annotation values** — `AnnotationMapper.toDescriptionSuffix()` now only includes fields that differ from their defaults (`readonly=false`, `destructive=false`, `idempotent=false`, `requiresApproval=false`, `openWorld=true`), producing shorter, more informative description suffixes.
+- **Tool errors returned as MCP `isError` result** — `MCPServerFactory.registerHandlers()` no longer throws protocol-level errors for tool execution failures; errors are returned as `CallToolResult` with `isError: true` and the error message in `content`.
+- **Progress notification index is now 1-based** — `notifications/progress` chunks sent from `ExecutionRouter` use a 1-based `progress` counter (was 0-based).
+- **Trace ID appended to tool responses** — When a `BridgeContext` is active, a `{ _trace_id }` entry is appended to the response content array for both streaming and non-streaming paths.
+- **`ModuleDescriptor.description` is now optional** — `MCPServerFactory.buildTool()` no longer throws when `description` is `null` or `undefined`.
+- **`resolveExecutor()` tries auto-creating from `apcore`** — When a bare `Registry` is passed to `serve()`, it now attempts to dynamically `require('apcore')` and instantiate a default Executor before failing with a descriptive error.
+- **`package.json` keywords expanded** — Added `mcp-server`, `tool-bridge`, `agent-tools`, `schema`, `json-schema`, `validation`, `router`, `transport`, `cli` for better npm discoverability.
+
+### Fixed
+
+- **Null-safe `call` / `callAsync` selection** — `ExecutionRouter` now uses `typeof` checks instead of truthiness when selecting between `executor.call()` and `executor.callAsync()`, preventing accidental fallthrough on falsy executor methods.
+- **`serve()` input validation** — `serve()` now validates `name` (non-empty, ≤ 255 chars), `tags` (no empty strings), and `prefix` (non-empty if provided) before starting, throwing descriptive errors.
+
 ## [0.3.0] - 2026-02-22
 
 ### Added

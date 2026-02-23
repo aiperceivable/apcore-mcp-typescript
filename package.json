@@ -1,6 +1,6 @@
 {
   "name": "apcore-mcp",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Automatic MCP Server & OpenAI Tools Bridge for apcore",
   "type": "module",
   "main": "./dist/index.js",
@@ -32,7 +32,16 @@
     "openai",
     "tools",
     "function-calling",
-    "ai-agent"
+    "ai-agent",
+    "mcp-server",
+    "tool-bridge",
+    "agent-tools",
+    "schema",
+    "json-schema",
+    "validation",
+    "router",
+    "transport",
+    "cli"
   ],
   "license": "Apache-2.0",
   "engines": {

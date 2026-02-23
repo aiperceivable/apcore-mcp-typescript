@@ -137,11 +137,13 @@ describe("serve()", () => {
     ).rejects.toThrow("Unknown transport");
   });
 
-  it("throws when passed a Registry without Executor", async () => {
+  it("throws when passed a Registry without Executor and apcore not installed", async () => {
     const registry = createMockRegistry({});
 
     const { serve } = await import("../src/index.js");
 
-    await expect(serve(registry)).rejects.toThrow("Executor");
+    await expect(serve(registry)).rejects.toThrow(
+      "serve() requires an Executor instance",
+    );
   });
 });

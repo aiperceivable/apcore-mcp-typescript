@@ -126,6 +126,15 @@ export async function main(): Promise<void> {
     console.info(`Discovered ${numModules} module(s) in '${extensionsDir}'.`);
   }
 
+  // Validate log-level
+  const logLevel = values["log-level"] as string | undefined;
+  const validLogLevels = ["DEBUG", "INFO", "WARNING", "ERROR"];
+  if (logLevel && !validLogLevels.includes(logLevel)) {
+    fail(
+      `--log-level must be one of: ${validLogLevels.join(", ")}. Got '${logLevel}'.`,
+    );
+  }
+
   // Launch the MCP server
   try {
     await serve(registry as never, {
@@ -134,6 +143,7 @@ export async function main(): Promise<void> {
       port,
       name,
       version: values.version ?? undefined,
+      logLevel: logLevel as "DEBUG" | "INFO" | "WARNING" | "ERROR" | undefined,
     });
   } catch (error) {
     console.error("Server startup failed:", error);

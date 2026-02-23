@@ -11,11 +11,15 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import type {
   Tool,
   TextContent,
   CallToolResult,
+  Resource,
+  ReadResourceResult,
 } from "@modelcontextprotocol/sdk/types.js";
 
 import { SchemaConverter } from "../adapters/schema.js";
@@ -52,7 +56,7 @@ export class MCPServerFactory {
   ): Server {
     return new Server(
       { name, version },
-      { capabilities: { tools: {} } },
+      { capabilities: { tools: {}, resources: {} } },
     );
   }
 
@@ -69,10 +73,13 @@ export class MCPServerFactory {
     if (!descriptor.moduleId || typeof descriptor.moduleId !== "string") {
       throw new Error("ModuleDescriptor.moduleId is required and must be a string");
     }
-    if (!descriptor.description || typeof descriptor.description !== "string") {
-      throw new Error("ModuleDescriptor.description is required and must be a string");
+    if (descriptor.description !== undefined && descriptor.description !== null && typeof descriptor.description !== "string") {
+      throw new Error("ModuleDescriptor.description must be a string");
     }
 
+    // NOTE: TypeScript uses AnnotationMapper.toMcpAnnotations() directly,
+    // while Python uses SchemaExporter.export_mcp() for the same mapping.
+    // Both produce identical output. If annotation logic changes, update both paths.
     const mcpAnnotations = this._annotationMapper.toMcpAnnotations(
       descriptor.annotations,
     );
@@ -143,6 +150,74 @@ export class MCPServerFactory {
   }
 
   /**
+   * Register resources/list and resources/read handlers for modules with documentation.
+   *
+   * Iterates over registry.list(), gets each definition, and filters for
+   * descriptors that have a non-null `documentation` field. Registers:
+   * - resources/list: returns Resource objects with URI docs://{module_id}
+   * - resources/read: returns documentation text for the requested module
+   *
+   * @param server - The MCP Server to register handlers on
+   * @param registry - Registry to discover modules with documentation
+   */
+  registerResourceHandlers(
+    server: Server,
+    registry: Registry,
+  ): void {
+    // Build a map of module_id -> documentation for modules with docs
+    const docsMap = new Map<string, string>();
+    const moduleIds = registry.list();
+
+    for (const moduleId of moduleIds) {
+      try {
+        const descriptor = registry.getDefinition(moduleId);
+        if (descriptor?.documentation) {
+          docsMap.set(moduleId, descriptor.documentation);
+        }
+      } catch {
+        // Skip modules that throw errors
+      }
+    }
+
+    // Handle resources/list requests
+    server.setRequestHandler(ListResourcesRequestSchema, async () => {
+      const resources: Resource[] = [];
+      for (const [moduleId, _doc] of docsMap) {
+        resources.push({
+          uri: `docs://${moduleId}`,
+          name: `${moduleId} documentation`,
+          mimeType: "text/plain",
+        });
+      }
+      return { resources };
+    });
+
+    // Handle resources/read requests
+    server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+      const uri = request.params.uri;
+      const prefix = "docs://";
+      if (!uri.startsWith(prefix)) {
+        throw new Error(`Unsupported URI scheme: ${uri}`);
+      }
+      const moduleId = uri.slice(prefix.length);
+      const documentation = docsMap.get(moduleId);
+      if (documentation === undefined) {
+        throw new Error(`Resource not found: ${uri}`);
+      }
+      const result: ReadResourceResult = {
+        contents: [
+          {
+            uri,
+            text: documentation,
+            mimeType: "text/plain",
+          },
+        ],
+      };
+      return result;
+    });
+  }
+
+  /**
    * Register tools/list and tools/call request handlers on a Server instance.
    *
    * @param server - The MCP Server to register handlers on
@@ -185,13 +260,11 @@ export class MCPServerFactory {
         handleCallExtra,
       );
 
-      if (isError) {
-        throw new Error(content[0].text);
-      }
-
+      // Return tool errors as MCP CallToolResult with isError flag
+      // rather than throwing protocol-level errors
       const result: CallToolResult = {
-        content: content as TextContent[],
-        isError: false,
+        content: content.map(c => ({ type: "text" as const, text: c.text })),
+        isError,
       };
 
       return result;

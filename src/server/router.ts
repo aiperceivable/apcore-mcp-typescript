@@ -32,18 +32,26 @@ export interface HandleCallExtra {
   _meta?: { progressToken?: string | number };
 }
 
+/** Options for the ExecutionRouter constructor. */
+export interface ExecutionRouterOptions {
+  validateInputs?: boolean;
+}
+
 export class ExecutionRouter {
   private readonly _executor: Executor;
   private readonly _errorMapper: ErrorMapper;
+  private readonly _validateInputs: boolean;
 
   /**
    * Create an ExecutionRouter.
    *
    * @param executor - Duck-typed executor with call(moduleId, inputs) or callAsync(moduleId, inputs)
+   * @param options - Optional configuration including validateInputs
    */
-  constructor(executor: Executor) {
+  constructor(executor: Executor, options?: ExecutionRouterOptions) {
     this._executor = executor;
     this._errorMapper = new ErrorMapper();
+    this._validateInputs = options?.validateInputs ?? false;
   }
 
   /**
@@ -121,6 +129,46 @@ export class ExecutionRouter {
         ? createBridgeContext(contextData)
         : undefined;
 
+      // ── Pre-execution validation ────────────────────────────────────
+      if (this._validateInputs && this._executor.validate) {
+        try {
+          const rawErrors = await this._executor.validate(toolName, args);
+          let errorMessages: string[] = [];
+          if (Array.isArray(rawErrors)) {
+            // Handle both string[] and ValidationResult.errors (array of objects)
+            errorMessages = rawErrors.map((e: unknown) => {
+              if (typeof e === 'string') return e;
+              if (typeof e === 'object' && e !== null) {
+                const obj = e as Record<string, unknown>;
+                const field = obj.field ?? obj.path ?? '?';
+                const msg = obj.message ?? 'invalid';
+                return `${field}: ${msg}`;
+              }
+              return String(e);
+            });
+          } else if (rawErrors && typeof rawErrors === 'object' && 'valid' in (rawErrors as object)) {
+            // Handle ValidationResult object
+            const vr = rawErrors as { valid: boolean; errors: Array<{ field?: string; message?: string }> };
+            if (!vr.valid) {
+              errorMessages = vr.errors.map(e => `${e.field ?? '?'}: ${e.message ?? 'invalid'}`);
+            }
+          }
+          if (errorMessages.length > 0) {
+            const detail = errorMessages.join("; ");
+            const content: TextContentDict[] = [
+              { type: "text", text: `Validation failed: ${detail}` },
+            ];
+            return [content, true];
+          }
+        } catch (valError: unknown) {
+          const errorInfo = this._errorMapper.toMcpError(valError);
+          const content: TextContentDict[] = [
+            { type: "text", text: errorInfo.message },
+          ];
+          return [content, true];
+        }
+      }
+
       // ── Streaming path ────────────────────────────────────────────────
       if (
         this._executor.stream &&
@@ -139,7 +187,7 @@ export class ExecutionRouter {
             method: "notifications/progress",
             params: {
               progressToken,
-              progress: chunkIndex,
+              progress: chunkIndex + 1,
               message: JSON.stringify(chunk),
             },
           });
@@ -154,15 +202,24 @@ export class ExecutionRouter {
           },
         ];
 
+        if (context) {
+          content.push({
+            type: "text",
+            text: JSON.stringify({ _trace_id: context.traceId }),
+          });
+        }
+
         return [content, false];
       }
 
       // ── Non-streaming path ────────────────────────────────────────────
-      const callFn = this._executor.call
+      const callFn = typeof this._executor.call === 'function'
         ? this._executor.call.bind(this._executor)
-        : this._executor.callAsync?.bind(this._executor);
+        : typeof this._executor.callAsync === 'function'
+        ? this._executor.callAsync.bind(this._executor)
+        : null;
       if (!callFn) {
-        throw new Error("Executor must implement call() or callAsync()");
+        throw new Error('Executor must implement call() or callAsync()');
       }
       const result = await callFn(toolName, args, context);
 
@@ -173,8 +230,16 @@ export class ExecutionRouter {
         },
       ];
 
+      if (context) {
+        content.push({
+          type: "text",
+          text: JSON.stringify({ _trace_id: context.traceId }),
+        });
+      }
+
       return [content, false];
     } catch (error: unknown) {
+      console.error(`handleCall error for ${toolName}:`, error);
       const errorInfo = this._errorMapper.toMcpError(error);
 
       const content: TextContentDict[] = [

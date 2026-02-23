@@ -241,6 +241,114 @@ describe("TransportManager", () => {
     });
   });
 
+  describe("health endpoint (streamable-http)", () => {
+    let mgr: TransportManager;
+
+    afterEach(async () => {
+      if (mgr) await mgr.close();
+    });
+
+    it("returns JSON with status, uptime_seconds, and module_count", async () => {
+      mgr = new TransportManager();
+      vi.spyOn(mgr, "_validateHostPort").mockImplementation(() => {});
+      const mockServer = {
+        connect: vi.fn().mockResolvedValue(undefined),
+      } as unknown as Server;
+
+      await mgr.runStreamableHttp(mockServer, {
+        host: "127.0.0.1",
+        port: 0,
+      });
+
+      const addr = mgr.httpServer!.address() as AddressInfo;
+      const res = await fetch(`http://127.0.0.1:${addr.port}/health`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("application/json");
+
+      const body = await res.json();
+      expect(body).toHaveProperty("status", "ok");
+      expect(body).toHaveProperty("uptime_seconds");
+      expect(typeof body.uptime_seconds).toBe("number");
+      expect(body.uptime_seconds).toBeGreaterThanOrEqual(0);
+      expect(body).toHaveProperty("module_count");
+      expect(typeof body.module_count).toBe("number");
+    });
+
+    it("reflects module_count set via setModuleCount()", async () => {
+      mgr = new TransportManager();
+      vi.spyOn(mgr, "_validateHostPort").mockImplementation(() => {});
+      const mockServer = {
+        connect: vi.fn().mockResolvedValue(undefined),
+      } as unknown as Server;
+
+      mgr.setModuleCount(42);
+
+      await mgr.runStreamableHttp(mockServer, {
+        host: "127.0.0.1",
+        port: 0,
+      });
+
+      const addr = mgr.httpServer!.address() as AddressInfo;
+      const res = await fetch(`http://127.0.0.1:${addr.port}/health`);
+      const body = await res.json();
+      expect(body.module_count).toBe(42);
+    });
+  });
+
+  describe("health endpoint (sse)", () => {
+    let mgr: TransportManager;
+
+    afterEach(async () => {
+      if (mgr) await mgr.close();
+    });
+
+    it("returns JSON with status, uptime_seconds, and module_count", async () => {
+      mgr = new TransportManager();
+      vi.spyOn(mgr, "_validateHostPort").mockImplementation(() => {});
+      const mockServer = {
+        connect: vi.fn().mockResolvedValue(undefined),
+      } as unknown as Server;
+
+      await mgr.runSse(mockServer, {
+        host: "127.0.0.1",
+        port: 0,
+      });
+
+      const addr = mgr.httpServer!.address() as AddressInfo;
+      const res = await fetch(`http://127.0.0.1:${addr.port}/health`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("application/json");
+
+      const body = await res.json();
+      expect(body).toHaveProperty("status", "ok");
+      expect(body).toHaveProperty("uptime_seconds");
+      expect(typeof body.uptime_seconds).toBe("number");
+      expect(body.uptime_seconds).toBeGreaterThanOrEqual(0);
+      expect(body).toHaveProperty("module_count");
+      expect(typeof body.module_count).toBe("number");
+    });
+
+    it("reflects module_count set via setModuleCount()", async () => {
+      mgr = new TransportManager();
+      vi.spyOn(mgr, "_validateHostPort").mockImplementation(() => {});
+      const mockServer = {
+        connect: vi.fn().mockResolvedValue(undefined),
+      } as unknown as Server;
+
+      mgr.setModuleCount(7);
+
+      await mgr.runSse(mockServer, {
+        host: "127.0.0.1",
+        port: 0,
+      });
+
+      const addr = mgr.httpServer!.address() as AddressInfo;
+      const res = await fetch(`http://127.0.0.1:${addr.port}/health`);
+      const body = await res.json();
+      expect(body.module_count).toBe(7);
+    });
+  });
+
   describe("close", () => {
     it("closes the HTTP server", async () => {
       const mgr = new TransportManager();

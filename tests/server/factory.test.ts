@@ -3,6 +3,8 @@ import { MCPServerFactory } from "../../src/server/factory.js";
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { ModuleDescriptor, Registry } from "../../src/types.js";
 
@@ -43,6 +45,9 @@ function makeDescriptor(
     annotations: overrides.annotations !== undefined
       ? overrides.annotations
       : null,
+    documentation: overrides.documentation !== undefined
+      ? overrides.documentation
+      : undefined,
   };
 }
 
@@ -245,7 +250,7 @@ describe("MCPServerFactory", () => {
       expect(callResult.isError).toBe(false);
     });
 
-    it("throws error when router returns isError=true", async () => {
+    it("returns isError=true result when router returns isError=true", async () => {
       const tools = [factory.buildTool(makeDescriptor())];
 
       const handlers = new Map<unknown, Function>();
@@ -265,11 +270,13 @@ describe("MCPServerFactory", () => {
       factory.registerHandlers(mockServer as any, tools, mockRouter as any);
 
       const callHandler = handlers.get(CallToolRequestSchema)!;
-      await expect(
-        callHandler({
-          params: { name: "bad.module", arguments: {} },
-        }),
-      ).rejects.toThrow("Module not found");
+      const result = await callHandler({
+        params: { name: "bad.module", arguments: {} },
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content).toEqual([
+        { type: "text", text: "Module not found" },
+      ]);
     });
 
     it("handles null arguments in tools/call", async () => {
@@ -312,5 +319,126 @@ describe("MCPServerFactory", () => {
     const tools = factory.buildTools(registry);
 
     expect(tools).toEqual([]);
+  });
+
+  // TC-FACTORY-RESOURCES: registerResourceHandlers
+  describe("registerResourceHandlers", () => {
+    it("includes modules with documentation in resource list", async () => {
+      const registry = createMockRegistry({
+        "mod.documented": makeDescriptor({
+          moduleId: "mod.documented",
+          documentation: "Some docs",
+        }),
+      });
+
+      const handlers = new Map<unknown, Function>();
+      const mockServer = {
+        setRequestHandler: (schema: unknown, handler: Function) => {
+          handlers.set(schema, handler);
+        },
+      };
+
+      factory.registerResourceHandlers(mockServer as any, registry);
+
+      const listHandler = handlers.get(ListResourcesRequestSchema);
+      expect(listHandler).toBeDefined();
+      const listResult = await listHandler!({});
+      expect(listResult.resources).toHaveLength(1);
+      expect(listResult.resources[0].uri).toBe("docs://mod.documented");
+      expect(listResult.resources[0].name).toBe("mod.documented documentation");
+      expect(listResult.resources[0].mimeType).toBe("text/plain");
+    });
+
+    it("excludes modules with null documentation from resource list", async () => {
+      const registry = createMockRegistry({
+        "mod.nodocs": makeDescriptor({
+          moduleId: "mod.nodocs",
+          documentation: null,
+        }),
+      });
+
+      const handlers = new Map<unknown, Function>();
+      const mockServer = {
+        setRequestHandler: (schema: unknown, handler: Function) => {
+          handlers.set(schema, handler);
+        },
+      };
+
+      factory.registerResourceHandlers(mockServer as any, registry);
+
+      const listHandler = handlers.get(ListResourcesRequestSchema);
+      expect(listHandler).toBeDefined();
+      const listResult = await listHandler!({});
+      expect(listResult.resources).toHaveLength(0);
+    });
+
+    it("excludes modules without documentation field from resource list", async () => {
+      const registry = createMockRegistry({
+        "mod.plain": makeDescriptor({
+          moduleId: "mod.plain",
+        }),
+      });
+
+      const handlers = new Map<unknown, Function>();
+      const mockServer = {
+        setRequestHandler: (schema: unknown, handler: Function) => {
+          handlers.set(schema, handler);
+        },
+      };
+
+      factory.registerResourceHandlers(mockServer as any, registry);
+
+      const listHandler = handlers.get(ListResourcesRequestSchema);
+      const listResult = await listHandler!({});
+      expect(listResult.resources).toHaveLength(0);
+    });
+
+    it("returns documentation text for valid resource read", async () => {
+      const registry = createMockRegistry({
+        "mod.documented": makeDescriptor({
+          moduleId: "mod.documented",
+          documentation: "Some docs about this module",
+        }),
+      });
+
+      const handlers = new Map<unknown, Function>();
+      const mockServer = {
+        setRequestHandler: (schema: unknown, handler: Function) => {
+          handlers.set(schema, handler);
+        },
+      };
+
+      factory.registerResourceHandlers(mockServer as any, registry);
+
+      const readHandler = handlers.get(ReadResourceRequestSchema);
+      expect(readHandler).toBeDefined();
+      const readResult = await readHandler!({
+        params: { uri: "docs://mod.documented" },
+      });
+      expect(readResult.contents).toHaveLength(1);
+      expect(readResult.contents[0].uri).toBe("docs://mod.documented");
+      expect(readResult.contents[0].text).toBe("Some docs about this module");
+      expect(readResult.contents[0].mimeType).toBe("text/plain");
+    });
+
+    it("throws error for unknown module in resource read", async () => {
+      const registry = createMockRegistry({});
+
+      const handlers = new Map<unknown, Function>();
+      const mockServer = {
+        setRequestHandler: (schema: unknown, handler: Function) => {
+          handlers.set(schema, handler);
+        },
+      };
+
+      factory.registerResourceHandlers(mockServer as any, registry);
+
+      const readHandler = handlers.get(ReadResourceRequestSchema)!;
+      await expect(
+        readHandler({
+          params: { uri: "docs://mod.unknown" },
+        }),
+      ).rejects.toThrow("Resource not found: docs://mod.unknown");
+    });
   });
 });

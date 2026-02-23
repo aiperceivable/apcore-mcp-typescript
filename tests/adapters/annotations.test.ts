@@ -9,6 +9,7 @@ const defaultAnnotations = {
   idempotent: false,
   requiresApproval: false,
   openWorld: true,
+  streaming: false,
 };
 
 describe("AnnotationMapper", () => {
@@ -120,29 +121,64 @@ describe("AnnotationMapper", () => {
       expect(mapper.toDescriptionSuffix(null)).toBe("");
     });
 
-    // TC-ANNOT-011: annotations -> contains [Annotations: and all 5 fields
-    it("includes [Annotations: and all five annotation fields", () => {
+    // TC-ANNOT-011: only includes non-default annotation fields
+    it("includes only annotation fields that differ from defaults", () => {
       const suffix = mapper.toDescriptionSuffix({
         readonly: true,
         destructive: false,
         idempotent: true,
         requiresApproval: false,
         openWorld: true,
+        streaming: false,
       });
 
       expect(suffix).toContain("[Annotations:");
       expect(suffix).toContain("readonly=true");
-      expect(suffix).toContain("destructive=false");
       expect(suffix).toContain("idempotent=true");
-      expect(suffix).toContain("requires_approval=false");
-      expect(suffix).toContain("open_world=true");
+      // Default values should NOT appear
+      expect(suffix).not.toContain("destructive=false");
+      expect(suffix).not.toContain("requires_approval=false");
+      expect(suffix).not.toContain("open_world=true");
     });
 
-    // TC-ANNOT-012: format starts with \n\n
-    it("starts with two newlines", () => {
-      const suffix = mapper.toDescriptionSuffix(defaultAnnotations);
+    // TC-ANNOT-012: all defaults returns empty string
+    it("returns empty string when all annotations are defaults", () => {
+      const suffix = mapper.toDescriptionSuffix({
+        ...defaultAnnotations,
+        streaming: false,
+      });
+
+      expect(suffix).toBe("");
+    });
+
+    // TC-ANNOT-013: non-default values produce suffix starting with \n\n
+    it("starts with two newlines when non-default annotations present", () => {
+      const suffix = mapper.toDescriptionSuffix({
+        ...defaultAnnotations,
+        destructive: true,
+        streaming: false,
+      });
 
       expect(suffix.startsWith("\n\n")).toBe(true);
+      expect(suffix).toContain("destructive=true");
+    });
+
+    // TC-ANNOT-014: all non-default values included
+    it("includes all fields when all differ from defaults", () => {
+      const suffix = mapper.toDescriptionSuffix({
+        readonly: true,
+        destructive: true,
+        idempotent: true,
+        requiresApproval: true,
+        openWorld: false,
+        streaming: false,
+      });
+
+      expect(suffix).toContain("readonly=true");
+      expect(suffix).toContain("destructive=true");
+      expect(suffix).toContain("idempotent=true");
+      expect(suffix).toContain("requires_approval=true");
+      expect(suffix).toContain("open_world=false");
     });
   });
 });

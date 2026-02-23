@@ -120,11 +120,13 @@ describe("OpenAIConverter", () => {
     });
 
     expect(tool.function.description).toContain("[Annotations:");
+    // Only non-default values should appear
     expect(tool.function.description).toContain("readonly=true");
-    expect(tool.function.description).toContain("destructive=false");
     expect(tool.function.description).toContain("idempotent=true");
-    expect(tool.function.description).toContain("requires_approval=false");
     expect(tool.function.description).toContain("open_world=false");
+    // Default values should NOT appear
+    expect(tool.function.description).not.toContain("destructive=false");
+    expect(tool.function.description).not.toContain("requires_approval=false");
   });
 
   // TC-OPENAI-005

@@ -42,23 +42,43 @@ export class AnnotationMapper {
   /**
    * Generate a description suffix string from annotations.
    *
-   * Returns a formatted string like:
-   *   `\n\n[Annotations: readonly=true, destructive=false, ...]`
+   * Only includes annotation fields that differ from their default values:
+   *   readonly=false, destructive=false, idempotent=false,
+   *   requires_approval=false, open_world=true
    *
-   * Returns an empty string if annotations are null.
+   * Returns a formatted string like:
+   *   `\n\n[Annotations: readonly=true, idempotent=true]`
+   *
+   * Returns an empty string if annotations are null or all fields are defaults.
    */
   toDescriptionSuffix(annotations: ModuleAnnotations | null): string {
     if (annotations === null) {
       return "";
     }
 
-    const parts: string[] = [
-      `readonly=${annotations.readonly}`,
-      `destructive=${annotations.destructive}`,
-      `idempotent=${annotations.idempotent}`,
-      `requires_approval=${annotations.requiresApproval}`,
-      `open_world=${annotations.openWorld}`,
-    ];
+    const DEFAULTS: Record<string, boolean> = {
+      readonly: false,
+      destructive: false,
+      idempotent: false,
+      requires_approval: false,
+      open_world: true,
+    };
+
+    const parts: string[] = [];
+    if (annotations.readonly !== DEFAULTS.readonly)
+      parts.push(`readonly=${annotations.readonly}`);
+    if (annotations.destructive !== DEFAULTS.destructive)
+      parts.push(`destructive=${annotations.destructive}`);
+    if (annotations.idempotent !== DEFAULTS.idempotent)
+      parts.push(`idempotent=${annotations.idempotent}`);
+    if (annotations.requiresApproval !== DEFAULTS.requires_approval)
+      parts.push(`requires_approval=${annotations.requiresApproval}`);
+    if (annotations.openWorld !== DEFAULTS.open_world)
+      parts.push(`open_world=${annotations.openWorld}`);
+
+    if (parts.length === 0) {
+      return "";
+    }
 
     return `\n\n[Annotations: ${parts.join(", ")}]`;
   }

@@ -20,8 +20,16 @@ export interface HttpTransportOptions {
   endpoint?: string;
 }
 
+/** Duck-typed interface for a metrics collector that can export Prometheus text. */
+export interface MetricsExporter {
+  exportPrometheus(): string;
+}
+
 /** Default maximum request body size in bytes (4MB). */
 const DEFAULT_MAX_BODY_BYTES = 4 * 1024 * 1024;
+
+/** Prometheus exposition format content-type. */
+const PROMETHEUS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8";
 
 /** Maximum request body size in bytes. Configurable via APCORE_MAX_BODY_BYTES env var. */
 const MAX_BODY_BYTES = (() => {
@@ -69,6 +77,79 @@ export class TransportManager {
   /** The underlying HTTP server, if an HTTP-based transport is active. */
   httpServer?: HttpServer;
 
+  /** Timestamp (ms) when this manager was created, used for uptime calculation. */
+  private _startTime: number = Date.now();
+
+  /** Number of registered modules/tools. */
+  private _moduleCount: number = 0;
+
+  /** Optional metrics collector for Prometheus /metrics endpoint. */
+  private _metricsCollector?: MetricsExporter;
+
+  /**
+   * Set the number of registered modules/tools.
+   *
+   * @param count - The number of modules
+   */
+  setModuleCount(count: number): void {
+    this._moduleCount = count;
+  }
+
+  /**
+   * Set the metrics collector for Prometheus /metrics endpoint.
+   *
+   * @param collector - A MetricsExporter instance (e.g. MetricsCollector from apcore)
+   */
+  setMetricsCollector(collector: MetricsExporter): void {
+    this._metricsCollector = collector;
+  }
+
+  /**
+   * Build the health check response payload.
+   *
+   * @returns Health status object with uptime and module count
+   */
+  private _buildHealthResponse(): { status: string; uptime_seconds: number; module_count: number } {
+    return {
+      status: "ok",
+      uptime_seconds: Math.round((Date.now() - this._startTime) / 100) / 10,
+      module_count: this._moduleCount,
+    };
+  }
+
+  /**
+   * Handle built-in routes (/health and /metrics).
+   *
+   * @param req - The incoming HTTP request
+   * @param res - The server response
+   * @param url - The parsed URL
+   * @returns true if the request was handled, false otherwise
+   */
+  private _handleBuiltinRoute(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
+    if (url.pathname === "/health" && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(this._buildHealthResponse()));
+      return true;
+    }
+    if (url.pathname === "/metrics" && req.method === "GET") {
+      if (!this._metricsCollector) {
+        res.writeHead(404);
+        res.end();
+        return true;
+      }
+      try {
+        const body = this._metricsCollector.exportPrometheus();
+        res.writeHead(200, { "Content-Type": PROMETHEUS_CONTENT_TYPE });
+        res.end(body);
+      } catch {
+        res.writeHead(500);
+        res.end();
+      }
+      return true;
+    }
+    return false;
+  }
+
   /**
    * Run the server using stdio transport.
    *
@@ -107,6 +188,8 @@ export class TransportManager {
 
     const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
       const url = new URL(req.url ?? "/", `http://${options.host}:${options.port}`);
+
+      if (this._handleBuiltinRoute(req, res, url)) return;
 
       if (url.pathname !== endpoint) {
         res.writeHead(404).end("Not Found");
@@ -171,6 +254,8 @@ export class TransportManager {
 
     const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
       const url = new URL(req.url ?? "/", `http://${options.host}:${options.port}`);
+
+      if (this._handleBuiltinRoute(req, res, url)) return;
 
       if (url.pathname === endpoint && req.method === "GET") {
         // Establish SSE connection

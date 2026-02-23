@@ -74,6 +74,7 @@ export interface Executor {
   call(moduleId: string, inputs: Record<string, unknown>, context?: unknown): Promise<Record<string, unknown>>;
   callAsync?(moduleId: string, inputs: Record<string, unknown>, context?: unknown): Promise<Record<string, unknown>>;
   stream?(moduleId: string, inputs: Record<string, unknown>, context?: unknown): AsyncIterable<Record<string, unknown>>;
+  validate?(toolName: string, args: Record<string, unknown>): unknown | Promise<unknown>;
 }
 
 // ─── Error Type ──────────────────────────────────────────────────────────────
