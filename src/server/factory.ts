@@ -16,7 +16,6 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import type {
   Tool,
-  TextContent,
   CallToolResult,
   Resource,
   ReadResourceResult,
