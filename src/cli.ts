@@ -105,7 +105,7 @@ export async function main(): Promise<void> {
 
   // Dynamic import of apcore Registry (peer dependency)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let Registry: new (options: { extensions_dir: string }) => { discover(): number };
+  let Registry: new (options: { extensionsDir: string }) => { discover(): Promise<number> };
   try {
     // @ts-expect-error - apcore-js is a peer dependency, not available at compile time
     const apcore = await import("apcore-js");
@@ -117,8 +117,8 @@ export async function main(): Promise<void> {
   }
 
   // Create Registry and discover modules
-  const registry = new Registry({ extensions_dir: resolvedDir });
-  const numModules = registry.discover();
+  const registry = new Registry({ extensionsDir: resolvedDir });
+  const numModules = await registry.discover();
 
   if (numModules === 0) {
     console.warn(`Warning: No modules discovered in '${extensionsDir}'.`);

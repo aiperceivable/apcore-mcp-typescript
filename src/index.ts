@@ -93,7 +93,7 @@ export function resolveExecutor(registryOrExecutor: RegistryOrExecutor): Executo
     const apcore = require("apcore-js");
     const ExecutorClass = apcore.Executor ?? apcore.default?.Executor;
     if (ExecutorClass) {
-      return new ExecutorClass(registryOrExecutor) as Executor;
+      return new ExecutorClass({ registry: registryOrExecutor }) as Executor;
     }
   } catch {
     // apcore-js not installed — fall through to error

@@ -49,6 +49,7 @@ export interface ModuleAnnotations {
 
 export interface ModuleDescriptor {
   moduleId: string;
+  name?: string | null;
   description: string;
   inputSchema: JsonSchema;
   outputSchema: JsonSchema;
@@ -57,6 +58,7 @@ export interface ModuleDescriptor {
   tags?: string[];
   version?: string;
   examples?: unknown[];
+  metadata?: Record<string, unknown>;
 }
 
 // ─── Core Interfaces (duck-typed for apcore-typescript compatibility) ────────
@@ -66,7 +68,7 @@ export interface Registry {
   getDefinition(moduleId: string): ModuleDescriptor | null;
   has?(moduleId: string): boolean;
   on(event: string, callback: (...args: unknown[]) => void): void;
-  discover?(): number;
+  discover?(): Promise<number>;
 }
 
 export interface Executor {

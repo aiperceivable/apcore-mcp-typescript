@@ -51,7 +51,7 @@
     "@modelcontextprotocol/sdk": "^1.26.0"
   },
   "peerDependencies": {
-    "apcore-js": ">=0.4.0"
+    "apcore-js": ">=0.6.0"
   },
   "peerDependenciesMeta": {
     "apcore-js": {

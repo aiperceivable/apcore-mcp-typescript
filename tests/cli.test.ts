@@ -1,9 +1,13 @@
 /**
  * Tests for the CLI entry point (src/cli.ts).
  *
- * Each test uses vi.resetModules() + dynamic import to get a fresh CLI module
- * load with the appropriate process.argv. process.exit is mocked to record
- * exit codes without actually terminating the process.
+ * We call the exported `main()` function directly with mocked process.argv.
+ * process.exit is mocked to throw a sentinel so that fail()/exit() stops
+ * execution cleanly rather than continuing past the mock.
+ *
+ * IMPORTANT: apcore-js on npm is a stub without dist/. All test scenarios
+ * must vi.doMock("apcore-js") BEFORE importing cli.ts to avoid Vite
+ * resolution errors.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -11,21 +15,35 @@ import { mkdtempSync, rmdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// ── Sentinel for process.exit ──────────────────────────────────────────────
+
+class ExitSentinel extends Error {
+  code: number;
+  constructor(code: number) {
+    super(`process.exit(${code})`);
+    this.code = code;
+  }
+}
+
 describe("CLI (cli.ts)", () => {
   const originalArgv = [...process.argv];
   const originalExit = process.exit;
 
   let tmpDir: string;
-  let exitCalls: number[];
   let errorMessages: string[];
   let logMessages: string[];
   let infoMessages: string[];
   let warnMessages: string[];
 
+  // Suppress unhandled rejections from module-level main().catch() auto-invocation
+  const suppressUnhandled = (err: unknown) => {
+    if (err instanceof ExitSentinel) return; // expected
+  };
+
   beforeEach(() => {
     vi.resetModules();
+    process.on("unhandledRejection", suppressUnhandled);
 
-    exitCalls = [];
     errorMessages = [];
     logMessages = [];
     infoMessages = [];
@@ -33,9 +51,9 @@ describe("CLI (cli.ts)", () => {
 
     tmpDir = mkdtempSync(join(tmpdir(), "apcore-cli-test-"));
 
-    // Mock process.exit to record the code without terminating
+    // Mock process.exit to throw sentinel — stops further execution
     process.exit = ((code?: number) => {
-      exitCalls.push(code ?? 0);
+      throw new ExitSentinel(code ?? 0);
     }) as never;
 
     vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
@@ -55,6 +73,7 @@ describe("CLI (cli.ts)", () => {
   afterEach(() => {
     process.argv = [...originalArgv];
     process.exit = originalExit;
+    process.removeListener("unhandledRejection", suppressUnhandled);
     vi.restoreAllMocks();
     try {
       rmdirSync(tmpDir);
@@ -64,257 +83,206 @@ describe("CLI (cli.ts)", () => {
   });
 
   /**
-   * Helper: set process.argv, mock serve/VERSION, dynamically import cli.ts.
-   * The module's top-level `main()` call executes automatically on import.
+   * Set process.argv, mock all external deps, and call main() directly.
+   * Returns the exit code from ExitSentinel, or -1 if main() completed normally.
    *
-   * Since process.exit is mocked to NOT terminate, code may continue past
-   * fail() calls — we always check exitCalls[0] for the first exit.
+   * Every scenario mocks apcore-js (either as available or unavailable)
+   * to avoid Vite trying to resolve the stub package.
    */
-  async function runCli(args: string[]) {
+  async function runMain(args: string[], opts: {
+    apcoreAvailable?: boolean;
+    discoverCount?: number;
+    serveFn?: ReturnType<typeof vi.fn>;
+  } = {}) {
+    const { apcoreAvailable = true, discoverCount = 0, serveFn } = opts;
+
     process.argv = ["node", "cli.js", ...args];
 
+    // Always mock apcore-js to prevent Vite resolution errors
+    if (apcoreAvailable) {
+      vi.doMock("apcore-js", () => ({
+        Registry: vi.fn().mockImplementation(() => ({
+          discover: vi.fn().mockResolvedValue(discoverCount),
+        })),
+      }));
+    } else {
+      vi.doMock("apcore-js", () => {
+        throw new Error("Cannot find module 'apcore-js'");
+      });
+    }
+
+    // Always mock index.js for serve/VERSION
+    const mockServe = serveFn ?? vi.fn().mockResolvedValue(undefined);
     vi.doMock("../src/index.js", () => ({
-      serve: vi.fn().mockResolvedValue(undefined),
+      serve: mockServe,
       VERSION: "0.0.0-test",
     }));
 
-    try {
-      await import("../src/cli.js");
-    } catch {
-      // Swallow errors from auto-executing main()
-    }
-    // Wait for async main() to settle
-    await new Promise((r) => setTimeout(r, 200));
+    const mod = await import("../src/cli.js");
 
-    return { exitCalls, errorMessages, logMessages, infoMessages, warnMessages };
+    // Wait a tick for the module-level main().catch() auto-invocation to settle
+    await new Promise((r) => setTimeout(r, 50));
+
+    const { main } = mod;
+
+    try {
+      await main();
+      return { exitCode: -1, mockServe };
+    } catch (e) {
+      if (e instanceof ExitSentinel) {
+        return { exitCode: e.code, mockServe };
+      }
+      throw e;
+    }
   }
 
   // ── Help ────────────────────────────────────────────────────────────────
 
   it("prints help and exits 0 with --help", async () => {
-    const result = await runCli(["--help"]);
+    const { exitCode } = await runMain(["--help"]);
 
-    expect(result.exitCalls[0]).toBe(0);
-    expect(result.logMessages.some((m) => m.includes("apcore-mcp"))).toBe(true);
-    expect(
-      result.logMessages.some((m) => m.includes("--extensions-dir")),
-    ).toBe(true);
+    expect(exitCode).toBe(0);
+    expect(logMessages.some((m) => m.includes("apcore-mcp"))).toBe(true);
+    expect(logMessages.some((m) => m.includes("--extensions-dir"))).toBe(true);
   });
 
   // ── Argument validation ────────────────────────────────────────────────
 
   it("fails when --extensions-dir is missing", async () => {
-    const result = await runCli([]);
+    const { exitCode } = await runMain([]);
 
-    expect(result.exitCalls[0]).toBe(1);
+    expect(exitCode).toBe(1);
     expect(
-      result.errorMessages.some((m) =>
-        m.includes("--extensions-dir is required"),
-      ),
+      errorMessages.some((m) => m.includes("--extensions-dir is required")),
     ).toBe(true);
   });
 
   it("fails when --extensions-dir path does not exist", async () => {
-    const result = await runCli([
+    const { exitCode } = await runMain([
       "--extensions-dir",
       "/nonexistent/path/12345",
     ]);
 
-    expect(result.exitCalls[0]).toBe(1);
-    expect(
-      result.errorMessages.some((m) => m.includes("does not exist")),
-    ).toBe(true);
+    expect(exitCode).toBe(1);
+    expect(errorMessages.some((m) => m.includes("does not exist"))).toBe(true);
   });
 
   it("fails for invalid --transport", async () => {
-    const result = await runCli([
-      "--extensions-dir",
-      tmpDir,
-      "--transport",
-      "websocket",
+    const { exitCode } = await runMain([
+      "--extensions-dir", tmpDir,
+      "--transport", "websocket",
     ]);
 
-    expect(result.exitCalls[0]).toBe(1);
+    expect(exitCode).toBe(1);
     expect(
-      result.errorMessages.some((m) =>
-        m.includes("--transport must be one of"),
-      ),
+      errorMessages.some((m) => m.includes("--transport must be one of")),
     ).toBe(true);
   });
 
   it("fails for out-of-range --port", async () => {
-    const result = await runCli([
-      "--extensions-dir",
-      tmpDir,
-      "--port",
-      "99999",
+    const { exitCode } = await runMain([
+      "--extensions-dir", tmpDir,
+      "--port", "99999",
     ]);
 
-    expect(result.exitCalls[0]).toBe(1);
+    expect(exitCode).toBe(1);
     expect(
-      result.errorMessages.some((m) => m.includes("--port must be in range")),
+      errorMessages.some((m) => m.includes("--port must be in range")),
     ).toBe(true);
   });
 
   it("fails for non-numeric --port", async () => {
-    const result = await runCli([
-      "--extensions-dir",
-      tmpDir,
-      "--port",
-      "abc",
+    const { exitCode } = await runMain([
+      "--extensions-dir", tmpDir,
+      "--port", "abc",
     ]);
 
-    expect(result.exitCalls[0]).toBe(1);
+    expect(exitCode).toBe(1);
     expect(
-      result.errorMessages.some((m) => m.includes("--port must be in range")),
+      errorMessages.some((m) => m.includes("--port must be in range")),
     ).toBe(true);
   });
 
   it("fails for --name exceeding 255 characters", async () => {
     const longName = "a".repeat(256);
-    const result = await runCli([
-      "--extensions-dir",
-      tmpDir,
-      "--name",
-      longName,
+    const { exitCode } = await runMain([
+      "--extensions-dir", tmpDir,
+      "--name", longName,
     ]);
 
-    expect(result.exitCalls[0]).toBe(1);
+    expect(exitCode).toBe(1);
     expect(
-      result.errorMessages.some((m) =>
-        m.includes("--name must be at most 255"),
-      ),
+      errorMessages.some((m) => m.includes("--name must be at most 255")),
     ).toBe(true);
   });
 
   // ── Unknown flags ──────────────────────────────────────────────────────
 
   it("exits 2 for unknown flags (parseArgs strict mode)", async () => {
-    const result = await runCli(["--unknown-flag"]);
+    const { exitCode } = await runMain(["--unknown-flag"]);
 
-    expect(result.exitCalls[0]).toBe(2);
+    expect(exitCode).toBe(2);
   });
 
   // ── apcore-js availability ─────────────────────────────────────────────
 
-  it("fails when apcore-js is not installed", async () => {
-    // apcore-js is not in node_modules, so the dynamic import naturally fails
-    const result = await runCli(["--extensions-dir", tmpDir]);
+  it("fails when apcore-js is not importable", async () => {
+    const { exitCode } = await runMain(
+      ["--extensions-dir", tmpDir],
+      { apcoreAvailable: false },
+    );
 
-    expect(result.exitCalls[0]).toBe(1);
-    expect(
-      result.errorMessages.some((m) => m.includes("apcore-js")),
-    ).toBe(true);
+    expect(exitCode).toBe(1);
+    expect(errorMessages.some((m) => m.includes("apcore-js"))).toBe(true);
   });
 
-  // ── Success path with mocked apcore-js ─────────────────────────────────
+  // ── Success path ───────────────────────────────────────────────────────
 
   it("succeeds when apcore-js is available and calls serve()", async () => {
-    const MockRegistry = vi.fn().mockImplementation(() => ({
-      discover: vi.fn().mockReturnValue(3),
-    }));
-    vi.doMock("apcore-js", () => ({
-      Registry: MockRegistry,
-    }));
+    const { exitCode, mockServe } = await runMain(
+      ["--extensions-dir", tmpDir],
+      { apcoreAvailable: true, discoverCount: 3 },
+    );
 
-    const mockServe = vi.fn().mockResolvedValue(undefined);
-    vi.doMock("../src/index.js", () => ({
-      serve: mockServe,
-      VERSION: "0.0.0-test",
-    }));
-
-    process.argv = ["node", "cli.js", "--extensions-dir", tmpDir];
-
-    try {
-      await import("../src/cli.js");
-    } catch {
-      // Swallow
-    }
-    await new Promise((r) => setTimeout(r, 200));
-
-    expect(MockRegistry).toHaveBeenCalledTimes(1);
-    expect(mockServe).toHaveBeenCalledTimes(1);
-    // No process.exit was called — clean exit
-    expect(exitCalls).toHaveLength(0);
+    expect(exitCode).toBe(-1); // no process.exit
+    // main() is called manually + once by module-level auto-invocation
+    expect(mockServe).toHaveBeenCalled();
   });
 
   it("warns when 0 modules are discovered", async () => {
-    const MockRegistry = vi.fn().mockImplementation(() => ({
-      discover: vi.fn().mockReturnValue(0),
-    }));
-    vi.doMock("apcore-js", () => ({
-      Registry: MockRegistry,
-    }));
+    const { exitCode, mockServe } = await runMain(
+      ["--extensions-dir", tmpDir],
+      { apcoreAvailable: true, discoverCount: 0 },
+    );
 
-    const mockServe = vi.fn().mockResolvedValue(undefined);
-    vi.doMock("../src/index.js", () => ({
-      serve: mockServe,
-      VERSION: "0.0.0-test",
-    }));
-
-    process.argv = ["node", "cli.js", "--extensions-dir", tmpDir];
-
-    try {
-      await import("../src/cli.js");
-    } catch {
-      // Swallow
-    }
-    await new Promise((r) => setTimeout(r, 200));
-
+    expect(exitCode).toBe(-1);
     expect(
       warnMessages.some((m) => m.includes("No modules discovered")),
     ).toBe(true);
-    expect(mockServe).toHaveBeenCalledTimes(1);
+    expect(mockServe).toHaveBeenCalled();
   });
 
   it("logs module count when modules are discovered", async () => {
-    const MockRegistry = vi.fn().mockImplementation(() => ({
-      discover: vi.fn().mockReturnValue(5),
-    }));
-    vi.doMock("apcore-js", () => ({
-      Registry: MockRegistry,
-    }));
+    const { exitCode } = await runMain(
+      ["--extensions-dir", tmpDir],
+      { apcoreAvailable: true, discoverCount: 5 },
+    );
 
-    const mockServe = vi.fn().mockResolvedValue(undefined);
-    vi.doMock("../src/index.js", () => ({
-      serve: mockServe,
-      VERSION: "0.0.0-test",
-    }));
-
-    process.argv = ["node", "cli.js", "--extensions-dir", tmpDir];
-
-    try {
-      await import("../src/cli.js");
-    } catch {
-      // Swallow
-    }
-    await new Promise((r) => setTimeout(r, 200));
-
+    expect(exitCode).toBe(-1);
     expect(
       infoMessages.some((m) => m.includes("Discovered 5 module(s)")),
     ).toBe(true);
   });
 
   it("fails for invalid --log-level", async () => {
-    const MockRegistry = vi.fn().mockImplementation(() => ({
-      discover: vi.fn().mockReturnValue(1),
-    }));
-    vi.doMock("apcore-js", () => ({
-      Registry: MockRegistry,
-    }));
+    const { exitCode } = await runMain(
+      ["--extensions-dir", tmpDir, "--log-level", "TRACE"],
+      { apcoreAvailable: true, discoverCount: 1 },
+    );
 
-    const result = await runCli([
-      "--extensions-dir",
-      tmpDir,
-      "--log-level",
-      "TRACE",
-    ]);
-
-    expect(result.exitCalls[0]).toBe(1);
+    expect(exitCode).toBe(1);
     expect(
-      result.errorMessages.some((m) =>
-        m.includes("--log-level must be one of"),
-      ),
+      errorMessages.some((m) => m.includes("--log-level must be one of")),
     ).toBe(true);
   });
 });
