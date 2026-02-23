@@ -477,8 +477,8 @@ packages:
     resolution: {integrity: sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg==}
     engines: {node: '>=12'}
 
-  apcore-js@0.5.0:
-    resolution: {integrity: sha512-sqdM+YuF1jUC8nT5IyYBTusjmiZUA+HDYOemheyCJ5Nvuua8GpNudPLuLq9RXudJzy6Qna29u53x7Sa81vC8Ng==}
+  apcore-js@0.6.0:
+    resolution: {integrity: sha512-OhL4JNYHk/EZO9vPAt1NGaa3kePoW/2iQKmRXuRrDS3oMD0v405asvuDiXlKDokUK+pLHzKkkLgGRWAiRPK2gQ==}
     engines: {node: '>=18.0.0'}
 
   apdev-js@0.1.1:
@@ -1509,7 +1509,7 @@ snapshots:
 
   ansi-styles@6.2.3: {}
 
-  apcore-js@0.5.0:
+  apcore-js@0.6.0:
     dependencies:
       '@sinclair/typebox': 0.34.48
       js-yaml: 4.1.1
