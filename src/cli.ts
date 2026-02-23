@@ -107,12 +107,12 @@ export async function main(): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let Registry: new (options: { extensions_dir: string }) => { discover(): number };
   try {
-    // @ts-expect-error - apcore is a peer dependency, not available at compile time
-    const apcore = await import("apcore");
+    // @ts-expect-error - apcore-js is a peer dependency, not available at compile time
+    const apcore = await import("apcore-js");
     Registry = apcore.Registry;
   } catch {
     fail(
-      "Failed to import 'apcore' package. Install it with: npm install apcore",
+      "Failed to import 'apcore-js' package. Install it with: npm install apcore-js",
     );
   }
 

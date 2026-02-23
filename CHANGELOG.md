@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New test suite `tests/server/metrics-endpoint.test.ts` — covers `/metrics` endpoint for both `streamable-http` and `sse` transports (200, 404, 500, content-type).
 - New test suite `tests/server/router-validate.test.ts` — covers input validation in `ExecutionRouter` (F3).
 - New test suite `tests/server/transport.test.ts` — covers `/health` endpoint for both transports, including `setModuleCount()` reflection.
+- **`resolveRegistry()` and `resolveExecutor()` exported** — Both helper functions are now part of the public API, enabling advanced users to manually resolve Registry/Executor from a `RegistryOrExecutor` union without going through `serve()` or `toOpenaiTools()`.
+- **`peerDependencies` declaration for `apcore-js`** — `package.json` now declares `apcore-js >= 0.4.0` as an optional peer dependency, informing users of the runtime requirement for CLI and bare-Registry modes.
+- New test suite `tests/resolve-executor.test.ts` — covers `resolveRegistry()` (3 tests), `resolveExecutor()` pass-through and error paths (4 tests), and `serve()` integration (2 tests).
+- New test suite `tests/cli.test.ts` — covers CLI argument validation, help output, apcore-js availability, success path with mocked apcore-js, module discovery logging, and log-level validation (13 tests).
 
 ### Changed
 
@@ -37,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`package.json` keywords expanded** — Added `mcp-server`, `tool-bridge`, `agent-tools`, `schema`, `json-schema`, `validation`, `router`, `transport`, `cli` for better npm discoverability.
 
 ### Fixed
+
+- **Package name corrected from `"apcore"` to `"apcore-js"`** — `resolveExecutor()` in `src/index.ts` used `require("apcore")` and CLI in `src/cli.ts` used `import("apcore")`, which would fail even when `apcore-js` was installed. Both now reference the correct package name `"apcore-js"`, with updated error messages.
 
 - **Null-safe `call` / `callAsync` selection** — `ExecutionRouter` now uses `typeof` checks instead of truthiness when selecting between `executor.call()` and `executor.callAsync()`, preventing accidental fallthrough on falsy executor methods.
 - **`serve()` input validation** — `serve()` now validates `name` (non-empty, ≤ 255 chars), `tags` (no empty strings), and `prefix` (non-empty if provided) before starting, throwing descriptive errors.

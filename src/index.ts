@@ -60,8 +60,11 @@ export type { BuildToolsOptions } from "./server/factory.js";
 
 /**
  * Extract Registry from either a Registry or Executor instance.
+ *
+ * If the argument has a `registry` property (i.e. it's an Executor),
+ * returns that property. Otherwise assumes it's a Registry and returns it directly.
  */
-function resolveRegistry(registryOrExecutor: RegistryOrExecutor): Registry {
+export function resolveRegistry(registryOrExecutor: RegistryOrExecutor): Registry {
   if ("registry" in registryOrExecutor) {
     // It's an Executor — get its registry
     return (registryOrExecutor as Executor).registry;
@@ -73,10 +76,13 @@ function resolveRegistry(registryOrExecutor: RegistryOrExecutor): Registry {
 /**
  * Get or create an Executor from either a Registry or Executor instance.
  *
+ * If the argument already has `call` or `callAsync`, returns it directly.
  * If a bare Registry is passed, attempts to dynamically import the Executor
- * from apcore and create a default instance (matching Python's resolve_executor).
+ * from apcore-js and create a default instance (matching Python's resolve_executor).
+ *
+ * @throws {Error} If the argument is a Registry and apcore-js is not installed.
  */
-function resolveExecutor(registryOrExecutor: RegistryOrExecutor): Executor {
+export function resolveExecutor(registryOrExecutor: RegistryOrExecutor): Executor {
   if ("call" in registryOrExecutor || "callAsync" in registryOrExecutor) {
     // Already an Executor
     return registryOrExecutor as Executor;
@@ -84,16 +90,16 @@ function resolveExecutor(registryOrExecutor: RegistryOrExecutor): Executor {
   // It's a bare Registry — create a default Executor
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const apcore = require("apcore");
+    const apcore = require("apcore-js");
     const ExecutorClass = apcore.Executor ?? apcore.default?.Executor;
     if (ExecutorClass) {
       return new ExecutorClass(registryOrExecutor) as Executor;
     }
   } catch {
-    // apcore not installed — fall through to error
+    // apcore-js not installed — fall through to error
   }
   throw new Error(
-    "serve() requires an Executor instance, or apcore must be installed to auto-create one from a Registry.",
+    "serve() requires an Executor instance, or apcore-js must be installed to auto-create one from a Registry.",
   );
 }
 
