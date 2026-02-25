@@ -226,6 +226,7 @@ describe("MCPServerFactory", () => {
         handleCall: vi.fn().mockResolvedValue([
           [{ type: "text", text: '{"result":"ok"}' }],
           false,
+          "trace-abc",
         ]),
       };
 
@@ -247,10 +248,11 @@ describe("MCPServerFactory", () => {
       expect(callResult.content).toEqual([
         { type: "text", text: '{"result":"ok"}' },
       ]);
-      expect(callResult.isError).toBe(false);
+      // Success path: isError should not be set
+      expect(callResult.isError).toBeUndefined();
     });
 
-    it("returns isError=true result when router returns isError=true", async () => {
+    it("throws error when router returns isError=true so MCP SDK sets isError", async () => {
       const tools = [factory.buildTool(makeDescriptor())];
 
       const handlers = new Map<unknown, Function>();
@@ -264,19 +266,18 @@ describe("MCPServerFactory", () => {
         handleCall: vi.fn().mockResolvedValue([
           [{ type: "text", text: "Module not found" }],
           true,
+          undefined,
         ]),
       };
 
       factory.registerHandlers(mockServer as any, tools, mockRouter as any);
 
       const callHandler = handlers.get(CallToolRequestSchema)!;
-      const result = await callHandler({
-        params: { name: "bad.module", arguments: {} },
-      });
-      expect(result.isError).toBe(true);
-      expect(result.content).toEqual([
-        { type: "text", text: "Module not found" },
-      ]);
+      await expect(
+        callHandler({
+          params: { name: "bad.module", arguments: {} },
+        }),
+      ).rejects.toThrow("Module not found");
     });
 
     it("handles null arguments in tools/call", async () => {
@@ -293,6 +294,7 @@ describe("MCPServerFactory", () => {
         handleCall: vi.fn().mockResolvedValue([
           [{ type: "text", text: "{}" }],
           false,
+          undefined,
         ]),
       };
 

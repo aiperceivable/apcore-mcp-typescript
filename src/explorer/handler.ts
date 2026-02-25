@@ -185,38 +185,26 @@ export class ExplorerHandler {
     }
 
     try {
-      const [content, isError] = await this._router.handleCall(toolName, body);
+      const [content, isError, traceId] = await this._router.handleCall(toolName, body);
 
-      // Extract text from content list
-      const texts = content
-        .filter((item) => item.type === "text")
-        .map((item) => item.text);
-
-      // Try to parse as JSON for a cleaner response
-      let result: unknown;
-      if (texts.length === 1) {
-        try {
-          result = JSON.parse(texts[0]);
-        } catch {
-          result = texts[0];
-        }
-      } else {
-        result = texts;
+      // Return MCP-compliant CallToolResult format
+      const result: Record<string, unknown> = {
+        content,
+        isError,
+      };
+      if (traceId) {
+        result._meta = { _trace_id: traceId };
       }
 
-      if (isError) {
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: result }));
-      } else {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ result }));
-      }
+      res.writeHead(isError ? 500 : 200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(result));
     } catch (err) {
       console.error(`Explorer call_tool error for ${toolName}:`, err);
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
-          error: err instanceof Error ? err.message : String(err),
+          content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }],
+          isError: true,
         }),
       );
     }

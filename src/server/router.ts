@@ -15,8 +15,8 @@ import { createBridgeContext } from "./context.js";
 import { MCP_PROGRESS_KEY, MCP_ELICIT_KEY } from "../helpers.js";
 import type { ElicitResult } from "../helpers.js";
 
-/** Tuple of [content array, isError flag] returned from handleCall. */
-export type CallResult = [TextContentDict[], boolean];
+/** Tuple of [content array, isError flag, traceId] returned from handleCall. */
+export type CallResult = [TextContentDict[], boolean, string | undefined];
 
 /**
  * Extra context passed from the MCP SDK request handler.
@@ -68,7 +68,7 @@ export class ExecutionRouter {
    * @param toolName - The MCP tool name (maps to apcore moduleId)
    * @param args - The tool call arguments
    * @param extra - Optional MCP SDK extra context with sendNotification and _meta
-   * @returns Tuple of [content, isError] where content is an array of text content dicts
+   * @returns Tuple of [content, isError, traceId] where content is an array of text content dicts
    */
   async handleCall(
     toolName: string,
@@ -158,14 +158,14 @@ export class ExecutionRouter {
             const content: TextContentDict[] = [
               { type: "text", text: `Validation failed: ${detail}` },
             ];
-            return [content, true];
+            return [content, true, undefined];
           }
         } catch (valError: unknown) {
           const errorInfo = this._errorMapper.toMcpError(valError);
           const content: TextContentDict[] = [
             { type: "text", text: errorInfo.message },
           ];
-          return [content, true];
+          return [content, true, undefined];
         }
       }
 
@@ -202,14 +202,8 @@ export class ExecutionRouter {
           },
         ];
 
-        if (context) {
-          content.push({
-            type: "text",
-            text: JSON.stringify({ _trace_id: context.traceId }),
-          });
-        }
-
-        return [content, false];
+        const traceId = context?.traceId;
+        return [content, false, traceId];
       }
 
       // ── Non-streaming path ────────────────────────────────────────────
@@ -230,14 +224,8 @@ export class ExecutionRouter {
         },
       ];
 
-      if (context) {
-        content.push({
-          type: "text",
-          text: JSON.stringify({ _trace_id: context.traceId }),
-        });
-      }
-
-      return [content, false];
+      const traceId = context?.traceId;
+      return [content, false, traceId];
     } catch (error: unknown) {
       console.error(`handleCall error for ${toolName}:`, error);
       const errorInfo = this._errorMapper.toMcpError(error);
@@ -249,7 +237,7 @@ export class ExecutionRouter {
         },
       ];
 
-      return [content, true];
+      return [content, true, undefined];
     }
   }
 }

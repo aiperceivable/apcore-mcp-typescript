@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-02-25
+
+### Added
+
+- **Example modules**: `examples/` with 5 runnable demo modules — 3 class-based (`text_echo`, `math_calc`, `greeting`) and 2 programmatic via `module()` factory (`convert_temperature`, `word_count`) — for quick Explorer UI demo out of the box.
+
+### Changed
+
+- **BREAKING: `ExecutionRouter.handleCall()` return type**: Changed from `[content, isError]` to `[content, isError, traceId]`. Callers that unpack the 2-tuple must update to 3-tuple unpacking.
+- **BREAKING: Explorer `/call` response format**: Changed from `{"result": ...}` / `{"error": ...}` to MCP-compliant `CallToolResult` format: `{"content": [...], "isError": bool, "_meta": {"_trace_id": ...}}`.
+
+### Fixed
+
+- **MCP protocol compliance**: Router no longer injects `_trace_id` as a content block in tool results. `traceId` is now returned as a separate tuple element and surfaced in Explorer responses via `_meta`. Factory handler throws errors for error results so the MCP SDK correctly sets `isError=true`.
+- **Explorer UI default values**: `defaultFromSchema()` now correctly skips `null` defaults and falls through to type-based placeholders, fixing blank form fields for binding.yaml modules.
+
 ## [0.5.0] - 2026-02-25
 
 ### Added

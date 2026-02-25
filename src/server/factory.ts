@@ -253,17 +253,24 @@ export class MCPServerFactory {
           : undefined,
       };
 
-      const [content, isError] = await router.handleCall(
+      const [content, isError, _traceId] = await router.handleCall(
         name,
         toolArgs,
         handleCallExtra,
       );
 
-      // Return tool errors as MCP CallToolResult with isError flag
-      // rather than throwing protocol-level errors
+      const textContents = content.map(c => ({ type: "text" as const, text: c.text }));
+
+      // NOTE: The MCP SDK decorator always wraps our return in
+      // CallToolResult(isError=false). Setting isError=true is not
+      // supported by the current SDK decorator. For errors, we raise
+      // so the SDK sets isError=true on the CallToolResult.
+      if (isError) {
+        throw new Error(textContents[0]?.text ?? "Unknown error");
+      }
+
       const result: CallToolResult = {
-        content: content.map(c => ({ type: "text" as const, text: c.text })),
-        isError,
+        content: textContents,
       };
 
       return result;

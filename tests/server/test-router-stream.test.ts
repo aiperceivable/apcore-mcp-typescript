@@ -70,7 +70,7 @@ describe("ExecutionRouter — streaming", () => {
     const router = new ExecutionRouter(executor);
     const extra = createExtra("tok-123");
 
-    const [content, isError] = await router.handleCall(
+    const [content, isError, traceId] = await router.handleCall(
       "test.stream",
       { input: "hello" },
       extra,
@@ -96,12 +96,12 @@ describe("ExecutionRouter — streaming", () => {
     }
 
     // Final result should be shallow merge of all chunks (same key = last wins)
-    // Content has 2 items: result + trace_id
-    expect(content).toHaveLength(2);
+    // Content has 1 item: result only (trace_id returned as 3rd tuple element)
+    expect(content).toHaveLength(1);
     expect(content[0].type).toBe("text");
     expect(JSON.parse(content[0].text)).toEqual({ partial: "chunk-2" });
-    // Second item is trace_id
-    expect(JSON.parse(content[1].text)).toHaveProperty("_trace_id");
+    // trace_id returned as separate element
+    expect(traceId).toBeDefined();
 
     // call() should NOT have been invoked
     expect(executor.call).not.toHaveBeenCalled();
@@ -118,7 +118,7 @@ describe("ExecutionRouter — streaming", () => {
     const router = new ExecutionRouter(executor);
     const extra = createExtra(42);
 
-    const [content, isError] = await router.handleCall(
+    const [content, isError, traceId] = await router.handleCall(
       "test.merge",
       {},
       extra,
@@ -130,9 +130,9 @@ describe("ExecutionRouter — streaming", () => {
       beta: 2,
       gamma: 3,
     });
-    // trace_id appended
-    expect(content).toHaveLength(2);
-    expect(JSON.parse(content[1].text)).toHaveProperty("_trace_id");
+    // trace_id returned as 3rd tuple element, not appended to content
+    expect(content).toHaveLength(1);
+    expect(traceId).toBeDefined();
   });
 
   // TC-STREAM-003: Falls back to call() when executor has no stream()
@@ -142,7 +142,7 @@ describe("ExecutionRouter — streaming", () => {
     const router = new ExecutionRouter(executor);
     const extra = createExtra("tok-fallback");
 
-    const [content, isError] = await router.handleCall(
+    const [content, isError, traceId] = await router.handleCall(
       "test.nostream",
       { q: "?" },
       extra,
@@ -163,9 +163,9 @@ describe("ExecutionRouter — streaming", () => {
     expect(callArgs[2]).toBeDefined();
     expect(typeof callArgs[2].data[MCP_PROGRESS_KEY]).toBe("function");
 
-    // trace_id appended (context was created)
-    expect(content).toHaveLength(2);
-    expect(JSON.parse(content[1].text)).toHaveProperty("_trace_id");
+    // trace_id returned as 3rd tuple element (context was created)
+    expect(content).toHaveLength(1);
+    expect(traceId).toBeDefined();
   });
 
   // TC-STREAM-004: Falls back to call() when no progressToken provided
@@ -180,7 +180,7 @@ describe("ExecutionRouter — streaming", () => {
       sendNotification: vi.fn().mockResolvedValue(undefined),
     };
 
-    const [content, isError] = await router.handleCall(
+    const [content, isError, traceId] = await router.handleCall(
       "test.noprogress",
       {},
       extra,
@@ -203,13 +203,14 @@ describe("ExecutionRouter — streaming", () => {
     const executor = createStreamingExecutor(chunks, callResult);
     const router = new ExecutionRouter(executor);
 
-    const [content, isError] = await router.handleCall(
+    const [content, isError, traceId] = await router.handleCall(
       "test.noextra",
       {},
     );
 
     expect(isError).toBe(false);
     expect(JSON.parse(content[0].text)).toEqual(callResult);
+    expect(traceId).toBeUndefined();
     expect(executor.call).toHaveBeenCalledWith("test.noextra", {}, undefined);
   });
 
@@ -220,7 +221,7 @@ describe("ExecutionRouter — streaming", () => {
     const router = new ExecutionRouter(executor);
     const extra = createExtra(99);
 
-    const [content, isError] = await router.handleCall(
+    const [content, isError, traceId] = await router.handleCall(
       "test.numeric",
       {},
       extra,
@@ -237,9 +238,9 @@ describe("ExecutionRouter — streaming", () => {
     expect(params.progressToken).toBe(99);
     // 1-based progress
     expect(params.progress).toBe(1);
-    // trace_id appended
-    expect(content).toHaveLength(2);
-    expect(JSON.parse(content[1].text)).toHaveProperty("_trace_id");
+    // trace_id returned as 3rd tuple element
+    expect(content).toHaveLength(1);
+    expect(traceId).toBeDefined();
   });
 
   // TC-STREAM-007: Empty stream returns empty accumulated object
@@ -248,7 +249,7 @@ describe("ExecutionRouter — streaming", () => {
     const router = new ExecutionRouter(executor);
     const extra = createExtra("tok-empty");
 
-    const [content, isError] = await router.handleCall(
+    const [content, isError, traceId] = await router.handleCall(
       "test.empty",
       {},
       extra,
@@ -257,9 +258,9 @@ describe("ExecutionRouter — streaming", () => {
     expect(isError).toBe(false);
     expect(JSON.parse(content[0].text)).toEqual({});
     expect(extra.sendNotification).not.toHaveBeenCalled();
-    // trace_id still appended (context was created even though no chunks streamed)
-    expect(content).toHaveLength(2);
-    expect(JSON.parse(content[1].text)).toHaveProperty("_trace_id");
+    // trace_id returned as 3rd tuple element (context was created even though no chunks streamed)
+    expect(content).toHaveLength(1);
+    expect(traceId).toBeDefined();
   });
 
   // TC-STREAM-008: Context with _mcp_progress is passed to stream()

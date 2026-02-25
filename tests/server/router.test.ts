@@ -45,7 +45,7 @@ describe("ExecutionRouter", () => {
     const executor = createMockExecutor(result);
     const router = new ExecutionRouter(executor);
 
-    const [content, isError] = await router.handleCall("text.summarize", {
+    const [content, isError, traceId] = await router.handleCall("text.summarize", {
       text: "Hello world",
     });
 
@@ -53,6 +53,7 @@ describe("ExecutionRouter", () => {
     expect(content).toHaveLength(1);
     expect(content[0].type).toBe("text");
     expect(content[0].text).toBe(JSON.stringify(result));
+    expect(traceId).toBeUndefined();
 
     // No extra → no callbacks → context is undefined
     expect(executor.call).toHaveBeenCalledWith(
@@ -71,12 +72,13 @@ describe("ExecutionRouter", () => {
     const executor = createMockExecutor(undefined, error);
     const router = new ExecutionRouter(executor);
 
-    const [content, isError] = await router.handleCall("test.module", {});
+    const [content, isError, traceId] = await router.handleCall("test.module", {});
 
     expect(isError).toBe(true);
     expect(content).toHaveLength(1);
     expect(content[0].type).toBe("text");
     expect(content[0].text).toContain("Module not found");
+    expect(traceId).toBeUndefined();
   });
 
   // TC-ROUTER-003
@@ -94,7 +96,7 @@ describe("ExecutionRouter", () => {
     const executor = createMockExecutor(undefined, error);
     const router = new ExecutionRouter(executor);
 
-    const [content, isError] = await router.handleCall("test.module", {});
+    const [content, isError, traceId] = await router.handleCall("test.module", {});
 
     expect(isError).toBe(true);
     expect(content).toHaveLength(1);
@@ -102,6 +104,7 @@ describe("ExecutionRouter", () => {
     expect(content[0].text).toContain("Schema validation failed");
     expect(content[0].text).toContain("name");
     expect(content[0].text).toContain("is required");
+    expect(traceId).toBeUndefined();
   });
 
   // TC-ROUTER-004
@@ -113,11 +116,12 @@ describe("ExecutionRouter", () => {
     const executor = createMockExecutor(undefined, error);
     const router = new ExecutionRouter(executor);
 
-    const [content, isError] = await router.handleCall("test.module", {});
+    const [content, isError, traceId] = await router.handleCall("test.module", {});
 
     expect(isError).toBe(true);
     expect(content).toHaveLength(1);
     expect(content[0].text).toBe("Access denied");
+    expect(traceId).toBeUndefined();
   });
 
   // TC-ROUTER-005
@@ -129,11 +133,12 @@ describe("ExecutionRouter", () => {
     const executor = createMockExecutor(undefined, error);
     const router = new ExecutionRouter(executor);
 
-    const [content, isError] = await router.handleCall("test.module", {});
+    const [content, isError, traceId] = await router.handleCall("test.module", {});
 
     expect(isError).toBe(true);
     expect(content).toHaveLength(1);
     expect(content[0].text).toBe("Internal error occurred");
+    expect(traceId).toBeUndefined();
   });
 
   // TC-ROUTER-006
@@ -143,11 +148,12 @@ describe("ExecutionRouter", () => {
     const executor = createMockExecutor(undefined, error);
     const router = new ExecutionRouter(executor);
 
-    const [content, isError] = await router.handleCall("test.module", {});
+    const [content, isError, traceId] = await router.handleCall("test.module", {});
 
     expect(isError).toBe(true);
     expect(content).toHaveLength(1);
     expect(content[0].text).toBe("Internal error occurred");
+    expect(traceId).toBeUndefined();
   });
 
   // TC-ROUTER-007
@@ -155,9 +161,10 @@ describe("ExecutionRouter", () => {
     const executor = createMockExecutor({ ok: true });
     const router = new ExecutionRouter(executor);
 
-    const [content, isError] = await router.handleCall("test.module", {});
+    const [content, isError, traceId] = await router.handleCall("test.module", {});
 
     expect(isError).toBe(false);
+    expect(traceId).toBeUndefined();
     // No extra → context is undefined
     expect(executor.call).toHaveBeenCalledWith("test.module", {}, undefined);
   });
@@ -230,7 +237,7 @@ describe("ExecutionRouter", () => {
       sendRequest,
     };
 
-    const [content, isError] = await router.handleCall("test.module", {}, extra);
+    const [content, isError, traceId] = await router.handleCall("test.module", {}, extra);
 
     expect(isError).toBe(false);
     expect(sendRequest).toHaveBeenCalledTimes(1);
@@ -260,7 +267,7 @@ describe("ExecutionRouter", () => {
       _meta: { progressToken: "tok-progress" },
     };
 
-    const [content, isError] = await router.handleCall("test.module", {}, extra);
+    const [content, isError, traceId] = await router.handleCall("test.module", {}, extra);
 
     expect(isError).toBe(false);
     expect(sendNotification).toHaveBeenCalledTimes(1);

@@ -72,6 +72,7 @@ function createMockRouter(
     handleCall: vi.fn().mockResolvedValue([
       [{ type: "text", text: '{"result": "ok"}' }] as TextContentDict[],
       false,
+      "trace-123",
     ]),
     ...overrides,
   } as unknown as ExecutionRouter;
@@ -300,7 +301,7 @@ describe("TC-005: Call tool", () => {
     await ts.close();
   });
 
-  it("executes tool and returns result", async () => {
+  it("executes tool and returns MCP-compliant CallToolResult", async () => {
     const res = await ts.fetch("/explorer/tools/image.resize/call", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -308,7 +309,11 @@ describe("TC-005: Call tool", () => {
     });
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data).toHaveProperty("result");
+    // MCP-compliant format: {content, isError, _meta}
+    expect(data).toHaveProperty("content");
+    expect(data).toHaveProperty("isError", false);
+    expect(data).toHaveProperty("_meta");
+    expect(data._meta).toHaveProperty("_trace_id", "trace-123");
     expect(
       (mockRouter.handleCall as ReturnType<typeof vi.fn>),
     ).toHaveBeenCalledWith("image.resize", { width: 100, height: 200 });
@@ -323,10 +328,11 @@ describe("TC-005: Call tool", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns 500 on execution error", async () => {
+  it("returns 500 on execution error with MCP-compliant format", async () => {
     (mockRouter.handleCall as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
       [{ type: "text", text: "Module not found" }],
       true,
+      undefined,
     ]);
     const res = await ts.fetch("/explorer/tools/image.resize/call", {
       method: "POST",
@@ -335,7 +341,8 @@ describe("TC-005: Call tool", () => {
     });
     expect(res.status).toBe(500);
     const data = await res.json();
-    expect(data).toHaveProperty("error");
+    expect(data).toHaveProperty("content");
+    expect(data).toHaveProperty("isError", true);
   });
 });
 
