@@ -12,6 +12,7 @@ import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import type { ExplorerHandler } from "../explorer/handler.js";
 
 /** Options for HTTP-based transports. */
 export interface HttpTransportOptions {
@@ -47,7 +48,7 @@ const MAX_BODY_BYTES = (() => {
  * @param req - The incoming HTTP request
  * @param maxBytes - Maximum allowed body size in bytes (default: MAX_BODY_BYTES)
  */
-function readBody(req: IncomingMessage, maxBytes: number = MAX_BODY_BYTES): Promise<string> {
+export function readBody(req: IncomingMessage, maxBytes: number = MAX_BODY_BYTES): Promise<string> {
   return new Promise((resolve, reject) => {
     let data = "";
     let bytes = 0;
@@ -86,6 +87,9 @@ export class TransportManager {
   /** Optional metrics collector for Prometheus /metrics endpoint. */
   private _metricsCollector?: MetricsExporter;
 
+  /** Optional explorer handler for Tool Explorer UI. */
+  private _explorerHandler?: ExplorerHandler;
+
   /**
    * Set the number of registered modules/tools.
    *
@@ -102,6 +106,15 @@ export class TransportManager {
    */
   setMetricsCollector(collector: MetricsExporter): void {
     this._metricsCollector = collector;
+  }
+
+  /**
+   * Set the explorer handler for Tool Explorer UI routes.
+   *
+   * @param handler - An ExplorerHandler instance
+   */
+  setExplorerHandler(handler: ExplorerHandler): void {
+    this._explorerHandler = handler;
   }
 
   /**
@@ -186,10 +199,25 @@ export class TransportManager {
 
     await server.connect(transport);
 
+    const explorerHandler = this._explorerHandler;
+
     const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
       const url = new URL(req.url ?? "/", `http://${options.host}:${options.port}`);
 
       if (this._handleBuiltinRoute(req, res, url)) return;
+
+      // Check explorer routes before MCP transport
+      if (explorerHandler) {
+        try {
+          const handled = await explorerHandler.handleRequest(req, res, url);
+          if (handled) return;
+        } catch (err) {
+          if (!res.headersSent) {
+            res.writeHead(500).end("Internal Server Error");
+          }
+          return;
+        }
+      }
 
       if (url.pathname !== endpoint) {
         res.writeHead(404).end("Not Found");
@@ -252,10 +280,25 @@ export class TransportManager {
     const messagesEndpoint = "/messages";
     const transports = new Map<string, SSEServerTransport>();
 
+    const explorerHandler = this._explorerHandler;
+
     const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
       const url = new URL(req.url ?? "/", `http://${options.host}:${options.port}`);
 
       if (this._handleBuiltinRoute(req, res, url)) return;
+
+      // Check explorer routes before SSE transport
+      if (explorerHandler) {
+        try {
+          const handled = await explorerHandler.handleRequest(req, res, url);
+          if (handled) return;
+        } catch (err) {
+          if (!res.headersSent) {
+            res.writeHead(500).end("Internal Server Error");
+          }
+          return;
+        }
+      }
 
       if (url.pathname === endpoint && req.method === "GET") {
         // Establish SSE connection

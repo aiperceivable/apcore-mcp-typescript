@@ -13,6 +13,7 @@ import { MCPServerFactory } from "./server/factory.js";
 import { ExecutionRouter } from "./server/router.js";
 import { TransportManager } from "./server/transport.js";
 import type { MetricsExporter } from "./server/transport.js";
+import { ExplorerHandler } from "./explorer/handler.js";
 import type {
   RegistryOrExecutor,
   Registry,
@@ -50,6 +51,8 @@ export type { CallResult, HandleCallExtra, ExecutionRouterOptions } from "./serv
 export { RegistryListener } from "./server/listener.js";
 export { TransportManager } from "./server/transport.js";
 export type { MetricsExporter } from "./server/transport.js";
+export { ExplorerHandler } from "./explorer/index.js";
+export type { ExplorerHandlerOptions } from "./explorer/index.js";
 export { AnnotationMapper } from "./adapters/annotations.js";
 export { SchemaConverter } from "./adapters/schema.js";
 export { ErrorMapper } from "./adapters/errors.js";
@@ -131,6 +134,12 @@ export interface ServeOptions {
   onShutdown?: () => void | Promise<void>;
   /** Optional MetricsCollector for Prometheus /metrics endpoint. */
   metricsCollector?: MetricsExporter;
+  /** Enable the browser-based Tool Explorer UI (HTTP transports only). Default: false */
+  explorer?: boolean;
+  /** URL prefix for the explorer. Default: "/explorer" */
+  explorerPrefix?: string;
+  /** Allow tool execution from the explorer UI. Default: false */
+  allowExecute?: boolean;
 }
 
 /**
@@ -156,6 +165,9 @@ export async function serve(
     onStartup,
     onShutdown,
     metricsCollector,
+    explorer = false,
+    explorerPrefix = "/explorer",
+    allowExecute = false,
   } = options;
 
   // Input validation (matching Python's checks)
@@ -174,6 +186,9 @@ export async function serve(
   }
   if (prefix !== undefined && prefix !== null && prefix.length === 0) {
     throw new Error("prefix must not be empty if provided");
+  }
+  if (explorer && !explorerPrefix.startsWith("/")) {
+    throw new Error("explorerPrefix must start with '/'");
   }
 
   // Save original console methods before suppression
@@ -215,6 +230,17 @@ export async function serve(
   transportManager.setModuleCount(tools.length);
   if (metricsCollector) {
     transportManager.setMetricsCollector(metricsCollector);
+  }
+
+  // Mount explorer for HTTP transports only
+  const transportLower = transport.toLowerCase();
+  if (explorer && (transportLower === "streamable-http" || transportLower === "sse")) {
+    const explorerHandler = new ExplorerHandler(tools, router, {
+      allowExecute,
+      prefix: explorerPrefix,
+    });
+    transportManager.setExplorerHandler(explorerHandler);
+    origInfo(`Tool Explorer enabled at ${explorerPrefix}`);
   }
 
   try {

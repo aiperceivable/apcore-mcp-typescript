@@ -31,6 +31,9 @@ Options:
   --name <string>            MCP server name (default: apcore-mcp, max 255 chars)
   --version <string>         MCP server version (default: package version)
   --log-level <level>        Logging level: DEBUG, INFO, WARNING, ERROR (default: INFO)
+  --explorer                 Enable the browser-based Tool Explorer UI (HTTP only)
+  --explorer-prefix <path>   URL prefix for the explorer UI (default: /explorer)
+  --allow-execute            Allow tool execution from the explorer UI
   --help                     Show this help message
 `);
 }
@@ -52,6 +55,9 @@ export async function main(): Promise<void> {
         name: { type: "string", default: "apcore-mcp" },
         version: { type: "string" },
         "log-level": { type: "string", default: "INFO" },
+        explorer: { type: "boolean", default: false },
+        "explorer-prefix": { type: "string", default: "/explorer" },
+        "allow-execute": { type: "boolean", default: false },
         help: { type: "boolean", default: false },
       },
       strict: true,
@@ -143,6 +149,9 @@ export async function main(): Promise<void> {
       name,
       version: values.version ?? undefined,
       logLevel: logLevel as "DEBUG" | "INFO" | "WARNING" | "ERROR" | undefined,
+      explorer: values.explorer as boolean,
+      explorerPrefix: values["explorer-prefix"] as string,
+      allowExecute: values["allow-execute"] as boolean,
     });
   } catch (error) {
     console.error("Server startup failed:", error);

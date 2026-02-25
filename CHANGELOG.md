@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-02-25
+
+### Added
+
+- **MCP Tool Explorer** — Browser-based UI for inspecting and testing MCP tools, consistent with the Python (`apcore-mcp`) implementation. Mounts at `/explorer` on HTTP transports (`streamable-http`, `sse`); silently ignored for `stdio`.
+  - `GET /explorer/` — Self-contained HTML single-page application (no external dependencies) displaying registered tools with annotation badges, input schemas, and a "Try it" section.
+  - `GET /explorer/tools` — JSON array of tool summaries (name, description, annotations).
+  - `GET /explorer/tools/{name}` — JSON tool detail including `inputSchema`.
+  - `POST /explorer/tools/{name}/call` — Execute a tool from the browser UI. Returns 403 when execution is disabled.
+- **`ExplorerHandler` class** — New `src/explorer/handler.ts` module handling all explorer HTTP routes. Accepts `ExplorerHandlerOptions` with `allowExecute` (default: `false`) and `prefix` (default: `"/explorer"`). Exported from public API.
+- **`explorer`, `explorerPrefix`, `allowExecute` options in `ServeOptions`** — Enable the explorer UI, customize the URL prefix, and control tool execution from the browser.
+- **`--explorer`, `--explorer-prefix`, `--allow-execute` CLI flags** — CLI support for all explorer options.
+- **`setExplorerHandler()` on `TransportManager`** — Allows mounting the explorer into HTTP transport servers.
+- New test suite `tests/explorer/explorer.test.ts` — 20 tests across 8 test groups (TC-001 through TC-008) covering HTML page, disabled-by-default, tool listing, tool detail, tool execution, execute-disabled 403, stdio-ignored, and custom prefix.
+
+### Changed
+
+- **`readBody()` exported from `TransportManager` module** — The shared `readBody()` utility in `src/server/transport.ts` is now exported for reuse by the explorer handler, eliminating code duplication.
+
 ## [0.4.0] - 2026-02-23
 
 ### Added
