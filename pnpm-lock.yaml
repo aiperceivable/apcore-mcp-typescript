@@ -11,13 +11,13 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.26.0
         version: 1.26.0(zod@4.3.6)
-      '@sinclair/typebox':
-        specifier: ^0.34.48
-        version: 0.34.48
       apcore-js:
         specifier: ^0.6.0
         version: 0.6.0
     devDependencies:
+      '@sinclair/typebox':
+        specifier: ^0.34.48
+        version: 0.34.48
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.33
@@ -25,8 +25,8 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(vitest@3.2.4(@types/node@20.19.33))
       apdev-js:
-        specifier: ^0.1.1
-        version: 0.1.1
+        specifier: ^0.2.0
+        version: 0.2.0(typescript@5.9.3)
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
@@ -484,9 +484,14 @@ packages:
     resolution: {integrity: sha512-OhL4JNYHk/EZO9vPAt1NGaa3kePoW/2iQKmRXuRrDS3oMD0v405asvuDiXlKDokUK+pLHzKkkLgGRWAiRPK2gQ==}
     engines: {node: '>=18.0.0'}
 
-  apdev-js@0.1.1:
-    resolution: {integrity: sha512-4RWwNftMuiY3WDMQY3/oJ+2kFogD0mT7acKpmhfFx+eJiv+lkjbTpC6wpNPxbfhaeWeu+MVlH5RrDnM5scDE5g==}
+  apdev-js@0.2.0:
+    resolution: {integrity: sha512-bBdVf7Go2t4Awnaxwn4O1i8kDnp+nISmNEw2lSJFD7G91euGwVzcbFJ84QvUvyHDEoOKmUg+309q03Dt4qAnmQ==}
     hasBin: true
+    peerDependencies:
+      typescript: ^5.0.0
+    peerDependenciesMeta:
+      typescript:
+        optional: true
 
   argparse@2.0.1:
     resolution: {integrity: sha512-8+9WqebbFzpX9OR+Wa6O29asIogeRMzcGtAINdpMHHyAg10f05aSFVBbcEqGf/PXw1EjAZ+q2/bEBg3DvurK3Q==}
@@ -1518,9 +1523,10 @@ snapshots:
       js-yaml: 4.1.1
       uuid: 9.0.1
 
-  apdev-js@0.1.1:
+  apdev-js@0.2.0(typescript@5.9.3):
     dependencies:
       commander: 13.1.0
+    optionalDependencies:
       typescript: 5.9.3
 
   argparse@2.0.1: {}
