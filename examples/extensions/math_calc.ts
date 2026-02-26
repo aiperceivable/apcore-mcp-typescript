@@ -3,6 +3,7 @@
  */
 
 import { Type } from "@sinclair/typebox";
+import { DEFAULT_ANNOTATIONS, type ModuleAnnotations, type Context } from "apcore-js";
 
 const inputSchema = Type.Object({
   a: Type.Number({ description: "First operand" }),
@@ -14,6 +15,13 @@ const outputSchema = Type.Object({
   result: Type.Number({ description: "Calculation result" }),
   expression: Type.String({ description: "Human-readable expression" }),
 });
+
+const annotations: ModuleAnnotations = {
+  ...DEFAULT_ANNOTATIONS,
+  readonly: true,
+  idempotent: true,
+  openWorld: false,
+};
 
 const OPS: Record<string, [string, (a: number, b: number) => number]> = {
   add: ["+", (a, b) => a + b],
@@ -27,9 +35,9 @@ export default {
   outputSchema,
   description: "Perform basic arithmetic: add, subtract, multiply, or divide",
   tags: ["math", "utility"],
-  annotations: { readonly: true, idempotent: true, openWorld: false },
+  annotations,
 
-  execute(inputs: Record<string, unknown>): Record<string, unknown> {
+  execute(inputs: Record<string, unknown>, _context: Context): Record<string, unknown> {
     const a = inputs.a as number;
     const b = inputs.b as number;
     const op = (inputs.op as string) || "add";

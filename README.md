@@ -21,13 +21,14 @@ Converts apcore module registries into [Model Context Protocol (MCP)](https://mo
 ## Requirements
 
 - Node.js >= 18.0.0
-- apcore (peer dependency)
 
 ## Installation
 
 ```bash
 npm install apcore-mcp
 ```
+
+`apcore-js` is included as a direct dependency — no separate install needed.
 
 ## Quick Start
 
@@ -139,6 +140,16 @@ src/
     ├── router.ts         # Tool call execution routing
     ├── transport.ts      # Transport lifecycle (stdio/HTTP/SSE)
     └── listener.ts       # Dynamic registry event listener
+```
+
+## Examples
+
+See [examples/README.md](examples/README.md) for runnable demos covering both class-based modules and zero-code-intrusion wrapping via the `module()` factory.
+
+```bash
+# Launch all 5 example modules with the Tool Explorer UI
+npx tsx examples/run.ts
+# Open http://127.0.0.1:8000/explorer/
 ```
 
 ## Development

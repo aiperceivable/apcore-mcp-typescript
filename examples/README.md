@@ -6,7 +6,7 @@ Runnable demos of **apcore-mcp** with the Tool Explorer UI.
 examples/
 ├── README.md                  # This file
 ├── run.ts                     # Unified launcher (all 5 modules)
-├── extensions/                # Class-based apcore modules
+├── extensions/                # Class-based apcore modules (using apcore-js types)
 │   ├── text_echo.ts
 │   ├── math_calc.ts
 │   └── greeting.ts
@@ -58,6 +58,7 @@ npx tsx examples/binding_demo/run.ts
 | | Class-based | module() factory |
 |---|---|---|
 | Your code changes | Write apcore module with default export | **None** — wrap existing functions |
+| apcore-js imports | `ModuleAnnotations`, `DEFAULT_ANNOTATIONS`, `Context` | `Registry`, `Executor`, `module` |
 | Schema definition | TypeBox `Type.Object(...)` in module file | TypeBox in the launcher script |
 | Launch | CLI `--extensions-dir` or `Registry.discover()` | `module({ ..., registry })` |
 | Best for | New projects | Existing projects with functions to expose |

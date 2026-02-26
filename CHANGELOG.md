@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-02-26
+
+### Changed
+
+- **`apcore-js` promoted to direct dependency** — Moved `apcore-js` from optional peer dependency to a direct dependency in `package.json`, matching the Python `apcore-mcp` project where `apcore` is a direct dependency. Users no longer need to separately install `apcore-js` — `npm install apcore-mcp` is all that's needed.
+- **Example modules now use `apcore-js` types** — Class-based extension modules (`greeting`, `math_calc`, `text_echo`) updated to import `ModuleAnnotations`, `DEFAULT_ANNOTATIONS`, and `Context` from `apcore-js` instead of using plain duck-typed objects. The `execute()` signature now includes the `context: Context` parameter, consistent with the Python examples.
+- **README updated** — Removed outdated "apcore (peer dependency)" requirement, added note that `apcore-js` is included as a direct dependency, and added Examples section linking to `examples/README.md`.
+
 ## [0.6.0] - 2026-02-25
 
 ### Added
