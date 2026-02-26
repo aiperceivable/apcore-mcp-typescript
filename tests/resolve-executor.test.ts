@@ -1,8 +1,8 @@
 /**
  * Tests for resolveRegistry() and resolveExecutor() — exported helpers.
  *
- * resolveExecutor's apcore-js auto-creation path uses require(), which is
- * hard to mock in ESM test context. Instead, we:
+ * resolveExecutor's apcore-js auto-creation path uses dynamic import(),
+ * which is hard to mock in ESM test context. Instead, we:
  *  - Test resolveExecutor with an Executor (pass-through path) directly
  *  - Test resolveExecutor with a bare Registry (error path) directly
  *  - Test the apcore-js auto-creation path through serve() with vi.mock
@@ -91,16 +91,16 @@ describe("resolveRegistry()", () => {
 // ---------------------------------------------------------------------------
 
 describe("resolveExecutor()", () => {
-  it("returns Executor directly when given an Executor with call()", () => {
+  it("returns Executor directly when given an Executor with call()", async () => {
     const registry = createMockRegistry({});
     const executor = createMockExecutor(registry);
 
-    const result = resolveExecutor(executor);
+    const result = await resolveExecutor(executor);
 
     expect(result).toBe(executor);
   });
 
-  it("returns Executor directly when given an Executor with callAsync()", () => {
+  it("returns Executor directly when given an Executor with callAsync()", async () => {
     const registry = createMockRegistry({});
     const executor: Executor = {
       registry,
@@ -108,27 +108,27 @@ describe("resolveExecutor()", () => {
       callAsync: vi.fn(),
     };
 
-    const result = resolveExecutor(executor);
+    const result = await resolveExecutor(executor);
 
     expect(result).toBe(executor);
   });
 
-  it("throws when given a bare Registry and apcore-js is not installed", () => {
+  it("throws when given a bare Registry and apcore-js is not installed", async () => {
     const registry = createMockRegistry({
       "test.module": createDescriptor("test.module"),
     });
 
-    expect(() => resolveExecutor(registry)).toThrow(
+    await expect(resolveExecutor(registry)).rejects.toThrow(
       "serve() requires an Executor instance, or apcore-js must be installed",
     );
   });
 
-  it("preserves the original Executor reference (identity check)", () => {
+  it("preserves the original Executor reference (identity check)", async () => {
     const registry = createMockRegistry({});
     const executor = createMockExecutor(registry);
 
-    const result1 = resolveExecutor(executor);
-    const result2 = resolveExecutor(executor);
+    const result1 = await resolveExecutor(executor);
+    const result2 = await resolveExecutor(executor);
 
     expect(result1).toBe(result2);
     expect(result1).toBe(executor);

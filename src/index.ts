@@ -85,15 +85,15 @@ export function resolveRegistry(registryOrExecutor: RegistryOrExecutor): Registr
  *
  * @throws {Error} If the argument is a Registry and apcore-js is not installed.
  */
-export function resolveExecutor(registryOrExecutor: RegistryOrExecutor): Executor {
+export async function resolveExecutor(registryOrExecutor: RegistryOrExecutor): Promise<Executor> {
   if ("call" in registryOrExecutor || "callAsync" in registryOrExecutor) {
     // Already an Executor
     return registryOrExecutor as Executor;
   }
   // It's a bare Registry — create a default Executor
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const apcore = require("apcore-js");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const apcore = await import("apcore-js") as any;
     const ExecutorClass = apcore.Executor ?? apcore.default?.Executor;
     if (ExecutorClass) {
       return new ExecutorClass({ registry: registryOrExecutor }) as Executor;
@@ -208,7 +208,7 @@ export async function serve(
   }
 
   const registry = resolveRegistry(registryOrExecutor);
-  const executor = resolveExecutor(registryOrExecutor);
+  const executor = await resolveExecutor(registryOrExecutor);
 
   // Build MCP server components
   const factory = new MCPServerFactory();

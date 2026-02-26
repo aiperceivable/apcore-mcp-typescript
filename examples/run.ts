@@ -8,7 +8,7 @@
  */
 
 import { Type } from "@sinclair/typebox";
-import { Registry, Executor, module } from "apcore-js";
+import { Registry, module } from "apcore-js";
 import { serve } from "apcore-mcp";
 import { convert_temperature, word_count } from "./binding_demo/myapp.js";
 
@@ -82,8 +82,7 @@ console.log(`Programmatic modules: 2`);
 console.log(`Total:               ${registry.moduleIds.length}`);
 
 // 3. Launch MCP server with Explorer UI
-const executor = new Executor({ registry });
-serve(executor, {
+serve(registry, {
   transport: "streamable-http",
   host: "127.0.0.1",
   port: 8000,
