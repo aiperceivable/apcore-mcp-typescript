@@ -111,11 +111,12 @@ describe("CLI (cli.ts)", () => {
       });
     }
 
-    // Always mock index.js for serve/VERSION
+    // Always mock index.js for serve/VERSION/JWTAuthenticator
     const mockServe = serveFn ?? vi.fn().mockResolvedValue(undefined);
     vi.doMock("../src/index.js", () => ({
       serve: mockServe,
       VERSION: "0.0.0-test",
+      JWTAuthenticator: vi.fn().mockImplementation(() => ({ authenticate: vi.fn() })),
     }));
 
     const mod = await import("../src/cli.js");
@@ -284,5 +285,64 @@ describe("CLI (cli.ts)", () => {
     expect(
       errorMessages.some((m) => m.includes("--log-level must be one of")),
     ).toBe(true);
+  });
+
+  // ── JWT flags ─────────────────────────────────────────────────────────
+
+  it("passes authenticator to serve() when --jwt-secret is provided", async () => {
+    const serveFn = vi.fn().mockResolvedValue(undefined);
+    const { exitCode } = await runMain(
+      ["--extensions-dir", tmpDir, "--jwt-secret", "my-secret"],
+      { apcoreAvailable: true, discoverCount: 1, serveFn },
+    );
+
+    expect(exitCode).toBe(-1);
+    expect(serveFn).toHaveBeenCalled();
+    const opts = serveFn.mock.calls[0][1];
+    expect(opts.authenticator).toBeDefined();
+  });
+
+  it("does not pass authenticator when --jwt-secret is not provided", async () => {
+    const serveFn = vi.fn().mockResolvedValue(undefined);
+    const { exitCode } = await runMain(
+      ["--extensions-dir", tmpDir],
+      { apcoreAvailable: true, discoverCount: 1, serveFn },
+    );
+
+    expect(exitCode).toBe(-1);
+    expect(serveFn).toHaveBeenCalled();
+    const opts = serveFn.mock.calls[0][1];
+    expect(opts.authenticator).toBeUndefined();
+  });
+
+  it("passes jwt-algorithm to authenticator", async () => {
+    const serveFn = vi.fn().mockResolvedValue(undefined);
+    const { exitCode } = await runMain(
+      ["--extensions-dir", tmpDir, "--jwt-secret", "sec", "--jwt-algorithm", "HS384"],
+      { apcoreAvailable: true, discoverCount: 1, serveFn },
+    );
+
+    expect(exitCode).toBe(-1);
+    expect(serveFn).toHaveBeenCalled();
+    const opts = serveFn.mock.calls[0][1];
+    expect(opts.authenticator).toBeDefined();
+  });
+
+  it("accepts --jwt-audience and --jwt-issuer flags", async () => {
+    const serveFn = vi.fn().mockResolvedValue(undefined);
+    const { exitCode } = await runMain(
+      [
+        "--extensions-dir", tmpDir,
+        "--jwt-secret", "sec",
+        "--jwt-audience", "my-app",
+        "--jwt-issuer", "auth-svc",
+      ],
+      { apcoreAvailable: true, discoverCount: 1, serveFn },
+    );
+
+    expect(exitCode).toBe(-1);
+    expect(serveFn).toHaveBeenCalled();
+    const opts = serveFn.mock.calls[0][1];
+    expect(opts.authenticator).toBeDefined();
   });
 });

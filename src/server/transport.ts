@@ -13,6 +13,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import type { ExplorerHandler } from "../explorer/handler.js";
+import type { Authenticator } from "../auth/types.js";
+import { identityStorage } from "../auth/storage.js";
 
 /** Options for HTTP-based transports. */
 export interface HttpTransportOptions {
@@ -90,6 +92,12 @@ export class TransportManager {
   /** Optional explorer handler for Tool Explorer UI. */
   private _explorerHandler?: ExplorerHandler;
 
+  /** Optional authenticator for request authentication. */
+  private _authenticator?: Authenticator;
+
+  /** Configurable set of paths exempt from authentication. */
+  private _exemptPaths = new Set(["/health", "/metrics"]);
+
   /**
    * Set the number of registered modules/tools.
    *
@@ -97,6 +105,24 @@ export class TransportManager {
    */
   setModuleCount(count: number): void {
     this._moduleCount = count;
+  }
+
+  /**
+   * Set the authenticator for request authentication.
+   *
+   * @param authenticator - An Authenticator instance (e.g. JWTAuthenticator)
+   */
+  setAuthenticator(authenticator: Authenticator): void {
+    this._authenticator = authenticator;
+  }
+
+  /**
+   * Set the paths that are exempt from authentication.
+   *
+   * @param paths - Array of path strings to exempt
+   */
+  setExemptPaths(paths: string[]): void {
+    this._exemptPaths = new Set(paths);
   }
 
   /**
@@ -164,6 +190,52 @@ export class TransportManager {
   }
 
   /**
+   * Check if a request path/method combination is exempt from authentication.
+   *
+   * Exempt routes: /health, /metrics (GET), and explorer GET routes.
+   */
+  _isAuthExempt(pathname: string, method: string): boolean {
+    if (method === "GET" && this._exemptPaths.has(pathname)) return true;
+    // Explorer GET routes are exempt (browsing the UI)
+    if (this._explorerHandler && method === "GET") {
+      const prefix = this._explorerHandler.prefix;
+      if (pathname === prefix || pathname === prefix + "/" || pathname.startsWith(prefix + "/")) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Authenticate an incoming request using the configured authenticator.
+   *
+   * Returns the Identity on success, or sends a 401 response and returns null.
+   * If no authenticator is set, returns null (no auth required).
+   */
+  async _authenticateRequest(req: IncomingMessage, res: ServerResponse, url: URL): Promise<{ identity: import("../auth/types.js").Identity | null; blocked: boolean }> {
+    if (!this._authenticator) {
+      return { identity: null, blocked: false };
+    }
+
+    if (this._isAuthExempt(url.pathname, req.method ?? "GET")) {
+      return { identity: null, blocked: false };
+    }
+
+    const identity = await this._authenticator.authenticate(req);
+    if (!identity) {
+      const requireAuth = this._authenticator.requireAuth ?? true;
+      if (!requireAuth) {
+        return { identity: null, blocked: false };
+      }
+      res.writeHead(401, { "Content-Type": "application/json", "WWW-Authenticate": "Bearer" });
+      res.end(JSON.stringify({ error: "Authentication required" }));
+      return { identity: null, blocked: true };
+    }
+
+    return { identity, blocked: false };
+  }
+
+  /**
    * Run the server using stdio transport.
    *
    * Creates a StdioServerTransport and connects it to the server.
@@ -206,10 +278,14 @@ export class TransportManager {
 
       if (this._handleBuiltinRoute(req, res, url)) return;
 
+      // Authenticate non-exempt requests
+      const { identity, blocked } = await this._authenticateRequest(req, res, url);
+      if (blocked) return;
+
       // Check explorer routes before MCP transport
       if (explorerHandler) {
         try {
-          const handled = await explorerHandler.handleRequest(req, res, url);
+          const handled = await explorerHandler.handleRequest(req, res, url, identity);
           if (handled) return;
         } catch (err) {
           if (!res.headersSent) {
@@ -224,25 +300,34 @@ export class TransportManager {
         return;
       }
 
-      try {
-        if (req.method === "POST" || req.method === "DELETE") {
-          const body = await readBody(req);
-          const parsed = body ? JSON.parse(body) : undefined;
-          await transport.handleRequest(req, res, parsed);
-        } else {
-          await transport.handleRequest(req, res);
-        }
-      } catch (err) {
-        if (!res.headersSent) {
-          const message = err instanceof Error ? err.message : "";
-          if (message === "Request body too large") {
-            res.writeHead(413).end("Request Entity Too Large");
-          } else if (err instanceof SyntaxError) {
-            res.writeHead(400).end("Bad Request");
+      const handleMcp = async () => {
+        try {
+          if (req.method === "POST" || req.method === "DELETE") {
+            const body = await readBody(req);
+            const parsed = body ? JSON.parse(body) : undefined;
+            await transport.handleRequest(req, res, parsed);
           } else {
-            res.writeHead(500).end("Internal Server Error");
+            await transport.handleRequest(req, res);
+          }
+        } catch (err) {
+          if (!res.headersSent) {
+            const message = err instanceof Error ? err.message : "";
+            if (message === "Request body too large") {
+              res.writeHead(413).end("Request Entity Too Large");
+            } else if (err instanceof SyntaxError) {
+              res.writeHead(400).end("Bad Request");
+            } else {
+              res.writeHead(500).end("Internal Server Error");
+            }
           }
         }
+      };
+
+      // Wrap in identityStorage so getCurrentIdentity() works in the call chain
+      if (identity) {
+        await identityStorage.run(identity, handleMcp);
+      } else {
+        await handleMcp();
       }
     });
 
@@ -287,10 +372,14 @@ export class TransportManager {
 
       if (this._handleBuiltinRoute(req, res, url)) return;
 
+      // Authenticate non-exempt requests
+      const { identity, blocked } = await this._authenticateRequest(req, res, url);
+      if (blocked) return;
+
       // Check explorer routes before SSE transport
       if (explorerHandler) {
         try {
-          const handled = await explorerHandler.handleRequest(req, res, url);
+          const handled = await explorerHandler.handleRequest(req, res, url, identity);
           if (handled) return;
         } catch (err) {
           if (!res.headersSent) {
@@ -300,50 +389,59 @@ export class TransportManager {
         }
       }
 
-      if (url.pathname === endpoint && req.method === "GET") {
-        // Establish SSE connection
-        const transport = new SSEServerTransport(messagesEndpoint, res);
-        const sessionId = transport.sessionId;
-        transports.set(sessionId, transport);
+      const handleSse = async () => {
+        if (url.pathname === endpoint && req.method === "GET") {
+          // Establish SSE connection
+          const transport = new SSEServerTransport(messagesEndpoint, res);
+          const sessionId = transport.sessionId;
+          transports.set(sessionId, transport);
 
-        transport.onclose = () => {
-          transports.delete(sessionId);
-        };
+          transport.onclose = () => {
+            transports.delete(sessionId);
+          };
 
-        await server.connect(transport);
-        await transport.start();
-      } else if (url.pathname === messagesEndpoint && req.method === "POST") {
-        // Route message to the correct session transport
-        const sessionId = url.searchParams.get("sessionId");
-        if (!sessionId) {
-          res.writeHead(400).end("Missing sessionId parameter");
-          return;
-        }
+          await server.connect(transport);
+          await transport.start();
+        } else if (url.pathname === messagesEndpoint && req.method === "POST") {
+          // Route message to the correct session transport
+          const sessionId = url.searchParams.get("sessionId");
+          if (!sessionId) {
+            res.writeHead(400).end("Missing sessionId parameter");
+            return;
+          }
 
-        const transport = transports.get(sessionId);
-        if (!transport) {
-          res.writeHead(400).end("Unknown session");
-          return;
-        }
+          const transport = transports.get(sessionId);
+          if (!transport) {
+            res.writeHead(400).end("Unknown session");
+            return;
+          }
 
-        try {
-          const body = await readBody(req);
-          const parsed = body ? JSON.parse(body) : undefined;
-          await transport.handlePostMessage(req, res, parsed);
-        } catch (err) {
-          if (!res.headersSent) {
-            const message = err instanceof Error ? err.message : "";
-            if (message === "Request body too large") {
-              res.writeHead(413).end("Request Entity Too Large");
-            } else if (err instanceof SyntaxError) {
-              res.writeHead(400).end("Bad Request");
-            } else {
-              res.writeHead(500).end("Internal Server Error");
+          try {
+            const body = await readBody(req);
+            const parsed = body ? JSON.parse(body) : undefined;
+            await transport.handlePostMessage(req, res, parsed);
+          } catch (err) {
+            if (!res.headersSent) {
+              const message = err instanceof Error ? err.message : "";
+              if (message === "Request body too large") {
+                res.writeHead(413).end("Request Entity Too Large");
+              } else if (err instanceof SyntaxError) {
+                res.writeHead(400).end("Bad Request");
+              } else {
+                res.writeHead(500).end("Internal Server Error");
+              }
             }
           }
+        } else {
+          res.writeHead(404).end("Not Found");
         }
+      };
+
+      // Wrap in identityStorage so getCurrentIdentity() works in the call chain
+      if (identity) {
+        await identityStorage.run(identity, handleSse);
       } else {
-        res.writeHead(404).end("Not Found");
+        await handleSse();
       }
     });
 

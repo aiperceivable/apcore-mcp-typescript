@@ -113,14 +113,14 @@ describe("resolveExecutor()", () => {
     expect(result).toBe(executor);
   });
 
-  it("throws when given a bare Registry and apcore-js is not installed", async () => {
+  it("auto-creates Executor from bare Registry when apcore-js is installed", async () => {
     const registry = createMockRegistry({
       "test.module": createDescriptor("test.module"),
     });
 
-    await expect(resolveExecutor(registry)).rejects.toThrow(
-      "serve() requires an Executor instance, or apcore-js must be installed",
-    );
+    const executor = await resolveExecutor(registry);
+    expect(executor).toBeDefined();
+    expect(typeof executor.call === "function" || typeof executor.callAsync === "function").toBe(true);
   });
 
   it("preserves the original Executor reference (identity check)", async () => {
@@ -170,14 +170,14 @@ describe("serve() with resolveExecutor integration", () => {
     mockBuildTools.mockReturnValue([]);
   });
 
-  it("rejects bare Registry through serve() when apcore-js not available", async () => {
+  it("auto-resolves bare Registry through serve() when apcore-js is available", async () => {
     const registry = createMockRegistry({
       "test.module": createDescriptor("test.module"),
     });
 
-    await expect(serveWithMocks(registry, { transport: "stdio" })).rejects.toThrow(
-      "serve() requires an Executor instance",
-    );
+    await serveWithMocks(registry, { transport: "stdio" });
+
+    expect(mockRunStdio).toHaveBeenCalledTimes(1);
   });
 
   it("resolves Executor automatically and calls transport via serve()", async () => {

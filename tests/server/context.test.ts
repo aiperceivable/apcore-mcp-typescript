@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createBridgeContext } from "../../src/server/context.js";
+import { createIdentity } from "apcore-js";
 
 describe("createBridgeContext", () => {
   it("has all required fields", () => {
@@ -65,5 +66,30 @@ describe("createBridgeContext", () => {
 
     child.child("mod.b");
     expect(child.callChain).toEqual(["mod.a"]);
+  });
+
+  it("accepts identity parameter", () => {
+    const identity = createIdentity("user-1", "admin", ["editor"]);
+    const ctx = createBridgeContext({}, identity);
+
+    expect(ctx.identity).toBe(identity);
+    expect(ctx.identity!.id).toBe("user-1");
+    expect(ctx.identity!.type).toBe("admin");
+    expect(ctx.identity!.roles).toEqual(["editor"]);
+  });
+
+  it("identity defaults to null when not provided", () => {
+    const ctx = createBridgeContext({});
+    expect(ctx.identity).toBeNull();
+  });
+
+  it("child() propagates identity to children", () => {
+    const identity = createIdentity("user-2", "service");
+    const parent = createBridgeContext({}, identity);
+    const child = parent.child("mod.a");
+    const grandchild = child.child("mod.b");
+
+    expect(child.identity).toBe(identity);
+    expect(grandchild.identity).toBe(identity);
   });
 });

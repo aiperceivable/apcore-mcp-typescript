@@ -12,7 +12,8 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { serve, VERSION } from "./index.js";
+import { serve, VERSION, JWTAuthenticator } from "./index.js";
+import type { Algorithm } from "jsonwebtoken";
 
 function printUsage(): void {
   console.log(`
@@ -34,6 +35,13 @@ Options:
   --explorer                 Enable the browser-based Tool Explorer UI (HTTP only)
   --explorer-prefix <path>   URL prefix for the explorer UI (default: /explorer)
   --allow-execute            Allow tool execution from the explorer UI
+  --jwt-secret <string>      JWT secret key for Bearer token authentication
+  --jwt-algorithm <alg>      JWT algorithm (default: HS256)
+  --jwt-audience <string>    Expected JWT audience claim
+  --jwt-issuer <string>      Expected JWT issuer claim
+  --jwt-require-auth         Require auth (default: true)
+  --jwt-permissive           Permissive mode: allow unauthenticated requests (overrides --jwt-require-auth)
+  --exempt-paths <paths>     Comma-separated paths exempt from auth (default: /health,/metrics)
   --help                     Show this help message
 `);
 }
@@ -58,6 +66,13 @@ export async function main(): Promise<void> {
         explorer: { type: "boolean", default: false },
         "explorer-prefix": { type: "string", default: "/explorer" },
         "allow-execute": { type: "boolean", default: false },
+        "jwt-secret": { type: "string" },
+        "jwt-algorithm": { type: "string" },
+        "jwt-audience": { type: "string" },
+        "jwt-issuer": { type: "string" },
+        "jwt-require-auth": { type: "boolean", default: true },
+        "jwt-permissive": { type: "boolean", default: false },
+        "exempt-paths": { type: "string" },
         help: { type: "boolean", default: false },
       },
       strict: true,
@@ -133,12 +148,33 @@ export async function main(): Promise<void> {
 
   // Validate log-level
   const logLevel = values["log-level"] as string | undefined;
-  const validLogLevels = ["DEBUG", "INFO", "WARNING", "ERROR"];
+  const validLogLevels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
   if (logLevel && !validLogLevels.includes(logLevel)) {
     fail(
       `--log-level must be one of: ${validLogLevels.join(", ")}. Got '${logLevel}'.`,
     );
   }
+
+  // Build JWT authenticator if --jwt-secret is provided
+  const jwtSecret = values["jwt-secret"];
+  const jwtRequireAuth = values["jwt-permissive"] ? false : (values["jwt-require-auth"] as boolean);
+  const authenticator = jwtSecret
+    ? new JWTAuthenticator({
+        secret: jwtSecret,
+        algorithms: values["jwt-algorithm"]
+          ? [values["jwt-algorithm"] as Algorithm]
+          : undefined,
+        audience: values["jwt-audience"],
+        issuer: values["jwt-issuer"],
+        requireAuth: jwtRequireAuth,
+      })
+    : undefined;
+
+  // Parse exempt paths
+  const exemptPathsRaw = values["exempt-paths"] as string | undefined;
+  const exemptPaths = exemptPathsRaw
+    ? exemptPathsRaw.split(",").map((p) => p.trim())
+    : undefined;
 
   // Launch the MCP server
   try {
@@ -152,6 +188,8 @@ export async function main(): Promise<void> {
       explorer: values.explorer as boolean,
       explorerPrefix: values["explorer-prefix"] as string,
       allowExecute: values["allow-execute"] as boolean,
+      authenticator,
+      exemptPaths,
     });
   } catch (error) {
     console.error("Server startup failed:", error);

@@ -9,7 +9,7 @@
 
 import { Type } from "@sinclair/typebox";
 import { Registry, module } from "apcore-js";
-import { serve } from "apcore-mcp";
+import { serve, JWTAuthenticator } from "apcore-mcp";
 import { convert_temperature, word_count } from "./binding_demo/myapp.js";
 
 // 1. Discover class-based modules from extensions/
@@ -81,11 +81,22 @@ console.log(`Class-based modules: ${nClass}`);
 console.log(`Programmatic modules: 2`);
 console.log(`Total:               ${registry.moduleIds.length}`);
 
-// 3. Launch MCP server with Explorer UI
+// 3. Optional JWT auth via JWT_SECRET env var
+const jwtSecret = process.env.JWT_SECRET;
+const authenticator = jwtSecret
+  ? new JWTAuthenticator({ secret: jwtSecret })
+  : undefined;
+
+if (authenticator) {
+  console.log("JWT authentication enabled (set Authorization: Bearer <token>)");
+}
+
+// 4. Launch MCP server with Explorer UI
 serve(registry, {
   transport: "streamable-http",
   host: "127.0.0.1",
   port: 8000,
   explorer: true,
   allowExecute: true,
+  authenticator,
 });

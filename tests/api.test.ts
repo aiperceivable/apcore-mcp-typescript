@@ -137,13 +137,16 @@ describe("serve()", () => {
     ).rejects.toThrow("Unknown transport");
   });
 
-  it("throws when passed a Registry without Executor and apcore not installed", async () => {
+  it("auto-creates Executor from bare Registry when apcore-js is installed", async () => {
     const registry = createMockRegistry({});
 
     const { serve } = await import("../src/index.js");
 
-    await expect(serve(registry)).rejects.toThrow(
-      "serve() requires an Executor instance",
-    );
+    // Should not throw since apcore-js is installed — serve will auto-create Executor
+    // This will throw for unknown transport, confirming the Executor was created
+    await expect(
+      // @ts-expect-error testing invalid transport after auto-resolve
+      serve(registry, { transport: "invalid" }),
+    ).rejects.toThrow("Unknown transport");
   });
 });

@@ -14,6 +14,7 @@ import type { Executor, TextContentDict } from "../types.js";
 import { createBridgeContext } from "./context.js";
 import { MCP_PROGRESS_KEY, MCP_ELICIT_KEY } from "../helpers.js";
 import type { ElicitResult } from "../helpers.js";
+import { getCurrentIdentity } from "../auth/storage.js";
 
 /** Tuple of [content array, isError flag, traceId] returned from handleCall. */
 export type CallResult = [TextContentDict[], boolean, string | undefined];
@@ -125,8 +126,10 @@ export class ExecutionRouter {
         };
       }
 
-      const context = hasCallbacks
-        ? createBridgeContext(contextData)
+      const identity = getCurrentIdentity();
+
+      const context = (hasCallbacks || identity)
+        ? createBridgeContext(contextData, identity)
         : undefined;
 
       // ── Pre-execution validation ────────────────────────────────────

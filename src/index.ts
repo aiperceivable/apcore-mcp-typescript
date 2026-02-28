@@ -20,6 +20,7 @@ import type {
   Executor,
   OpenAIToolDef,
 } from "./types.js";
+import type { Authenticator } from "./auth/types.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json") as { version: string };
@@ -43,6 +44,12 @@ export { reportProgress, elicit, MCP_PROGRESS_KEY, MCP_ELICIT_KEY } from "./help
 export type { ElicitResult } from "./helpers.js";
 export { createBridgeContext } from "./server/context.js";
 export type { BridgeContext } from "./server/context.js";
+
+// ─── Auth Exports ────────────────────────────────────────────────────────────
+export { JWTAuthenticator } from "./auth/jwt.js";
+export type { ClaimMapping, JWTAuthenticatorOptions } from "./auth/jwt.js";
+export type { Authenticator, Identity } from "./auth/types.js";
+export { identityStorage, getCurrentIdentity } from "./auth/storage.js";
 
 // ─── Building Block Exports ──────────────────────────────────────────────────
 export { MCPServerFactory } from "./server/factory.js";
@@ -140,6 +147,10 @@ export interface ServeOptions {
   explorerPrefix?: string;
   /** Allow tool execution from the explorer UI. Default: false */
   allowExecute?: boolean;
+  /** Optional authenticator for request authentication (HTTP transports only). */
+  authenticator?: Authenticator;
+  /** Custom paths exempt from authentication. Default: ["/health", "/metrics"] */
+  exemptPaths?: string[];
 }
 
 /**
@@ -168,6 +179,8 @@ export async function serve(
     explorer = false,
     explorerPrefix = "/explorer",
     allowExecute = false,
+    authenticator,
+    exemptPaths,
   } = options;
 
   // Input validation (matching Python's checks)
@@ -231,6 +244,12 @@ export async function serve(
   if (metricsCollector) {
     transportManager.setMetricsCollector(metricsCollector);
   }
+  if (authenticator) {
+    transportManager.setAuthenticator(authenticator);
+  }
+  if (exemptPaths) {
+    transportManager.setExemptPaths(exemptPaths);
+  }
 
   // Mount explorer for HTTP transports only
   const transportLower = transport.toLowerCase();
@@ -238,6 +257,7 @@ export async function serve(
     const explorerHandler = new ExplorerHandler(tools, router, {
       allowExecute,
       prefix: explorerPrefix,
+      authenticator,
     });
     transportManager.setExplorerHandler(explorerHandler);
     origInfo(`Tool Explorer enabled at ${explorerPrefix}`);

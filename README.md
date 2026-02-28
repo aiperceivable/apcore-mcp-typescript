@@ -16,6 +16,7 @@ Converts apcore module registries into [Model Context Protocol (MCP)](https://mo
 - **Annotation Mapping** — Map module annotations to MCP hints and OpenAI description suffixes
 - **Error Mapping** — Sanitize internal errors for safe client-facing responses
 - **Dynamic Registration** — Listen for registry changes and update tools at runtime
+- **Tool Explorer** — Browser-based UI for browsing schemas and testing tools interactively
 - **CLI** — Launch an MCP server from the command line
 
 ## Requirements
@@ -78,6 +79,73 @@ npx apcore-mcp --extensions-dir ./extensions --transport sse --port 8000
 | `--name` | `apcore-mcp` | MCP server name |
 | `--version` | package version | MCP server version |
 | `--log-level` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `--explorer` | off | Enable the browser-based Tool Explorer UI (HTTP only) |
+| `--explorer-prefix` | `/explorer` | URL prefix for the explorer UI |
+| `--allow-execute` | off | Allow tool execution from the explorer UI |
+| `--jwt-secret` | — | JWT secret key for Bearer token authentication |
+| `--jwt-algorithm` | `HS256` | JWT algorithm |
+| `--jwt-audience` | — | Expected JWT audience claim |
+| `--jwt-issuer` | — | Expected JWT issuer claim |
+| `--jwt-require-auth` | `true` | Require auth (use `--no-jwt-require-auth` for permissive mode) |
+| `--exempt-paths` | `/health,/metrics` | Comma-separated paths exempt from auth |
+
+## MCP Client Configuration
+
+### Claude Desktop
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "apcore": {
+      "command": "npx",
+      "args": ["apcore-mcp", "--extensions-dir", "/path/to/your/extensions"]
+    }
+  }
+}
+```
+
+### Claude Code
+
+Add to `.mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "apcore": {
+      "command": "npx",
+      "args": ["apcore-mcp", "--extensions-dir", "./extensions"]
+    }
+  }
+}
+```
+
+### Cursor
+
+Add to `.cursor/mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "apcore": {
+      "command": "npx",
+      "args": ["apcore-mcp", "--extensions-dir", "./extensions"]
+    }
+  }
+}
+```
+
+### Remote HTTP access
+
+```bash
+npx apcore-mcp --extensions-dir ./extensions \
+    --transport streamable-http \
+    --host 0.0.0.0 \
+    --port 9000
+```
+
+Connect any MCP client to `http://your-host:9000/mcp`.
 
 ## API Reference
 
@@ -94,8 +162,99 @@ function serve(
     port?: number;
     name?: string;
     version?: string;
+    explorer?: boolean;
+    explorerPrefix?: string;
+    allowExecute?: boolean;
+    authenticator?: Authenticator;
+    exemptPaths?: string[];
   }
 ): Promise<void>;
+```
+
+### Tool Explorer
+
+When `explorer: true` is passed to `serve()`, a browser-based Tool Explorer UI is mounted on HTTP transports. It provides an interactive page for browsing tool schemas and testing tool execution.
+
+```typescript
+await serve(registry, {
+  transport: "streamable-http",
+  explorer: true,
+  allowExecute: true,
+});
+// Open http://127.0.0.1:8000/explorer/ in a browser
+```
+
+**Endpoints:**
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /explorer/` | Interactive HTML page (self-contained, no external dependencies) |
+| `GET /explorer/tools` | JSON array of all tools with name, description, annotations |
+| `GET /explorer/tools/<name>` | Full tool detail with inputSchema |
+| `POST /explorer/tools/<name>/call` | Execute a tool (requires `allowExecute: true`) |
+
+- **HTTP transports only** (`streamable-http`, `sse`). Silently ignored for `stdio`.
+- **Execution disabled by default** — set `allowExecute: true` to enable Try-it.
+- **Custom prefix** — use `explorerPrefix: "/browse"` to mount at a different path.
+- **Authorization UI** — Swagger-UI-style Authorization input field. Paste a Bearer token to authenticate tool execution requests. Generated cURL commands automatically include the Authorization header.
+
+### JWT Authentication
+
+apcore-mcp supports JWT Bearer token authentication for HTTP-based transports.
+
+#### Programmatic Usage
+
+```typescript
+import { serve, JWTAuthenticator } from "apcore-mcp";
+
+const authenticator = new JWTAuthenticator({
+  secret: "your-secret-key",
+  algorithms: ["HS256"],
+  audience: "my-app",
+  issuer: "auth-service",
+  // Map custom claims to Identity fields
+  claimMapping: {
+    id: "sub",
+    type: "type",
+    roles: "roles",
+    attrs: ["email", "org"],  // Extra claims → Identity.attrs
+  },
+  // Claims that must be present in the token (default: ["sub"])
+  requireClaims: ["sub", "email"],
+  // Set to false for permissive mode (allow unauthenticated requests)
+  requireAuth: true,
+});
+
+await serve(executor, {
+  transport: "streamable-http",
+  authenticator,
+  // Custom exempt paths (default: ["/health", "/metrics"])
+  exemptPaths: ["/health", "/metrics", "/status"],
+});
+```
+
+#### CLI Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--jwt-secret` | — | JWT secret key for Bearer token authentication |
+| `--jwt-algorithm` | `HS256` | JWT algorithm |
+| `--jwt-audience` | — | Expected audience claim |
+| `--jwt-issuer` | — | Expected issuer claim |
+| `--jwt-require-auth` | `true` | Require auth. Use `--no-jwt-require-auth` for permissive mode |
+| `--exempt-paths` | `/health,/metrics` | Comma-separated paths exempt from auth |
+
+#### curl Examples
+
+```bash
+# Authenticated request
+curl -X POST http://localhost:8000/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
+
+# Health check (always exempt)
+curl http://localhost:8000/health
 ```
 
 ### `toOpenaiTools(registryOrExecutor, options?)`
@@ -128,16 +287,25 @@ src/
 ├── index.ts              # Public API: serve(), toOpenaiTools()
 ├── cli.ts                # CLI entry point
 ├── types.ts              # TypeScript interfaces
+├── helpers.ts            # reportProgress() / elicit() helpers
 ├── adapters/
 │   ├── schema.ts         # JSON Schema $ref inlining
 │   ├── annotations.ts    # Module annotations -> MCP hints
 │   ├── errors.ts         # Error sanitization
 │   └── idNormalizer.ts   # Dot-notation <-> dash-notation
+├── auth/
+│   ├── jwt.ts            # JWT Bearer token authenticator
+│   ├── storage.ts        # AsyncLocalStorage identity propagation
+│   └── types.ts          # Authenticator / Identity interfaces
 ├── converters/
 │   └── openai.ts         # OpenAI tool definition converter
+├── explorer/
+│   ├── handler.ts        # Explorer HTTP route handler
+│   └── html.ts           # Self-contained HTML/CSS/JS page
 └── server/
     ├── factory.ts        # MCP Server creation & handler registration
     ├── router.ts         # Tool call execution routing
+    ├── context.ts        # BridgeContext for executor call chains
     ├── transport.ts      # Transport lifecycle (stdio/HTTP/SSE)
     └── listener.ts       # Dynamic registry event listener
 ```
@@ -176,18 +344,7 @@ npm run dev
 
 ## Testing
 
-100 tests across 10 test suites with 96%+ line coverage:
-
-| Module | Coverage |
-|---|---|
-| annotations.ts | 100% |
-| idNormalizer.ts | 100% |
-| factory.ts | 100% |
-| router.ts | 100% |
-| errors.ts | 98.8% |
-| schema.ts | 97.0% |
-| openai.ts | 91.7% |
-| listener.ts | 89.7% |
+284 tests across 22 test suites.
 
 ## License
 

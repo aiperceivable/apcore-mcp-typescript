@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-02-28
+
+### Added
+
+- **JWT Authentication** — New `src/auth/` module with `JWTAuthenticator` class for Bearer token authentication on HTTP transports. Supports configurable algorithms, audience/issuer validation, claim-to-Identity mapping (`ClaimMapping`), required claims, and permissive mode. Exported from public API: `JWTAuthenticator`, `Authenticator`, `ClaimMapping`, `JWTAuthenticatorOptions`.
+- **Identity propagation via AsyncLocalStorage** — `identityStorage` (AsyncLocalStorage) and `getCurrentIdentity()` allow any code in the request call chain to access the authenticated identity without explicit parameter passing. Exported from public API.
+- **`authenticator` and `exemptPaths` options in `ServeOptions`** — Pass an `Authenticator` instance to `serve()` to enable request authentication. `exemptPaths` customizes which routes bypass auth (default: `["/health", "/metrics"]`).
+- **CLI JWT flags** — 7 new CLI arguments: `--jwt-secret`, `--jwt-algorithm`, `--jwt-audience`, `--jwt-issuer`, `--jwt-require-auth`, `--jwt-permissive`, `--exempt-paths`.
+- **BridgeContext identity support** — `createBridgeContext()` accepts an optional `Identity` parameter. `BridgeContext.identity` type narrowed from `Record<string, unknown> | null` to `Identity | null`. Identity propagates to child contexts.
+- **Explorer Authorization UI** — Swagger-UI-style Authorization input field in the Tool Explorer. Paste a Bearer token to authenticate tool execution requests. Generated cURL commands automatically include the Authorization header.
+- **Explorer auth enforcement** — Tool execution via the Explorer returns 401 Unauthorized without a valid Bearer token when authentication is enabled. The Explorer UI displays a clear error message prompting the user to enter a token.
+- **MCP Client Configuration** — README now includes configuration examples for Claude Desktop, Claude Code, Cursor, and remote HTTP access.
+- New `jsonwebtoken` runtime dependency for JWT verification.
+- New test suites: `tests/auth/jwt.test.ts`, `tests/auth/storage.test.ts`, `tests/auth/integration.test.ts`; new identity tests in `tests/server/context.test.ts`; new JWT CLI flag tests in `tests/cli.test.ts`.
+
+### Changed
+
+- **Explorer UI layout** — Redesigned from a bottom-panel layout to a Swagger-UI-style inline accordion. Each tool expands its detail, schema, and "Try it" section directly below the tool name. Only one tool can be expanded at a time. Detail is loaded once on first expand and cached.
+- **Explorer title** — Updated from "MCP Tool Explorer" to "APCore MCP Tool Explorer" for consistent branding with the Python project.
+- **`ExecutionRouter` creates BridgeContext with identity** — When `getCurrentIdentity()` returns a non-null identity, the router creates a BridgeContext even without MCP callbacks, propagating the identity to executors.
+- **Transport auth middleware** — Both `streamable-http` and `sse` transports authenticate non-exempt requests before processing. Authenticated identity is stored in `identityStorage` (AsyncLocalStorage) so `getCurrentIdentity()` works throughout the request lifecycle.
+- **CRITICAL added to valid CLI log levels** — `--log-level` now accepts `CRITICAL` in addition to `DEBUG`, `INFO`, `WARNING`, `ERROR`.
+- **vitest config simplified** — Removed the `/dev/null` alias hack for `apcore-js` since it is now a proper direct dependency.
+- **resolve-executor tests updated** — Tests now verify that `resolveExecutor()` auto-creates an Executor from a bare Registry (since `apcore-js` is a direct dependency), replacing the previous "throws when apcore-js not installed" assertions.
+
 ## [0.6.1] - 2026-02-26
 
 ### Changed
