@@ -180,5 +180,26 @@ describe("AnnotationMapper", () => {
       expect(suffix).toContain("requires_approval=true");
       expect(suffix).toContain("open_world=false");
     });
+
+    // TC-ANNOT-015: streaming=true included in suffix
+    it("includes streaming=true when streaming is non-default", () => {
+      const suffix = mapper.toDescriptionSuffix({
+        ...defaultAnnotations,
+        streaming: true,
+      });
+
+      expect(suffix).toContain("[Annotations:");
+      expect(suffix).toContain("streaming=true");
+    });
+
+    // TC-ANNOT-016: streaming=false (default) not included
+    it("does not include streaming=false since it is the default", () => {
+      const suffix = mapper.toDescriptionSuffix({
+        ...defaultAnnotations,
+        streaming: false,
+      });
+
+      expect(suffix).toBe("");
+    });
   });
 });

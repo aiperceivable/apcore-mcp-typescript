@@ -111,12 +111,16 @@ describe("CLI (cli.ts)", () => {
       });
     }
 
-    // Always mock index.js for serve/VERSION/JWTAuthenticator
+    // Always mock index.js for serve/VERSION/JWTAuthenticator/ElicitationApprovalHandler
     const mockServe = serveFn ?? vi.fn().mockResolvedValue(undefined);
     vi.doMock("../src/index.js", () => ({
       serve: mockServe,
       VERSION: "0.0.0-test",
       JWTAuthenticator: vi.fn().mockImplementation(() => ({ authenticate: vi.fn() })),
+      ElicitationApprovalHandler: vi.fn().mockImplementation(() => ({
+        requestApproval: vi.fn(),
+        checkApproval: vi.fn(),
+      })),
     }));
 
     const mod = await import("../src/cli.js");
@@ -344,5 +348,45 @@ describe("CLI (cli.ts)", () => {
     expect(serveFn).toHaveBeenCalled();
     const opts = serveFn.mock.calls[0][1];
     expect(opts.authenticator).toBeDefined();
+  });
+
+  // ── Approval flags ──────────────────────────────────────────────────
+
+  it("fails for invalid --approval mode", async () => {
+    const { exitCode } = await runMain(
+      ["--extensions-dir", tmpDir, "--approval", "invalid"],
+      { apcoreAvailable: true, discoverCount: 1 },
+    );
+
+    expect(exitCode).toBe(1);
+    expect(
+      errorMessages.some((m) => m.includes("--approval must be one of")),
+    ).toBe(true);
+  });
+
+  it("passes approvalHandler to serve() when --approval elicit", async () => {
+    const serveFn = vi.fn().mockResolvedValue(undefined);
+    const { exitCode } = await runMain(
+      ["--extensions-dir", tmpDir, "--approval", "elicit"],
+      { apcoreAvailable: true, discoverCount: 1, serveFn },
+    );
+
+    expect(exitCode).toBe(-1);
+    expect(serveFn).toHaveBeenCalled();
+    const opts = serveFn.mock.calls[0][1];
+    expect(opts.approvalHandler).toBeDefined();
+  });
+
+  it("does not pass approvalHandler when --approval off (default)", async () => {
+    const serveFn = vi.fn().mockResolvedValue(undefined);
+    const { exitCode } = await runMain(
+      ["--extensions-dir", tmpDir],
+      { apcoreAvailable: true, discoverCount: 1, serveFn },
+    );
+
+    expect(exitCode).toBe(-1);
+    expect(serveFn).toHaveBeenCalled();
+    const opts = serveFn.mock.calls[0][1];
+    expect(opts.approvalHandler).toBeUndefined();
   });
 });

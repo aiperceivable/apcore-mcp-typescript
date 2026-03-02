@@ -64,6 +64,8 @@ export { AnnotationMapper } from "./adapters/annotations.js";
 export { SchemaConverter } from "./adapters/schema.js";
 export { ErrorMapper } from "./adapters/errors.js";
 export { ModuleIDNormalizer } from "./adapters/idNormalizer.js";
+export { ElicitationApprovalHandler } from "./adapters/approval.js";
+export type { ApprovalRequest, ApprovalResult } from "./adapters/approval.js";
 export { OpenAIConverter } from "./converters/openai.js";
 export type { ConvertOptions, ConvertRegistryOptions } from "./converters/openai.js";
 export type { BuildToolsOptions } from "./server/factory.js";
@@ -92,7 +94,10 @@ export function resolveRegistry(registryOrExecutor: RegistryOrExecutor): Registr
  *
  * @throws {Error} If the argument is a Registry and apcore-js is not installed.
  */
-export async function resolveExecutor(registryOrExecutor: RegistryOrExecutor): Promise<Executor> {
+export async function resolveExecutor(
+  registryOrExecutor: RegistryOrExecutor,
+  options?: { approvalHandler?: unknown },
+): Promise<Executor> {
   if ("call" in registryOrExecutor || "callAsync" in registryOrExecutor) {
     // Already an Executor
     return registryOrExecutor as Executor;
@@ -103,7 +108,11 @@ export async function resolveExecutor(registryOrExecutor: RegistryOrExecutor): P
     const apcore = await import("apcore-js") as any;
     const ExecutorClass = apcore.Executor ?? apcore.default?.Executor;
     if (ExecutorClass) {
-      return new ExecutorClass({ registry: registryOrExecutor }) as Executor;
+      const executorOpts: Record<string, unknown> = { registry: registryOrExecutor };
+      if (options?.approvalHandler) {
+        executorOpts.approvalHandler = options.approvalHandler;
+      }
+      return new ExecutorClass(executorOpts) as Executor;
     }
   } catch {
     // apcore-js not installed — fall through to error
@@ -151,6 +160,8 @@ export interface ServeOptions {
   authenticator?: Authenticator;
   /** Custom paths exempt from authentication. Default: ["/health", "/metrics"] */
   exemptPaths?: string[];
+  /** Optional approval handler passed to the Executor (e.g. ElicitationApprovalHandler). */
+  approvalHandler?: unknown;
 }
 
 /**
@@ -181,6 +192,7 @@ export async function serve(
     allowExecute = false,
     authenticator,
     exemptPaths,
+    approvalHandler,
   } = options;
 
   // Input validation (matching Python's checks)
@@ -221,7 +233,7 @@ export async function serve(
   }
 
   const registry = resolveRegistry(registryOrExecutor);
-  const executor = await resolveExecutor(registryOrExecutor);
+  const executor = await resolveExecutor(registryOrExecutor, { approvalHandler });
 
   // Build MCP server components
   const factory = new MCPServerFactory();

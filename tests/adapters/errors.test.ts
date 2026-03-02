@@ -10,13 +10,20 @@ function createModuleError(
   code: string,
   message: string,
   details: Record<string, unknown> | null = null,
+  extra?: Record<string, unknown>,
 ) {
   const error = new Error(message) as Error & {
     code: string;
     details: Record<string, unknown> | null;
+    [key: string]: unknown;
   };
   error.code = code;
   error.details = details;
+  if (extra) {
+    for (const [key, value] of Object.entries(extra)) {
+      (error as Record<string, unknown>)[key] = value;
+    }
+  }
   return error;
 }
 
@@ -200,5 +207,147 @@ describe("ErrorMapper", () => {
     expect(result.isError).toBe(true);
     expect(result.errorType).toBe("SCHEMA_VALIDATION_ERROR");
     expect(result.message).toBe("Schema validation failed");
+  });
+
+  // TC-ERROR-012: AI guidance fields extracted from error
+  it("attaches AI guidance fields from enhanced ModuleError", () => {
+    const error = createModuleError(
+      "MODULE_EXECUTE_ERROR",
+      "Something failed",
+      null,
+      {
+        retryable: true,
+        aiGuidance: "Try increasing the timeout",
+        userFixable: true,
+        suggestion: "Set timeout to 60s",
+      },
+    );
+
+    const result = mapper.toMcpError(error);
+
+    expect(result.isError).toBe(true);
+    expect(result.retryable).toBe(true);
+    expect(result.aiGuidance).toBe("Try increasing the timeout");
+    expect(result.userFixable).toBe(true);
+    expect(result.suggestion).toBe("Set timeout to 60s");
+  });
+
+  // TC-ERROR-013: AI guidance fields not attached when absent
+  it("does not attach AI guidance fields when absent on error", () => {
+    const error = createModuleError(
+      "MODULE_EXECUTE_ERROR",
+      "Something failed",
+    );
+
+    const result = mapper.toMcpError(error);
+
+    expect(result.retryable).toBeUndefined();
+    expect(result.aiGuidance).toBeUndefined();
+    expect(result.userFixable).toBeUndefined();
+    expect(result.suggestion).toBeUndefined();
+  });
+
+  // TC-ERROR-014: APPROVAL_PENDING narrows details to approvalId
+  it("narrows APPROVAL_PENDING details to approvalId only", () => {
+    const error = createModuleError(
+      "APPROVAL_PENDING",
+      "Approval pending",
+      { approvalId: "abc-123", extra: "should-be-dropped" },
+    );
+
+    const result = mapper.toMcpError(error);
+
+    expect(result.isError).toBe(true);
+    expect(result.errorType).toBe("APPROVAL_PENDING");
+    expect(result.message).toBe("Approval pending");
+    expect(result.details).toEqual({ approvalId: "abc-123" });
+  });
+
+  // TC-ERROR-014b: APPROVAL_PENDING narrows snake_case approval_id too
+  it("narrows APPROVAL_PENDING details with snake_case approval_id", () => {
+    const error = createModuleError(
+      "APPROVAL_PENDING",
+      "Approval pending",
+      { approval_id: "snake-456", extra: "should-be-dropped" },
+    );
+
+    const result = mapper.toMcpError(error);
+
+    expect(result.isError).toBe(true);
+    expect(result.errorType).toBe("APPROVAL_PENDING");
+    expect(result.details).toEqual({ approvalId: "snake-456" });
+  });
+
+  // TC-ERROR-015: APPROVAL_PENDING with no approvalId in details
+  it("returns null details for APPROVAL_PENDING without approvalId", () => {
+    const error = createModuleError(
+      "APPROVAL_PENDING",
+      "Approval pending",
+      { other: "data" },
+    );
+
+    const result = mapper.toMcpError(error);
+
+    expect(result.details).toBeNull();
+  });
+
+  // TC-ERROR-016: APPROVAL_TIMEOUT marked retryable
+  it("marks APPROVAL_TIMEOUT as retryable", () => {
+    const error = createModuleError(
+      "APPROVAL_TIMEOUT",
+      "Approval timed out",
+      null,
+    );
+
+    const result = mapper.toMcpError(error);
+
+    expect(result.isError).toBe(true);
+    expect(result.errorType).toBe("APPROVAL_TIMEOUT");
+    expect(result.message).toBe("Approval timed out");
+    expect(result.retryable).toBe(true);
+  });
+
+  // TC-ERROR-017: APPROVAL_DENIED extracts reason
+  it("extracts reason from APPROVAL_DENIED details", () => {
+    const error = createModuleError(
+      "APPROVAL_DENIED",
+      "Approval denied",
+      { reason: "User declined", extra: "other" },
+    );
+
+    const result = mapper.toMcpError(error);
+
+    expect(result.isError).toBe(true);
+    expect(result.errorType).toBe("APPROVAL_DENIED");
+    expect(result.message).toBe("Approval denied");
+    expect(result.details).toEqual({ reason: "User declined" });
+  });
+
+  // TC-ERROR-018: APPROVAL_DENIED without reason passes through details
+  it("passes through APPROVAL_DENIED details when no reason", () => {
+    const error = createModuleError(
+      "APPROVAL_DENIED",
+      "Approval denied",
+      { something: "else" },
+    );
+
+    const result = mapper.toMcpError(error);
+
+    expect(result.details).toEqual({ something: "else" });
+  });
+
+  // TC-ERROR-019: Schema validation with AI guidance
+  it("attaches AI guidance to schema validation errors", () => {
+    const error = createModuleError(
+      "SCHEMA_VALIDATION_ERROR",
+      "Validation failed",
+      { errors: [{ field: "name", message: "required" }] },
+      { suggestion: "Add the name field" },
+    );
+
+    const result = mapper.toMcpError(error);
+
+    expect(result.errorType).toBe("SCHEMA_VALIDATION_ERROR");
+    expect(result.suggestion).toBe("Add the name field");
   });
 });

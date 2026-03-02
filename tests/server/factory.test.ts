@@ -48,6 +48,7 @@ function makeDescriptor(
     documentation: overrides.documentation !== undefined
       ? overrides.documentation
       : undefined,
+    metadata: overrides.metadata,
   };
 }
 
@@ -312,6 +313,74 @@ describe("MCPServerFactory", () => {
         expect.objectContaining({ sendNotification: undefined, _meta: undefined }),
       );
     });
+  });
+
+  // TC-FACTORY-AI-INTENT-001: AI intent metadata appended to description
+  it("appends AI intent metadata to tool description", () => {
+    const descriptor = makeDescriptor({
+      moduleId: "test.intent",
+      description: "A test module",
+      metadata: {
+        "x-when-to-use": "When you need to test things",
+        "x-when-not-to-use": "When testing is not needed",
+        "x-common-mistakes": "Forgetting to pass arguments",
+        "x-workflow-hints": "Run after setup",
+      },
+    });
+
+    const tool = factory.buildTool(descriptor);
+
+    expect(tool.description).toContain("A test module");
+    expect(tool.description).toContain("When To Use: When you need to test things");
+    expect(tool.description).toContain("When Not To Use: When testing is not needed");
+    expect(tool.description).toContain("Common Mistakes: Forgetting to pass arguments");
+    expect(tool.description).toContain("Workflow Hints: Run after setup");
+  });
+
+  // TC-FACTORY-AI-INTENT-002: no metadata -> description unchanged
+  it("leaves description unchanged when no AI intent metadata present", () => {
+    const descriptor = makeDescriptor({
+      moduleId: "test.plain",
+      description: "A plain module",
+    });
+
+    const tool = factory.buildTool(descriptor);
+
+    expect(tool.description).toBe("A plain module");
+  });
+
+  // TC-FACTORY-AI-INTENT-003: partial metadata
+  it("appends only present AI intent keys", () => {
+    const descriptor = makeDescriptor({
+      moduleId: "test.partial",
+      description: "Partial test",
+      metadata: {
+        "x-when-to-use": "When needed",
+        "other-key": "ignored",
+      },
+    });
+
+    const tool = factory.buildTool(descriptor);
+
+    expect(tool.description).toContain("When To Use: When needed");
+    expect(tool.description).not.toContain("other-key");
+    expect(tool.description).not.toContain("When Not To Use");
+  });
+
+  // TC-FACTORY-AI-INTENT-004: non-string metadata values are ignored
+  it("ignores non-string AI intent metadata values", () => {
+    const descriptor = makeDescriptor({
+      moduleId: "test.nonstring",
+      description: "Base description",
+      metadata: {
+        "x-when-to-use": 42,
+        "x-common-mistakes": null,
+      },
+    });
+
+    const tool = factory.buildTool(descriptor);
+
+    expect(tool.description).toBe("Base description");
   });
 
   // TC-FACTORY-008

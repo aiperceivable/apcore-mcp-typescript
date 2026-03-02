@@ -31,6 +31,9 @@ export const ErrorCodes = Object.freeze({
   MODULE_LOAD_ERROR: "MODULE_LOAD_ERROR",
   MODULE_EXECUTE_ERROR: "MODULE_EXECUTE_ERROR",
   GENERAL_INVALID_INPUT: "GENERAL_INVALID_INPUT",
+  APPROVAL_DENIED: "APPROVAL_DENIED",
+  APPROVAL_TIMEOUT: "APPROVAL_TIMEOUT",
+  APPROVAL_PENDING: "APPROVAL_PENDING",
 } as const);
 
 /** Valid module ID pattern. No hyphens allowed. */
@@ -101,6 +104,10 @@ export interface McpErrorResponse {
   errorType: string;
   message: string;
   details: Record<string, unknown> | null;
+  retryable?: boolean;
+  aiGuidance?: string;
+  userFixable?: boolean;
+  suggestion?: string;
 }
 
 // ─── OpenAI Types ────────────────────────────────────────────────────────────

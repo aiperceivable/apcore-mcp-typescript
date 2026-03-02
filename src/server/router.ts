@@ -10,7 +10,7 @@
  */
 
 import { ErrorMapper } from "../adapters/errors.js";
-import type { Executor, TextContentDict } from "../types.js";
+import type { Executor, TextContentDict, McpErrorResponse } from "../types.js";
 import { createBridgeContext } from "./context.js";
 import { MCP_PROGRESS_KEY, MCP_ELICIT_KEY } from "../helpers.js";
 import type { ElicitResult } from "../helpers.js";
@@ -53,6 +53,24 @@ export class ExecutionRouter {
     this._executor = executor;
     this._errorMapper = new ErrorMapper();
     this._validateInputs = options?.validateInputs ?? false;
+  }
+
+  /**
+   * Build error text content, appending AI guidance fields as structured JSON when present.
+   *
+   * Guidance keys use camelCase (aiGuidance, userFixable) — identical across Python and TypeScript.
+   */
+  private static _buildErrorText(errorInfo: McpErrorResponse): string {
+    let text = errorInfo.message;
+    const guidance: Record<string, unknown> = {};
+    if (errorInfo.retryable !== undefined) guidance.retryable = errorInfo.retryable;
+    if (errorInfo.aiGuidance !== undefined) guidance.aiGuidance = errorInfo.aiGuidance;
+    if (errorInfo.userFixable !== undefined) guidance.userFixable = errorInfo.userFixable;
+    if (errorInfo.suggestion !== undefined) guidance.suggestion = errorInfo.suggestion;
+    if (Object.keys(guidance).length > 0) {
+      text += "\n\n" + JSON.stringify(guidance);
+    }
+    return text;
   }
 
   /**
@@ -166,7 +184,7 @@ export class ExecutionRouter {
         } catch (valError: unknown) {
           const errorInfo = this._errorMapper.toMcpError(valError);
           const content: TextContentDict[] = [
-            { type: "text", text: errorInfo.message },
+            { type: "text", text: ExecutionRouter._buildErrorText(errorInfo) },
           ];
           return [content, true, undefined];
         }
@@ -236,7 +254,7 @@ export class ExecutionRouter {
       const content: TextContentDict[] = [
         {
           type: "text",
-          text: errorInfo.message,
+          text: ExecutionRouter._buildErrorText(errorInfo),
         },
       ];
 

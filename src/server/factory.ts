@@ -27,6 +27,9 @@ import type { Registry, ModuleDescriptor } from "../types.js";
 import type { ExecutionRouter } from "./router.js";
 import type { HandleCallExtra } from "./router.js";
 
+/** Metadata keys for AI intent annotations appended to tool descriptions. */
+const AI_INTENT_KEYS = ["x-when-to-use", "x-when-not-to-use", "x-common-mistakes", "x-workflow-hints"] as const;
+
 /** Options for filtering when building tools from a registry. */
 export interface BuildToolsOptions {
   tags?: string[] | null;
@@ -87,9 +90,24 @@ export class MCPServerFactory {
 
     const hasApproval = this._annotationMapper.hasRequiresApproval(descriptor.annotations);
 
+    // Append AI intent metadata to description for agent visibility
+    let description = descriptor.description;
+    const metadata = descriptor.metadata ?? {};
+    const intentParts: string[] = [];
+    for (const key of AI_INTENT_KEYS) {
+      const val = metadata[key];
+      if (val && typeof val === "string") {
+        const label = key.replace("x-", "").replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+        intentParts.push(`${label}: ${val}`);
+      }
+    }
+    if (intentParts.length > 0) {
+      description += "\n\n" + intentParts.join("\n");
+    }
+
     const tool: Tool = {
       name: descriptor.moduleId,
-      description: descriptor.description,
+      description,
       inputSchema: convertedSchema as Tool["inputSchema"],
       annotations: {
         readOnlyHint: mcpAnnotations.readOnlyHint,

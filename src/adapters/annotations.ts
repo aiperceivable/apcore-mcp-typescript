@@ -62,6 +62,7 @@ export class AnnotationMapper {
       idempotent: false,
       requires_approval: false,
       open_world: true,
+      streaming: false,
     };
 
     const parts: string[] = [];
@@ -75,6 +76,8 @@ export class AnnotationMapper {
       parts.push(`requires_approval=${annotations.requiresApproval}`);
     if (annotations.openWorld !== DEFAULTS.open_world)
       parts.push(`open_world=${annotations.openWorld}`);
+    if (annotations.streaming !== DEFAULTS.streaming)
+      parts.push(`streaming=${annotations.streaming}`);
 
     if (parts.length === 0) {
       return "";

@@ -2,8 +2,8 @@
  * ErrorMapper - Maps apcore errors to MCP-compatible error responses.
  *
  * Handles ModuleError instances with specific error codes, sanitizes
- * internal error details, and formats schema validation errors with
- * field-level detail.
+ * internal error details, formats schema validation errors with
+ * field-level detail, and extracts AI guidance fields.
  */
 
 import { ErrorCodes } from "../types.js";
@@ -15,6 +15,13 @@ const INTERNAL_ERROR_CODES: Set<string> = new Set([
   ErrorCodes.CIRCULAR_CALL,
   ErrorCodes.CALL_FREQUENCY_EXCEEDED,
 ]);
+
+/**
+ * AI guidance field names on the MCP wire format (camelCase).
+ * Both Python and TypeScript output identical camelCase keys in MCP responses.
+ * Python reads snake_case from apcore errors and maps to camelCase on output.
+ */
+const _AI_GUIDANCE_FIELDS = ["retryable", "aiGuidance", "userFixable", "suggestion"] as const;
 
 export class ErrorMapper {
   /**
@@ -52,21 +59,73 @@ export class ErrorMapper {
       // Schema validation error -> formatted with field-level details
       if (code === ErrorCodes.SCHEMA_VALIDATION_ERROR) {
         const message = this._formatValidationError(details);
-        return {
+        const result: McpErrorResponse = {
           isError: true,
           errorType: ErrorCodes.SCHEMA_VALIDATION_ERROR,
           message,
           details,
         };
+        this._attachAiGuidance(error, result);
+        return result;
+      }
+
+      // Approval pending -> narrow details to approvalId only
+      // NOTE: apcore-js may use camelCase (approvalId) or snake_case (approval_id).
+      // Check both to stay compatible with either convention.
+      if (code === ErrorCodes.APPROVAL_PENDING) {
+        const idKey = details && "approvalId" in details
+          ? "approvalId"
+          : details && "approval_id" in details
+            ? "approval_id"
+            : null;
+        const narrowed = idKey
+          ? { approvalId: details![idKey] }
+          : null;
+        const result: McpErrorResponse = {
+          isError: true,
+          errorType: code,
+          message: error.message,
+          details: narrowed,
+        };
+        this._attachAiGuidance(error, result);
+        return result;
+      }
+
+      // Approval timeout -> mark as retryable
+      if (code === ErrorCodes.APPROVAL_TIMEOUT) {
+        const result: McpErrorResponse = {
+          isError: true,
+          errorType: code,
+          message: error.message,
+          details,
+          retryable: true,
+        };
+        this._attachAiGuidance(error, result);
+        return result;
+      }
+
+      // Approval denied -> extract reason from details
+      if (code === ErrorCodes.APPROVAL_DENIED) {
+        const reason = details ? (details.reason as string | undefined) : undefined;
+        const result: McpErrorResponse = {
+          isError: true,
+          errorType: code,
+          message: error.message,
+          details: reason ? { reason } : details,
+        };
+        this._attachAiGuidance(error, result);
+        return result;
       }
 
       // Other known ModuleError codes -> pass through
-      return {
+      const result: McpErrorResponse = {
         isError: true,
         errorType: code,
         message: error.message,
         details,
       };
+      this._attachAiGuidance(error, result);
+      return result;
     }
 
     // Unknown/unexpected exceptions -> generic error
@@ -79,13 +138,29 @@ export class ErrorMapper {
   }
 
   /**
+   * Extract AI guidance fields from error and attach non-undefined values to result.
+   */
+  private _attachAiGuidance(
+    error: Record<string, unknown>,
+    result: McpErrorResponse,
+  ): void {
+    for (const field of _AI_GUIDANCE_FIELDS) {
+      const value = (error as Record<string, unknown>)[field];
+      if (value !== undefined && value !== null && result[field] === undefined) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (result as any)[field] = value;
+      }
+    }
+  }
+
+  /**
    * Duck-type check for ModuleError-like objects.
    *
    * Checks for `code` (string), `message` (string), and `details` properties.
    */
   private _isModuleError(
     error: unknown,
-  ): error is { code: string; message: string; details: Record<string, unknown> | null } {
+  ): error is { code: string; message: string; details: Record<string, unknown> | null; [key: string]: unknown } {
     if (error === null || typeof error !== "object") {
       return false;
     }

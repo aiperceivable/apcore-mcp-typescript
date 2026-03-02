@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-03-02
+
+### Added
+
+- **Approval error codes** — New `APPROVAL_DENIED`, `APPROVAL_TIMEOUT`, `APPROVAL_PENDING` entries in `ErrorCodes` constant for approval-related error handling.
+- **Enhanced ErrorMapper with AI guidance** — `McpErrorResponse` now carries optional `retryable`, `aiGuidance`, `userFixable`, and `suggestion` fields. `ErrorMapper.toMcpError()` extracts these from enhanced `ModuleError` instances and attaches them to responses. Approval errors (`APPROVAL_PENDING`, `APPROVAL_TIMEOUT`, `APPROVAL_DENIED`) have dedicated handling branches.
+- **AI guidance in router error text** — `ExecutionRouter` now appends AI guidance fields as a structured JSON block to error text via `_buildErrorText()`, giving AI agents richer error context.
+- **AI intent metadata in tool descriptions** — `MCPServerFactory.buildTool()` reads `x-when-to-use`, `x-when-not-to-use`, `x-common-mistakes`, and `x-workflow-hints` from `descriptor.metadata` and appends them to the tool description for AI agent visibility.
+- **`streaming` in `toDescriptionSuffix()`** — `AnnotationMapper.toDescriptionSuffix()` now includes `streaming=true` in the annotations suffix when the module declares streaming capability.
+- **`ElicitationApprovalHandler`** — New `src/adapters/approval.ts` class that bridges MCP elicitation to apcore's approval system. Exports `ElicitationApprovalHandler`, `ApprovalRequest`, and `ApprovalResult` from public API.
+- **`approvalHandler` option in `ServeOptions`** — Pass an approval handler to `serve()` for automatic wiring into the Executor. `resolveExecutor()` now accepts an optional `approvalHandler` parameter.
+- **`--approval` CLI flag** — New CLI option with modes: `elicit` (uses `ElicitationApprovalHandler`), `auto-approve`, `always-deny`, and `off` (default). The `auto-approve` and `always-deny` modes dynamically import handlers from `apcore-js`.
+- New test suites: `tests/adapters/approval.test.ts` for `ElicitationApprovalHandler`; new AI guidance and approval error tests in `tests/adapters/errors.test.ts`; streaming suffix tests in `tests/adapters/annotations.test.ts`; AI intent metadata tests in `tests/server/factory.test.ts`; `_buildErrorText` tests in `tests/server/router.test.ts`; `--approval` CLI flag tests in `tests/cli.test.ts`.
+
 ## [0.7.0] - 2026-02-28
 
 ### Added

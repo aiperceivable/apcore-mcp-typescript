@@ -247,6 +247,44 @@ describe("ExecutionRouter", () => {
     expect(request.params.requestedSchema).toEqual({ type: "object" });
   });
 
+  // TC-ROUTER-AI-GUIDANCE-001: error with AI guidance fields appends JSON to text
+  it("appends AI guidance JSON to error text when guidance fields present", async () => {
+    const error = makeModuleError(
+      "Module timed out",
+      "APPROVAL_TIMEOUT",
+    );
+    // Add AI guidance fields
+    (error as Record<string, unknown>).retryable = true;
+    (error as Record<string, unknown>).aiGuidance = "Try again later";
+
+    const executor = createMockExecutor(undefined, error);
+    const router = new ExecutionRouter(executor);
+
+    const [content, isError] = await router.handleCall("test.module", {});
+
+    expect(isError).toBe(true);
+    expect(content[0].text).toContain("Module timed out");
+    expect(content[0].text).toContain('"retryable":true');
+    expect(content[0].text).toContain('"aiGuidance":"Try again later"');
+  });
+
+  // TC-ROUTER-AI-GUIDANCE-002: error without AI guidance has plain message
+  it("returns plain error message when no AI guidance fields present", async () => {
+    const error = makeModuleError(
+      "Module not found: test.module",
+      "MODULE_NOT_FOUND",
+    );
+    const executor = createMockExecutor(undefined, error);
+    const router = new ExecutionRouter(executor);
+
+    const [content, isError] = await router.handleCall("test.module", {});
+
+    expect(isError).toBe(true);
+    // Should not contain JSON appendix
+    expect(content[0].text).toBe("Module not found: test.module");
+    expect(content[0].text).not.toContain("{");
+  });
+
   // TC-ROUTER-012: progress callback sends notifications/progress
   it("progress callback sends notifications/progress via sendNotification", async () => {
     const executor: Executor = {

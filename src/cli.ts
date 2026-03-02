@@ -12,7 +12,7 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { serve, VERSION, JWTAuthenticator } from "./index.js";
+import { serve, VERSION, JWTAuthenticator, ElicitationApprovalHandler } from "./index.js";
 import type { Algorithm } from "jsonwebtoken";
 
 function printUsage(): void {
@@ -41,6 +41,7 @@ Options:
   --jwt-issuer <string>      Expected JWT issuer claim
   --jwt-require-auth         Require auth (default: true)
   --jwt-permissive           Permissive mode: allow unauthenticated requests (overrides --jwt-require-auth)
+  --approval <mode>          Approval mode: elicit, auto-approve, always-deny, off (default: off)
   --exempt-paths <paths>     Comma-separated paths exempt from auth (default: /health,/metrics)
   --help                     Show this help message
 `);
@@ -72,6 +73,7 @@ export async function main(): Promise<void> {
         "jwt-issuer": { type: "string" },
         "jwt-require-auth": { type: "boolean", default: true },
         "jwt-permissive": { type: "boolean", default: false },
+        approval: { type: "string", default: "off" },
         "exempt-paths": { type: "string" },
         help: { type: "boolean", default: false },
       },
@@ -155,6 +157,42 @@ export async function main(): Promise<void> {
     );
   }
 
+  // Validate and build approval handler
+  const approvalMode = values.approval as string;
+  const validApprovalModes = ["elicit", "auto-approve", "always-deny", "off"];
+  if (!validApprovalModes.includes(approvalMode)) {
+    fail(
+      `--approval must be one of: ${validApprovalModes.join(", ")}. Got '${approvalMode}'.`,
+    );
+  }
+
+  let approvalHandler: unknown;
+  if (approvalMode === "elicit") {
+    approvalHandler = new ElicitationApprovalHandler();
+  } else if (approvalMode === "auto-approve" || approvalMode === "always-deny") {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const apcore = await import("apcore-js") as any;
+      if (approvalMode === "auto-approve") {
+        const AutoApprove = apcore.AutoApproveHandler ?? apcore.default?.AutoApproveHandler;
+        if (AutoApprove) {
+          approvalHandler = new AutoApprove();
+        } else {
+          fail("apcore-js does not export AutoApproveHandler.");
+        }
+      } else {
+        const AlwaysDeny = apcore.AlwaysDenyHandler ?? apcore.default?.AlwaysDenyHandler;
+        if (AlwaysDeny) {
+          approvalHandler = new AlwaysDeny();
+        } else {
+          fail("apcore-js does not export AlwaysDenyHandler.");
+        }
+      }
+    } catch {
+      fail(`Failed to import approval handler from apcore-js for mode '${approvalMode}'.`);
+    }
+  }
+
   // Build JWT authenticator if --jwt-secret is provided
   const jwtSecret = values["jwt-secret"];
   const jwtRequireAuth = values["jwt-permissive"] ? false : (values["jwt-require-auth"] as boolean);
@@ -190,6 +228,7 @@ export async function main(): Promise<void> {
       allowExecute: values["allow-execute"] as boolean,
       authenticator,
       exemptPaths,
+      approvalHandler,
     });
   } catch (error) {
     console.error("Server startup failed:", error);
