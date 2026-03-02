@@ -14,6 +14,7 @@ Converts apcore module registries into [Model Context Protocol (MCP)](https://mo
 - **OpenAI Tools** — Convert modules to OpenAI function calling format with strict mode support
 - **Schema Conversion** — Inline `$defs`/`$ref` from Pydantic-generated JSON Schema
 - **Annotation Mapping** — Map module annotations to MCP hints and OpenAI description suffixes
+- **Approval Mechanism** — Built-in elicitation-based approval flow for sensitive tool executions
 - **Error Mapping** — Sanitize internal errors for safe client-facing responses
 - **Dynamic Registration** — Listen for registry changes and update tools at runtime
 - **Tool Explorer** — Browser-based UI for browsing schemas and testing tools interactively
@@ -162,11 +163,20 @@ function serve(
     port?: number;
     name?: string;
     version?: string;
+    dynamic?: boolean;
+    validateInputs?: boolean;
+    tags?: string[] | null;
+    prefix?: string | null;
+    logLevel?: "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
+    onStartup?: () => void | Promise<void>;
+    onShutdown?: () => void | Promise<void>;
+    metricsCollector?: MetricsExporter;
     explorer?: boolean;
     explorerPrefix?: string;
     allowExecute?: boolean;
     authenticator?: Authenticator;
     exemptPaths?: string[];
+    approvalHandler?: unknown;
   }
 ): Promise<void>;
 ```
@@ -292,7 +302,8 @@ src/
 │   ├── schema.ts         # JSON Schema $ref inlining
 │   ├── annotations.ts    # Module annotations -> MCP hints
 │   ├── errors.ts         # Error sanitization
-│   └── idNormalizer.ts   # Dot-notation <-> dash-notation
+│   ├── idNormalizer.ts   # Dot-notation <-> dash-notation
+│   └── approval.ts       # Elicitation-based approval handler
 ├── auth/
 │   ├── jwt.ts            # JWT Bearer token authenticator
 │   ├── storage.ts        # AsyncLocalStorage identity propagation
@@ -344,7 +355,7 @@ npm run dev
 
 ## Testing
 
-284 tests across 22 test suites.
+313 tests across 23 test suites.
 
 ## License
 
