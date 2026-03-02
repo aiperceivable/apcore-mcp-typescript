@@ -68,5 +68,13 @@
     "dist",
     "README.md",
     "LICENSE"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aipartnerup/apcore-mcp-typescript.git"
+  },
+  "homepage": "https://github.com/aipartnerup",
+  "bugs": {
+    "url": "https://github.com/aipartnerup/apcore-mcp-typescript/issues"
+  }
 }
