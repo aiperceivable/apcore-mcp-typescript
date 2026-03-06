@@ -31,6 +31,17 @@ export class ErrorMapper {
    * Applies sanitization and formatting rules based on the error code.
    */
   toMcpError(error: unknown): McpErrorResponse {
+    // ExecutionCancelledError: not a ModuleError subclass, check by name or code
+    if (this._isExecutionCancelled(error)) {
+      return {
+        isError: true,
+        errorType: ErrorCodes.EXECUTION_CANCELLED,
+        message: "Execution was cancelled",
+        details: null,
+        retryable: true,
+      };
+    }
+
     // Duck-type check for ModuleError-like objects
     if (this._isModuleError(error)) {
       const code = error.code;
@@ -151,6 +162,17 @@ export class ErrorMapper {
         (result as any)[field] = value;
       }
     }
+  }
+
+  /**
+   * Check for ExecutionCancelledError by name or code property.
+   */
+  private _isExecutionCancelled(error: unknown): boolean {
+    if (error === null || typeof error !== "object") return false;
+    const obj = error as Record<string, unknown>;
+    if (obj.constructor?.name === "ExecutionCancelledError") return true;
+    if (obj["code"] === ErrorCodes.EXECUTION_CANCELLED) return true;
+    return false;
   }
 
   /**

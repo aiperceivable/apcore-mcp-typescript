@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-03-06
+
+### Added
+
+- **`asyncServe()` public API** — New function that builds an embeddable Node.js HTTP request handler `(req, res) => Promise<void>` for mounting the MCP server into a larger HTTP application. TypeScript equivalent of Python's `async_serve()` context manager. Returns `{ handler, close }` for lifecycle management.
+- **`AsyncServeOptions` and `AsyncServeApp` types** — Dedicated options interface (omits transport/host/port/lifecycle hooks) and return type for `asyncServe()`.
+- **`TransportManager.buildStreamableHttpApp()`** — New method that creates a composable HTTP request handler without binding to a port. Foundation for `asyncServe()` and custom embedding scenarios.
+- **Deep merge for streaming chunks** — `ExecutionRouter` now uses recursive deep merge (depth-limited to 32) instead of shallow merge when accumulating streaming response chunks. Nested objects are properly merged; arrays and scalars are overwritten.
+- **`EXECUTION_CANCELLED` error handling** — `ErrorMapper` now detects `ExecutionCancelledError` (by constructor name or error code) and returns a dedicated `EXECUTION_CANCELLED` response with `retryable: true`.
+- **New error codes** — Added `VERSION_INCOMPATIBLE`, `ERROR_CODE_COLLISION`, and `EXECUTION_CANCELLED` to the `ErrorCodes` constant, matching the Python reference implementation.
+- New tests for `asyncServe()`, deep merge streaming, `ExecutionCancelledError` handling, and new error codes.
+
 ## [0.8.0] - 2026-03-02
 
 ### Added

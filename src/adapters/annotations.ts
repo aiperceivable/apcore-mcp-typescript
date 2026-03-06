@@ -40,16 +40,11 @@ export class AnnotationMapper {
   }
 
   /**
-   * Generate a description suffix string from annotations.
+   * Generate a description suffix with safety warnings and annotation metadata.
    *
-   * Only includes annotation fields that differ from their default values:
-   *   readonly=false, destructive=false, idempotent=false,
-   *   requires_approval=false, open_world=true
-   *
-   * Returns a formatted string like:
-   *   `\n\n[Annotations: readonly=true, idempotent=true]`
-   *
-   * Returns an empty string if annotations are null or all fields are defaults.
+   * Produces:
+   * 1. Safety warnings for destructive/approval/external operations.
+   * 2. Machine-readable annotation block for non-default values.
    */
   toDescriptionSuffix(annotations: ModuleAnnotations | null): string {
     if (annotations === null) {
@@ -65,6 +60,19 @@ export class AnnotationMapper {
       streaming: false,
     };
 
+    const warnings: string[] = [];
+    if (annotations.destructive) {
+      warnings.push(
+        "WARNING: DESTRUCTIVE - This operation may irreversibly modify or " +
+          "delete data. Confirm with user before calling.",
+      );
+    }
+    if (annotations.requiresApproval) {
+      warnings.push(
+        "REQUIRES APPROVAL: Human confirmation is required before execution.",
+      );
+    }
+
     const parts: string[] = [];
     if (annotations.readonly !== DEFAULTS.readonly)
       parts.push(`readonly=${annotations.readonly}`);
@@ -79,11 +87,19 @@ export class AnnotationMapper {
     if (annotations.streaming !== DEFAULTS.streaming)
       parts.push(`streaming=${annotations.streaming}`);
 
-    if (parts.length === 0) {
+    if (warnings.length === 0 && parts.length === 0) {
       return "";
     }
 
-    return `\n\n[Annotations: ${parts.join(", ")}]`;
+    const sections: string[] = [];
+    if (warnings.length > 0) {
+      sections.push(warnings.join("\n"));
+    }
+    if (parts.length > 0) {
+      sections.push(`[Annotations: ${parts.join(", ")}]`);
+    }
+
+    return "\n\n" + sections.join("\n\n");
   }
 
   /**

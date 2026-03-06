@@ -20,6 +20,11 @@ Converts apcore module registries into [Model Context Protocol (MCP)](https://mo
 - **Tool Explorer** — Browser-based UI for browsing schemas and testing tools interactively
 - **CLI** — Launch an MCP server from the command line
 
+## Documentation
+
+For full documentation, including Quick Start guides for both Python and TypeScript, visit:
+**[https://aipartnerup.github.io/apcore-mcp/](https://aipartnerup.github.io/apcore-mcp/)**
+
 ## Requirements
 
 - Node.js >= 18.0.0

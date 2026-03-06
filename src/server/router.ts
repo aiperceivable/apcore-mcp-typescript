@@ -16,6 +16,43 @@ import { MCP_PROGRESS_KEY, MCP_ELICIT_KEY } from "../helpers.js";
 import type { ElicitResult } from "../helpers.js";
 import { getCurrentIdentity } from "../auth/storage.js";
 
+/** Maximum recursion depth for deep merge to prevent stack overflow. */
+const DEEP_MERGE_MAX_DEPTH = 32;
+
+/**
+ * Recursively merge `overlay` into `base`, capped at DEEP_MERGE_MAX_DEPTH.
+ *
+ * When both sides have a plain object for the same key the merge recurses.
+ * All other types are overwritten by `overlay`.
+ */
+function deepMerge(
+  base: Record<string, unknown>,
+  overlay: Record<string, unknown>,
+  depth = 0,
+): Record<string, unknown> {
+  if (depth >= DEEP_MERGE_MAX_DEPTH) {
+    return { ...base, ...overlay };
+  }
+  const merged: Record<string, unknown> = { ...base };
+  for (const key of Object.keys(overlay)) {
+    const bVal = merged[key];
+    const oVal = overlay[key];
+    if (
+      bVal !== null && typeof bVal === "object" && !Array.isArray(bVal) &&
+      oVal !== null && typeof oVal === "object" && !Array.isArray(oVal)
+    ) {
+      merged[key] = deepMerge(
+        bVal as Record<string, unknown>,
+        oVal as Record<string, unknown>,
+        depth + 1,
+      );
+    } else {
+      merged[key] = oVal;
+    }
+  }
+  return merged;
+}
+
 /** Tuple of [content array, isError flag, traceId] returned from handleCall. */
 export type CallResult = [TextContentDict[], boolean, string | undefined];
 
@@ -200,8 +237,8 @@ export class ExecutionRouter {
         let chunkIndex = 0;
 
         for await (const chunk of this._executor.stream(toolName, args, context)) {
-          // Shallow-merge each chunk into the accumulated result
-          accumulated = { ...accumulated, ...chunk };
+          // Deep-merge each chunk into the accumulated result
+          accumulated = deepMerge(accumulated, chunk);
 
           // Send progress notification for each chunk
           await sendNotification({

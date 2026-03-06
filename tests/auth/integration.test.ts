@@ -351,6 +351,56 @@ describe("Explorer auth integration", () => {
     expect(mcpRes.status).toBe(401);
   });
 
+  it("GET /explorer/tools extracts identity when valid token is present", async () => {
+    mgr = new TransportManager();
+    const authenticator = new JWTAuthenticator({ secret: SECRET });
+    mgr.setAuthenticator(authenticator);
+    vi.spyOn(mgr, "_validateHostPort").mockImplementation(() => {});
+
+    const router = createMockRouter();
+    const handler = new ExplorerHandler(sampleTools, router, {
+      allowExecute: true,
+      authenticator,
+    });
+    mgr.setExplorerHandler(handler);
+
+    await mgr.runStreamableHttp(createMockServer(), { host: "127.0.0.1", port: 0 });
+    const addr = mgr.httpServer!.address() as AddressInfo;
+
+    // GET /explorer/tools with a valid token should succeed (exempt)
+    // and the identity should be extracted (not null)
+    const token = signToken({ sub: "viewer-user" });
+    const res = await fetch(`http://127.0.0.1:${addr.port}/explorer/tools`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /explorer/ works with invalid token (exempt, best-effort)", async () => {
+    mgr = new TransportManager();
+    const authenticator = new JWTAuthenticator({ secret: SECRET });
+    mgr.setAuthenticator(authenticator);
+    vi.spyOn(mgr, "_validateHostPort").mockImplementation(() => {});
+
+    const router = createMockRouter();
+    const handler = new ExplorerHandler(sampleTools, router, {
+      allowExecute: true,
+      authenticator,
+    });
+    mgr.setExplorerHandler(handler);
+
+    await mgr.runStreamableHttp(createMockServer(), { host: "127.0.0.1", port: 0 });
+    const addr = mgr.httpServer!.address() as AddressInfo;
+
+    // GET with an invalid token on exempt path should still succeed (not 401)
+    const res = await fetch(`http://127.0.0.1:${addr.port}/explorer/`, {
+      headers: { Authorization: "Bearer bad.token.here" },
+    });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain("MCP Tool Explorer");
+  });
+
   it("explorer call works without authenticator (no auth required)", async () => {
     mgr = new TransportManager();
     vi.spyOn(mgr, "_validateHostPort").mockImplementation(() => {});
@@ -471,6 +521,56 @@ describe("Permissive mode (requireAuth=false)", () => {
       body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1 }),
     });
     expect(res.status).not.toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Top-level requireAuth override (matches Python's serve(require_auth=...))
+// ---------------------------------------------------------------------------
+
+describe("Top-level requireAuth override via setRequireAuth()", () => {
+  let mgr: TransportManager;
+
+  afterEach(async () => {
+    if (mgr) await mgr.close();
+  });
+
+  it("overrides authenticator's requireAuth=true with top-level false", async () => {
+    mgr = new TransportManager();
+    // Authenticator says requireAuth=true, but top-level override says false
+    mgr.setAuthenticator(new JWTAuthenticator({ secret: SECRET, requireAuth: true }));
+    mgr.setRequireAuth(false);
+    vi.spyOn(mgr, "_validateHostPort").mockImplementation(() => {});
+
+    await mgr.runStreamableHttp(createMockServer(), { host: "127.0.0.1", port: 0 });
+    const addr = mgr.httpServer!.address() as AddressInfo;
+
+    // Request without token should NOT get 401 — top-level override wins
+    const res = await fetch(`http://127.0.0.1:${addr.port}/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1 }),
+    });
+    expect(res.status).not.toBe(401);
+  });
+
+  it("overrides authenticator's requireAuth=false with top-level true", async () => {
+    mgr = new TransportManager();
+    // Authenticator says requireAuth=false, but top-level override says true
+    mgr.setAuthenticator(new JWTAuthenticator({ secret: SECRET, requireAuth: false }));
+    mgr.setRequireAuth(true);
+    vi.spyOn(mgr, "_validateHostPort").mockImplementation(() => {});
+
+    await mgr.runStreamableHttp(createMockServer(), { host: "127.0.0.1", port: 0 });
+    const addr = mgr.httpServer!.address() as AddressInfo;
+
+    // Request without token SHOULD get 401 — top-level override wins
+    const res = await fetch(`http://127.0.0.1:${addr.port}/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1 }),
+    });
+    expect(res.status).toBe(401);
   });
 });
 

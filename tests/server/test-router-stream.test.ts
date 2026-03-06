@@ -288,4 +288,92 @@ describe("ExecutionRouter — streaming", () => {
     const ctx = receivedContext as { data: Record<string, unknown> };
     expect(typeof ctx.data[MCP_PROGRESS_KEY]).toBe("function");
   });
+
+  // TC-STREAM-009: Deep merge accumulates nested objects
+  it("deep-merges nested objects in streaming chunks", async () => {
+    const chunks = [
+      { result: { status: "pending", details: { step: 1 } } },
+      { result: { details: { step: 2, extra: "info" } } },
+    ];
+    const executor = createStreamingExecutor(chunks);
+    const router = new ExecutionRouter(executor);
+    const extra = createExtra("tok-deep");
+
+    const [content, isError] = await router.handleCall("test.deep", {}, extra);
+
+    expect(isError).toBe(false);
+    const parsed = JSON.parse(content[0].text);
+    // Deep merge: result.status preserved, details merged
+    expect(parsed).toEqual({
+      result: { status: "pending", details: { step: 2, extra: "info" } },
+    });
+  });
+
+  // TC-STREAM-010: Deep merge overwrites non-object values
+  it("overwrites non-object values during deep merge", async () => {
+    const chunks = [
+      { count: 1, nested: { a: "original" } },
+      { count: 2, nested: { b: "new" } },
+    ];
+    const executor = createStreamingExecutor(chunks);
+    const router = new ExecutionRouter(executor);
+    const extra = createExtra("tok-overwrite");
+
+    const [content, isError] = await router.handleCall("test.overwrite", {}, extra);
+
+    expect(isError).toBe(false);
+    const parsed = JSON.parse(content[0].text);
+    expect(parsed.count).toBe(2); // scalar overwritten
+    expect(parsed.nested).toEqual({ a: "original", b: "new" }); // nested merged
+  });
+
+  // TC-STREAM-012: Deep merge falls back to shallow at depth >= 32
+  it("falls back to shallow merge at depth boundary (32)", async () => {
+    // Build a structure 33 levels deep: { a: { a: { ... { a: { deep: "v1" } } } } }
+    function buildDeep(depth: number, leaf: Record<string, unknown>): Record<string, unknown> {
+      let obj = leaf;
+      for (let i = 0; i < depth; i++) {
+        obj = { a: obj };
+      }
+      return obj;
+    }
+    // At depth 33, the innermost merge should be shallow (overwrite, not recurse)
+    const chunk1 = buildDeep(33, { deep: "v1", keep: "original" });
+    const chunk2 = buildDeep(33, { deep: "v2" });
+
+    const executor = createStreamingExecutor([chunk1, chunk2]);
+    const router = new ExecutionRouter(executor);
+    const extra = createExtra("tok-depth");
+
+    const [content, isError] = await router.handleCall("test.depth", {}, extra);
+
+    expect(isError).toBe(false);
+    const parsed = JSON.parse(content[0].text);
+    // Navigate to the leaf (33 levels deep)
+    let node: Record<string, unknown> = parsed;
+    for (let i = 0; i < 33; i++) {
+      node = node.a as Record<string, unknown>;
+    }
+    // At depth >= 32, shallow merge overwrites the entire leaf object
+    // so "keep" should NOT be preserved (shallow overwrite)
+    expect(node.deep).toBe("v2");
+    expect(node.keep).toBeUndefined();
+  });
+
+  // TC-STREAM-011: Deep merge handles arrays by overwriting (not merging)
+  it("overwrites arrays during deep merge", async () => {
+    const chunks = [
+      { items: [1, 2, 3] },
+      { items: [4, 5] },
+    ];
+    const executor = createStreamingExecutor(chunks);
+    const router = new ExecutionRouter(executor);
+    const extra = createExtra("tok-arr");
+
+    const [content, isError] = await router.handleCall("test.array", {}, extra);
+
+    expect(isError).toBe(false);
+    const parsed = JSON.parse(content[0].text);
+    expect(parsed.items).toEqual([4, 5]); // array overwritten, not merged
+  });
 });
