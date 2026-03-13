@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-03-13
+
+### Changed
+
+- **Dependency bump**: Requires `apcore-js>=0.13.0` (was `>=0.9.0`). Picks up new annotation fields (`cacheable`, `paginated`, `cacheTtl`, `cacheKeyFields`, `paginationStyle`).
+- **`ModuleAnnotations` interface**: Added optional `cacheable`, `cacheTtl`, `cacheKeyFields`, `paginated`, and `paginationStyle` fields to match apcore 0.13.0.
+- **Annotation description suffix**: `AnnotationMapper.toDescriptionSuffix()` now includes `cacheable` and `paginated` when set to non-default values.
+
 ## [0.9.0] - 2026-03-06
 
 ### Added

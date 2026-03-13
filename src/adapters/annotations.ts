@@ -8,6 +8,18 @@
 
 import type { ModuleAnnotations, McpAnnotationsDict } from "../types.js";
 
+/** Default annotation values matching apcore's ModuleAnnotations defaults. */
+const DEFAULT_ANNOTATIONS: Record<string, boolean> = {
+  readonly: false,
+  destructive: false,
+  idempotent: false,
+  requiresApproval: false,
+  openWorld: true,
+  streaming: false,
+  cacheable: false,
+  paginated: false,
+};
+
 export class AnnotationMapper {
   /**
    * Convert apcore module annotations to MCP annotations dict.
@@ -51,15 +63,6 @@ export class AnnotationMapper {
       return "";
     }
 
-    const DEFAULTS: Record<string, boolean> = {
-      readonly: false,
-      destructive: false,
-      idempotent: false,
-      requires_approval: false,
-      open_world: true,
-      streaming: false,
-    };
-
     const warnings: string[] = [];
     if (annotations.destructive) {
       warnings.push(
@@ -74,18 +77,22 @@ export class AnnotationMapper {
     }
 
     const parts: string[] = [];
-    if (annotations.readonly !== DEFAULTS.readonly)
+    if (annotations.readonly !== DEFAULT_ANNOTATIONS.readonly)
       parts.push(`readonly=${annotations.readonly}`);
-    if (annotations.destructive !== DEFAULTS.destructive)
+    if (annotations.destructive !== DEFAULT_ANNOTATIONS.destructive)
       parts.push(`destructive=${annotations.destructive}`);
-    if (annotations.idempotent !== DEFAULTS.idempotent)
+    if (annotations.idempotent !== DEFAULT_ANNOTATIONS.idempotent)
       parts.push(`idempotent=${annotations.idempotent}`);
-    if (annotations.requiresApproval !== DEFAULTS.requires_approval)
+    if (annotations.requiresApproval !== DEFAULT_ANNOTATIONS.requiresApproval)
       parts.push(`requires_approval=${annotations.requiresApproval}`);
-    if (annotations.openWorld !== DEFAULTS.open_world)
+    if (annotations.openWorld !== DEFAULT_ANNOTATIONS.openWorld)
       parts.push(`open_world=${annotations.openWorld}`);
-    if (annotations.streaming !== DEFAULTS.streaming)
+    if (annotations.streaming !== DEFAULT_ANNOTATIONS.streaming)
       parts.push(`streaming=${annotations.streaming}`);
+    if ((annotations.cacheable ?? false) !== DEFAULT_ANNOTATIONS.cacheable)
+      parts.push(`cacheable=${annotations.cacheable}`);
+    if ((annotations.paginated ?? false) !== DEFAULT_ANNOTATIONS.paginated)
+      parts.push(`paginated=${annotations.paginated}`);
 
     if (warnings.length === 0 && parts.length === 0) {
       return "";

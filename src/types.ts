@@ -51,6 +51,11 @@ export interface ModuleAnnotations {
   requiresApproval: boolean;
   openWorld: boolean;
   streaming: boolean;
+  cacheable?: boolean;
+  cacheTtl?: number;
+  cacheKeyFields?: string[] | null;
+  paginated?: boolean;
+  paginationStyle?: "cursor" | "offset" | "page";
 }
 
 export interface ModuleDescriptor {

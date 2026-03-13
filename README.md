@@ -186,6 +186,29 @@ function serve(
 ): Promise<void>;
 ```
 
+### `asyncServe(registryOrExecutor, options?)`
+
+Embed the MCP server into a larger Node.js HTTP application. Returns an HTTP request handler and a close function for lifecycle management.
+
+```typescript
+import { asyncServe } from "apcore-mcp";
+
+const { handler, close } = await asyncServe(executor, {
+  name: "apcore-mcp",
+  explorer: true,
+  allowExecute: true,
+});
+
+// Mount in a custom HTTP server
+const server = http.createServer(handler);
+server.listen(8000);
+
+// Clean up when done
+await close();
+```
+
+Accepts the same options as `serve()` except `transport`, `host`, `port`, `onStartup`, and `onShutdown`.
+
 ### Tool Explorer
 
 When `explorer: true` is passed to `serve()`, a browser-based Tool Explorer UI is mounted on HTTP transports. It provides an interactive page for browsing tool schemas and testing tool execution.
