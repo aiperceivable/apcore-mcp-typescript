@@ -201,5 +201,45 @@ describe("AnnotationMapper", () => {
 
       expect(suffix).toBe("");
     });
+
+    // TC-ANNOT-017: cacheable=true included in suffix
+    it("includes cacheable=true when cacheable is non-default", () => {
+      const suffix = mapper.toDescriptionSuffix({
+        ...defaultAnnotations,
+        cacheable: true,
+      });
+
+      expect(suffix).toContain("[Annotations:");
+      expect(suffix).toContain("cacheable=true");
+    });
+
+    // TC-ANNOT-018: cacheable omitted when default (false)
+    it("does not include cacheable when it is the default", () => {
+      const suffix = mapper.toDescriptionSuffix({
+        ...defaultAnnotations,
+      });
+
+      expect(suffix).not.toContain("cacheable");
+    });
+
+    // TC-ANNOT-019: paginated=true included in suffix
+    it("includes paginated=true when paginated is non-default", () => {
+      const suffix = mapper.toDescriptionSuffix({
+        ...defaultAnnotations,
+        paginated: true,
+      });
+
+      expect(suffix).toContain("[Annotations:");
+      expect(suffix).toContain("paginated=true");
+    });
+
+    // TC-ANNOT-020: paginated omitted when default (false)
+    it("does not include paginated when it is the default", () => {
+      const suffix = mapper.toDescriptionSuffix({
+        ...defaultAnnotations,
+      });
+
+      expect(suffix).not.toContain("paginated");
+    });
   });
 });

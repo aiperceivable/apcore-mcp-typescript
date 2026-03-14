@@ -318,3 +318,76 @@ describe("ExecutionRouter", () => {
     expect(params.message).toBe("halfway");
   });
 });
+
+// ---------------------------------------------------------------------------
+// outputFormatter tests
+// ---------------------------------------------------------------------------
+
+describe("ExecutionRouter outputFormatter", () => {
+  it("uses outputFormatter for dict results when provided", async () => {
+    const result = { name: "Alice", score: 95 };
+    const executor = createMockExecutor(result);
+    const formatter = vi.fn((r: Record<string, unknown>) => `Name: ${r.name}, Score: ${r.score}`);
+    const router = new ExecutionRouter(executor, { outputFormatter: formatter });
+
+    const [content, isError] = await router.handleCall("test.tool", {});
+
+    expect(isError).toBe(false);
+    expect(content[0].text).toBe("Name: Alice, Score: 95");
+    expect(formatter).toHaveBeenCalledWith(result);
+  });
+
+  it("falls back to JSON.stringify when outputFormatter throws", async () => {
+    const result = { value: 42 };
+    const executor = createMockExecutor(result);
+    const formatter = vi.fn(() => { throw new Error("format failed"); });
+    const router = new ExecutionRouter(executor, { outputFormatter: formatter });
+
+    const [content, isError] = await router.handleCall("test.tool", {});
+
+    expect(isError).toBe(false);
+    expect(content[0].text).toBe(JSON.stringify(result));
+    expect(formatter).toHaveBeenCalled();
+  });
+
+  it("does not apply outputFormatter to non-object results", async () => {
+    const executor: Executor = {
+      registry: {} as any,
+      call: vi.fn().mockResolvedValue([1, 2, 3]),
+    };
+    const formatter = vi.fn(() => "should not be called");
+    const router = new ExecutionRouter(executor, { outputFormatter: formatter });
+
+    const [content, isError] = await router.handleCall("test.tool", {});
+
+    expect(isError).toBe(false);
+    expect(content[0].text).toBe(JSON.stringify([1, 2, 3]));
+    expect(formatter).not.toHaveBeenCalled();
+  });
+
+  it("does not apply outputFormatter to null results", async () => {
+    const executor: Executor = {
+      registry: {} as any,
+      call: vi.fn().mockResolvedValue(null),
+    };
+    const formatter = vi.fn(() => "should not be called");
+    const router = new ExecutionRouter(executor, { outputFormatter: formatter });
+
+    const [content, isError] = await router.handleCall("test.tool", {});
+
+    expect(isError).toBe(false);
+    expect(content[0].text).toBe("null");
+    expect(formatter).not.toHaveBeenCalled();
+  });
+
+  it("uses JSON.stringify by default when no outputFormatter", async () => {
+    const result = { key: "value" };
+    const executor = createMockExecutor(result);
+    const router = new ExecutionRouter(executor);
+
+    const [content, isError] = await router.handleCall("test.tool", {});
+
+    expect(isError).toBe(false);
+    expect(content[0].text).toBe(JSON.stringify(result));
+  });
+});

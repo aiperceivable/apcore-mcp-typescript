@@ -20,6 +20,11 @@ Converts apcore module registries into [Model Context Protocol (MCP)](https://mo
 - **Tool Explorer** — Browser-based UI for browsing schemas and testing tools interactively
 - **CLI** — Launch an MCP server from the command line
 
+## Documentation
+
+For full documentation, including Quick Start guides for both Python and TypeScript, visit:
+**[https://aipartnerup.github.io/apcore-mcp/](https://aipartnerup.github.io/apcore-mcp/)**
+
 ## Requirements
 
 - Node.js >= 18.0.0
@@ -180,6 +185,29 @@ function serve(
   }
 ): Promise<void>;
 ```
+
+### `asyncServe(registryOrExecutor, options?)`
+
+Embed the MCP server into a larger Node.js HTTP application. Returns an HTTP request handler and a close function for lifecycle management.
+
+```typescript
+import { asyncServe } from "apcore-mcp";
+
+const { handler, close } = await asyncServe(executor, {
+  name: "apcore-mcp",
+  explorer: true,
+  allowExecute: true,
+});
+
+// Mount in a custom HTTP server
+const server = http.createServer(handler);
+server.listen(8000);
+
+// Clean up when done
+await close();
+```
+
+Accepts the same options as `serve()` except `transport`, `host`, `port`, `onStartup`, and `onShutdown`.
 
 ### Tool Explorer
 

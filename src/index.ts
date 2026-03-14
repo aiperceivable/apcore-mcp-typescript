@@ -3,6 +3,7 @@
  *
  * Public API:
  * - serve(registryOrExecutor, options?) - Launch an MCP Server
+ * - asyncServe(registryOrExecutor, options?) - Build an embeddable HTTP request handler
  * - toOpenaiTools(registryOrExecutor, options?) - Export OpenAI tool definitions
  */
 
@@ -52,6 +53,10 @@ export type { ClaimMapping, JWTAuthenticatorOptions } from "./auth/jwt.js";
 export type { Authenticator, Identity } from "./auth/types.js";
 export { identityStorage, getCurrentIdentity } from "./auth/storage.js";
 export { buildExplorerAuthHook } from "./auth/hooks.js";
+
+// ─── Unified Entry Point ─────────────────────────────────────────────────────
+export { APCoreMCP } from "./apcore-mcp.js";
+export type { APCoreMCPOptions, APCoreMCPServeOptions, APCoreMCPAsyncServeOptions } from "./apcore-mcp.js";
 
 // ─── Building Block Exports ──────────────────────────────────────────────────
 export { MCPServerFactory } from "./server/factory.js";
@@ -164,10 +169,22 @@ export interface ServeOptions {
   explorerProjectUrl?: string;
   /** Optional authenticator for request authentication (HTTP transports only). */
   authenticator?: Authenticator;
+  /**
+   * If true (default), unauthenticated requests are rejected with 401.
+   * If false, requests proceed without identity (permissive mode).
+   * Overrides the authenticator's own requireAuth when set explicitly.
+   */
+  requireAuth?: boolean;
   /** Custom paths exempt from authentication. Default: ["/health", "/metrics"] */
   exemptPaths?: string[];
   /** Optional approval handler passed to the Executor (e.g. ElicitationApprovalHandler). */
   approvalHandler?: unknown;
+  /**
+   * Optional function that formats execution results into text for LLM consumption.
+   * When undefined, results are serialised with `JSON.stringify(result)`.
+   * Only applied to plain-object results; non-object results always use JSON.stringify.
+   */
+  outputFormatter?: (result: Record<string, unknown>) => string;
 }
 
 /**
@@ -200,8 +217,10 @@ export async function serve(
     explorerProjectName,
     explorerProjectUrl,
     authenticator,
+    requireAuth,
     exemptPaths,
     approvalHandler,
+    outputFormatter,
   } = options;
 
   // Input validation (matching Python's checks)
@@ -248,7 +267,7 @@ export async function serve(
   const factory = new MCPServerFactory();
   const server = factory.createServer(name, version);
   const tools = factory.buildTools(registry, { tags, prefix });
-  const router = new ExecutionRouter(executor, { validateInputs });
+  const router = new ExecutionRouter(executor, { validateInputs, outputFormatter });
   factory.registerHandlers(server, tools, router);
   factory.registerResourceHandlers(server, registry);
 
@@ -267,6 +286,9 @@ export async function serve(
   }
   if (authenticator) {
     transportManager.setAuthenticator(authenticator);
+  }
+  if (requireAuth !== undefined) {
+    transportManager.setRequireAuth(requireAuth);
   }
   if (exemptPaths) {
     transportManager.setExemptPaths(exemptPaths);
@@ -315,6 +337,208 @@ export async function serve(
     console.error = origError;
     await onShutdown?.();
   }
+}
+
+/** Options for asyncServe() — same as ServeOptions but without transport/host/port/lifecycle hooks. */
+export interface AsyncServeOptions {
+  /** MCP server name. Default: "apcore-mcp" */
+  name?: string;
+  /** MCP server version. Default: package version */
+  version?: string;
+  /** Enable input validation against schemas. Default: false */
+  validateInputs?: boolean;
+  /** Filter modules by tags. Default: null (no filtering) */
+  tags?: string[] | null;
+  /** Filter modules by prefix. Default: null (no filtering) */
+  prefix?: string | null;
+  /** Minimum log level. Default: undefined (no suppression) */
+  logLevel?: "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
+  /** Optional MetricsCollector for Prometheus /metrics endpoint. */
+  metricsCollector?: MetricsExporter;
+  /** Enable the browser-based Tool Explorer UI. Default: false */
+  explorer?: boolean;
+  /** URL prefix for the explorer. Default: "/explorer" */
+  explorerPrefix?: string;
+  /** Allow tool execution from the explorer UI. Default: false */
+  allowExecute?: boolean;
+  /** Optional authenticator for request authentication. */
+  authenticator?: Authenticator;
+  /**
+   * If true (default), unauthenticated requests are rejected with 401.
+   * If false, requests proceed without identity (permissive mode).
+   * Overrides the authenticator's own requireAuth when set explicitly.
+   */
+  requireAuth?: boolean;
+  /** Custom paths exempt from authentication. Default: ["/health", "/metrics"] */
+  exemptPaths?: string[];
+  /** Optional approval handler passed to the Executor. */
+  approvalHandler?: unknown;
+  /** MCP endpoint path. Default: "/mcp" */
+  endpoint?: string;
+  /**
+   * Optional function that formats execution results into text for LLM consumption.
+   * When undefined, results are serialised with `JSON.stringify(result)`.
+   * Only applied to plain-object results; non-object results always use JSON.stringify.
+   */
+  outputFormatter?: (result: Record<string, unknown>) => string;
+}
+
+/** Return type of asyncServe(). */
+export interface AsyncServeApp {
+  /** Node.js HTTP request handler — mount this in your HTTP server. */
+  handler: (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => Promise<void>;
+  /** Clean up the MCP transport. Call this when shutting down. */
+  close: () => Promise<void>;
+}
+
+/**
+ * Build an embeddable MCP HTTP request handler for mounting into a larger server.
+ *
+ * Unlike `serve()`, this does NOT create its own HTTP server. Instead it returns
+ * a Node.js HTTP request handler that you can wire into `http.createServer()`,
+ * Express, or any framework that accepts `(req, res) => void`.
+ *
+ * This is the TypeScript equivalent of Python's `async_serve()` context manager
+ * that yields a Starlette ASGI app.
+ *
+ * @example
+ * ```ts
+ * import { createServer } from "node:http";
+ * import { asyncServe } from "apcore-mcp";
+ *
+ * const { handler, close } = await asyncServe(registry, { explorer: true });
+ *
+ * const server = createServer((req, res) => {
+ *   // Mount MCP under /mcp prefix or handle other routes
+ *   handler(req, res);
+ * });
+ * server.listen(8000);
+ *
+ * // On shutdown:
+ * await close();
+ * ```
+ */
+export async function asyncServe(
+  registryOrExecutor: RegistryOrExecutor,
+  options: AsyncServeOptions = {},
+): Promise<AsyncServeApp> {
+  const {
+    name = "apcore-mcp",
+    version = VERSION,
+    validateInputs,
+    tags,
+    prefix,
+    logLevel,
+    metricsCollector,
+    explorer = false,
+    explorerPrefix = "/explorer",
+    allowExecute = false,
+    authenticator,
+    requireAuth,
+    exemptPaths,
+    approvalHandler,
+    endpoint,
+    outputFormatter,
+  } = options;
+
+  // Input validation (same as serve())
+  if (!name || name.length === 0) {
+    throw new Error("name must not be empty");
+  }
+  if (name.length > 255) {
+    throw new Error("name must not exceed 255 characters");
+  }
+  if (tags) {
+    for (const tag of tags) {
+      if (!tag || tag.length === 0) {
+        throw new Error("tags must not contain empty strings");
+      }
+    }
+  }
+  if (prefix !== undefined && prefix !== null && prefix.length === 0) {
+    throw new Error("prefix must not be empty if provided");
+  }
+  if (explorer && !explorerPrefix.startsWith("/")) {
+    throw new Error("explorerPrefix must start with '/'");
+  }
+
+  // Save original console methods before suppression
+  const origDebug = console.debug;
+  const origInfo = console.info;
+  const origWarn = console.warn;
+  const origError = console.error;
+
+  // Apply log-level suppression
+  if (logLevel) {
+    const levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
+    const minLevel = levels.indexOf(logLevel);
+    if (minLevel > 0) console.debug = () => {};
+    if (minLevel > 1) console.info = () => {};
+    if (minLevel > 2) console.warn = () => {};
+    if (minLevel > 3) console.error = () => {};
+  }
+
+  const registry = resolveRegistry(registryOrExecutor);
+  const executor = await resolveExecutor(registryOrExecutor, { approvalHandler });
+
+  // Build MCP server components
+  const factory = new MCPServerFactory();
+  const server = factory.createServer(name, version);
+  const tools = factory.buildTools(registry, { tags, prefix });
+  const router = new ExecutionRouter(executor, { validateInputs, outputFormatter });
+  factory.registerHandlers(server, tools, router);
+  factory.registerResourceHandlers(server, registry);
+
+  console.info(
+    `Building MCP app '${name}' v${version} with ${tools.length} tools`,
+  );
+
+  // Configure transport manager
+  const transportManager = new TransportManager();
+  transportManager.setModuleCount(tools.length);
+  if (metricsCollector) {
+    transportManager.setMetricsCollector(metricsCollector);
+  }
+  if (authenticator) {
+    transportManager.setAuthenticator(authenticator);
+  }
+  if (requireAuth !== undefined) {
+    transportManager.setRequireAuth(requireAuth);
+  }
+  if (exemptPaths) {
+    transportManager.setExemptPaths(exemptPaths);
+  }
+
+  // Mount explorer
+  if (explorer) {
+    const authHook = authenticator
+      ? buildExplorerAuthHook(authenticator)
+      : undefined;
+
+    const explorerNodeHandler = createNodeHandler(
+      tools as UITool[],
+      async (name: string, args: Record<string, unknown>) => router.handleCall(name, args),
+      {
+        prefix: explorerPrefix,
+        allowExecute,
+        authHook,
+      },
+    );
+    transportManager.setExplorer(explorerNodeHandler, explorerPrefix);
+    console.info(`Tool Explorer enabled at ${explorerPrefix}`);
+  }
+
+  // Build the embeddable HTTP handler, wrapping close() to restore console methods
+  const app = await transportManager.buildStreamableHttpApp(server, { endpoint });
+  const originalClose = app.close;
+  app.close = async () => {
+    await originalClose();
+    console.debug = origDebug;
+    console.info = origInfo;
+    console.warn = origWarn;
+    console.error = origError;
+  };
+  return app;
 }
 
 /** Options for toOpenaiTools() */

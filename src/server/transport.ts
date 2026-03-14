@@ -100,6 +100,9 @@ export class TransportManager {
   /** Configurable set of paths exempt from authentication. */
   private _exemptPaths = new Set(["/health", "/metrics"]);
 
+  /** Explicit requireAuth override (when set, takes precedence over authenticator's own value). */
+  private _requireAuth?: boolean;
+
   /**
    * Set the number of registered modules/tools.
    *
@@ -116,6 +119,18 @@ export class TransportManager {
    */
   setAuthenticator(authenticator: Authenticator): void {
     this._authenticator = authenticator;
+  }
+
+  /**
+   * Set the requireAuth override.
+   *
+   * When set, this takes precedence over the authenticator's own requireAuth property.
+   * Matches the Python SDK's top-level require_auth parameter.
+   *
+   * @param requireAuth - If true, unauthenticated requests are rejected. If false, they proceed without identity.
+   */
+  setRequireAuth(requireAuth: boolean): void {
+    this._requireAuth = requireAuth;
   }
 
   /**
@@ -227,12 +242,21 @@ export class TransportManager {
     }
 
     if (this._isAuthExempt(url.pathname, req.method ?? "GET")) {
-      return { identity: null, blocked: false };
+      // Best-effort identity extraction: exempt paths don't *require* auth,
+      // but if a valid token is present we still return the identity so that
+      // downstream handlers (e.g. require_user_id) can use it.
+      let identity: import("../auth/types.js").Identity | null = null;
+      try {
+        identity = await this._authenticator.authenticate(req);
+      } catch {
+        // Exempt path — auth failure is fine
+      }
+      return { identity, blocked: false };
     }
 
     const identity = await this._authenticator.authenticate(req);
     if (!identity) {
-      const requireAuth = this._authenticator.requireAuth ?? true;
+      const requireAuth = this._requireAuth ?? this._authenticator.requireAuth ?? true;
       if (!requireAuth) {
         return { identity: null, blocked: false };
       }
@@ -245,52 +269,27 @@ export class TransportManager {
   }
 
   /**
-   * Run the server using stdio transport.
+   * Create a Streamable HTTP request handler function.
    *
-   * Creates a StdioServerTransport and connects it to the server.
-   * This is the standard transport for CLI-based MCP servers.
-   *
-   * @param server - The MCP Server instance to connect
+   * Shared by both `runStreamableHttp` (standalone server) and
+   * `buildStreamableHttpApp` (embeddable handler).
    */
-  async runStdio(server: Server): Promise<void> {
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
-  }
-
-  /**
-   * Run the server using Streamable HTTP transport.
-   *
-   * Creates a StreamableHTTPServerTransport and sets up an HTTP server
-   * to handle requests.
-   *
-   * @param server - The MCP Server instance to connect
-   * @param options - Host, port, and optional endpoint configuration
-   */
-  async runStreamableHttp(
-    server: Server,
-    options: HttpTransportOptions,
-  ): Promise<void> {
-    this._validateHostPort(options.host, options.port);
-
-    const endpoint = options.endpoint ?? "/mcp";
-
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => crypto.randomUUID(),
-    });
-
-    await server.connect(transport);
-
+  private _createStreamableHandler(
+    transport: StreamableHTTPServerTransport,
+    endpoint: string,
+    urlBase: string,
+  ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
     const explorerNodeHandler = this._explorerNodeHandler;
     const explorerPrefix = this._explorerPrefix;
 
-    const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-      const url = new URL(req.url ?? "/", `http://${options.host}:${options.port}`);
+    return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+      const url = new URL(req.url ?? "/", urlBase);
 
       if (this._handleBuiltinRoute(req, res, url)) return;
 
       // Delegate to explorer handler if path matches prefix (handles its own auth)
       if (explorerNodeHandler && explorerPrefix &&
-          (url.pathname === explorerPrefix || url.pathname.startsWith(explorerPrefix + "/"))) {
+        (url.pathname === explorerPrefix || url.pathname.startsWith(explorerPrefix + "/"))) {
         explorerNodeHandler(req, res);
         return;
       }
@@ -333,7 +332,51 @@ export class TransportManager {
       } else {
         await handleMcp();
       }
+    };
+  }
+
+  /**
+   * Run the server using stdio transport.
+   *
+   * Creates a StdioServerTransport and connects it to the server.
+   * This is the standard transport for CLI-based MCP servers.
+   *
+   * @param server - The MCP Server instance to connect
+   */
+  async runStdio(server: Server): Promise<void> {
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+  }
+
+  /**
+   * Run the server using Streamable HTTP transport.
+   *
+   * Creates a StreamableHTTPServerTransport and sets up an HTTP server
+   * to handle requests.
+   *
+   * @param server - The MCP Server instance to connect
+   * @param options - Host, port, and optional endpoint configuration
+   */
+  async runStreamableHttp(
+    server: Server,
+    options: HttpTransportOptions,
+  ): Promise<void> {
+    this._validateHostPort(options.host, options.port);
+
+    const endpoint = options.endpoint ?? "/mcp";
+
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => crypto.randomUUID(),
     });
+
+    await server.connect(transport);
+
+    const handler = this._createStreamableHandler(
+      transport,
+      endpoint,
+      `http://${options.host}:${options.port}`,
+    );
+    const httpServer = createServer(handler);
 
     this.httpServer = httpServer;
 
@@ -379,7 +422,7 @@ export class TransportManager {
 
       // Delegate to explorer handler if path matches prefix (handles its own auth)
       if (explorerNodeHandler && explorerPrefix &&
-          (url.pathname === explorerPrefix || url.pathname.startsWith(explorerPrefix + "/"))) {
+        (url.pathname === explorerPrefix || url.pathname.startsWith(explorerPrefix + "/"))) {
         explorerNodeHandler(req, res);
         return;
       }
@@ -456,6 +499,44 @@ export class TransportManager {
         resolve();
       });
     });
+  }
+
+  /**
+   * Build a Streamable HTTP request handler for embedding into a larger HTTP server.
+   *
+   * Returns a Node.js HTTP request handler `(req, res) => Promise<void>` that
+   * handles all MCP, health, metrics, explorer, and auth routes. The caller is
+   * responsible for creating the HTTP server and wiring this handler.
+   *
+   * This is the TypeScript equivalent of Python's `build_streamable_http_app()`
+   * which returns a Starlette ASGI app for mounting into larger services.
+   *
+   * @param server - The MCP Server instance to connect
+   * @param options - Optional endpoint configuration (default: "/mcp")
+   * @returns Object with `handler` and `close()` to clean up the transport
+   */
+  async buildStreamableHttpApp(
+    server: Server,
+    options?: { endpoint?: string },
+  ): Promise<{
+    handler: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
+    close: () => Promise<void>;
+  }> {
+    const endpoint = options?.endpoint ?? "/mcp";
+
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => crypto.randomUUID(),
+    });
+
+    await server.connect(transport);
+
+    const handler = this._createStreamableHandler(transport, endpoint, "http://localhost");
+
+    const close = async () => {
+      await transport.close();
+    };
+
+    return { handler, close };
   }
 
   /**

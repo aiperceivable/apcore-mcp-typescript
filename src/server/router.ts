@@ -16,6 +16,43 @@ import { MCP_PROGRESS_KEY, MCP_ELICIT_KEY } from "../helpers.js";
 import type { ElicitResult } from "../helpers.js";
 import { getCurrentIdentity } from "../auth/storage.js";
 
+/** Maximum recursion depth for deep merge to prevent stack overflow. */
+const DEEP_MERGE_MAX_DEPTH = 32;
+
+/**
+ * Recursively merge `overlay` into `base`, capped at DEEP_MERGE_MAX_DEPTH.
+ *
+ * When both sides have a plain object for the same key the merge recurses.
+ * All other types are overwritten by `overlay`.
+ */
+function deepMerge(
+  base: Record<string, unknown>,
+  overlay: Record<string, unknown>,
+  depth = 0,
+): Record<string, unknown> {
+  if (depth >= DEEP_MERGE_MAX_DEPTH) {
+    return { ...base, ...overlay };
+  }
+  const merged: Record<string, unknown> = { ...base };
+  for (const key of Object.keys(overlay)) {
+    const bVal = merged[key];
+    const oVal = overlay[key];
+    if (
+      bVal !== null && typeof bVal === "object" && !Array.isArray(bVal) &&
+      oVal !== null && typeof oVal === "object" && !Array.isArray(oVal)
+    ) {
+      merged[key] = deepMerge(
+        bVal as Record<string, unknown>,
+        oVal as Record<string, unknown>,
+        depth + 1,
+      );
+    } else {
+      merged[key] = oVal;
+    }
+  }
+  return merged;
+}
+
 /** Tuple of [content array, isError flag, traceId] returned from handleCall. */
 export type CallResult = [TextContentDict[], boolean, string | undefined];
 
@@ -36,23 +73,54 @@ export interface HandleCallExtra {
 /** Options for the ExecutionRouter constructor. */
 export interface ExecutionRouterOptions {
   validateInputs?: boolean;
+  /**
+   * Optional function that formats execution results into text for LLM consumption.
+   * When undefined, results are serialised with `JSON.stringify(result)`.
+   * Only applied to plain-object results; non-object results always use JSON.stringify.
+   */
+  outputFormatter?: (result: Record<string, unknown>) => string;
 }
 
 export class ExecutionRouter {
   private readonly _executor: Executor;
   private readonly _errorMapper: ErrorMapper;
   private readonly _validateInputs: boolean;
+  private readonly _outputFormatter?: (result: Record<string, unknown>) => string;
 
   /**
    * Create an ExecutionRouter.
    *
    * @param executor - Duck-typed executor with call(moduleId, inputs) or callAsync(moduleId, inputs)
-   * @param options - Optional configuration including validateInputs
+   * @param options - Optional configuration including validateInputs and outputFormatter
    */
   constructor(executor: Executor, options?: ExecutionRouterOptions) {
     this._executor = executor;
     this._errorMapper = new ErrorMapper();
     this._validateInputs = options?.validateInputs ?? false;
+    this._outputFormatter = options?.outputFormatter;
+  }
+
+  /**
+   * Format an execution result into text for LLM consumption.
+   *
+   * Uses the configured outputFormatter if set, otherwise falls back
+   * to `JSON.stringify(result)`. The formatter is only applied to
+   * plain-object results.
+   */
+  private _formatResult(result: unknown): string {
+    if (
+      this._outputFormatter &&
+      result !== null &&
+      typeof result === "object" &&
+      !Array.isArray(result)
+    ) {
+      try {
+        return this._outputFormatter(result as Record<string, unknown>);
+      } catch {
+        // outputFormatter failed — fall back to JSON.stringify
+      }
+    }
+    return JSON.stringify(result);
   }
 
   /**
@@ -200,8 +268,8 @@ export class ExecutionRouter {
         let chunkIndex = 0;
 
         for await (const chunk of this._executor.stream(toolName, args, context)) {
-          // Shallow-merge each chunk into the accumulated result
-          accumulated = { ...accumulated, ...chunk };
+          // Deep-merge each chunk into the accumulated result
+          accumulated = deepMerge(accumulated, chunk);
 
           // Send progress notification for each chunk
           await sendNotification({
@@ -219,7 +287,7 @@ export class ExecutionRouter {
         const content: TextContentDict[] = [
           {
             type: "text",
-            text: JSON.stringify(accumulated),
+            text: this._formatResult(accumulated),
           },
         ];
 
@@ -241,7 +309,7 @@ export class ExecutionRouter {
       const content: TextContentDict[] = [
         {
           type: "text",
-          text: JSON.stringify(result),
+          text: this._formatResult(result),
         },
       ];
 

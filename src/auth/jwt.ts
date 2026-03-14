@@ -24,7 +24,11 @@ export interface ClaimMapping {
 /** Options for constructing a JWTAuthenticator. */
 export interface JWTAuthenticatorOptions {
   /** Secret key (symmetric) or public key (asymmetric) for token verification. */
-  secret: string;
+  key?: string;
+  /**
+   * @deprecated Use `key` instead. Kept for backward compatibility.
+   */
+  secret?: string;
   /** Allowed algorithms. Default: ["HS256"] */
   algorithms?: jwt.Algorithm[];
   /** Expected audience claim. */
@@ -57,7 +61,11 @@ export class JWTAuthenticator implements Authenticator {
   private readonly _requireAuth: boolean;
 
   constructor(options: JWTAuthenticatorOptions) {
-    this._secret = options.secret;
+    const keyValue = options.key ?? options.secret;
+    if (!keyValue) {
+      throw new Error("JWTAuthenticator requires a 'key' (or deprecated 'secret') option");
+    }
+    this._secret = keyValue;
     this._algorithms = options.algorithms ?? ["HS256"];
     this._audience = options.audience;
     this._issuer = options.issuer;

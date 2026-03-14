@@ -336,6 +336,39 @@ describe("ErrorMapper", () => {
     expect(result.details).toEqual({ something: "else" });
   });
 
+  // TC-ERROR-019b: ExecutionCancelledError by constructor name
+  it("maps ExecutionCancelledError to EXECUTION_CANCELLED with retryable=true", () => {
+    class ExecutionCancelledError extends Error {
+      constructor() {
+        super("cancelled");
+        this.name = "ExecutionCancelledError";
+      }
+    }
+
+    const result = mapper.toMcpError(new ExecutionCancelledError());
+
+    expect(result.isError).toBe(true);
+    expect(result.errorType).toBe("EXECUTION_CANCELLED");
+    expect(result.message).toBe("Execution was cancelled");
+    expect(result.details).toBeNull();
+    expect(result.retryable).toBe(true);
+  });
+
+  // TC-ERROR-019c: ExecutionCancelledError by code property
+  it("maps error with EXECUTION_CANCELLED code to EXECUTION_CANCELLED", () => {
+    const error = createModuleError(
+      "EXECUTION_CANCELLED",
+      "Cancelled by user",
+    );
+
+    const result = mapper.toMcpError(error);
+
+    expect(result.isError).toBe(true);
+    expect(result.errorType).toBe("EXECUTION_CANCELLED");
+    expect(result.message).toBe("Execution was cancelled");
+    expect(result.retryable).toBe(true);
+  });
+
   // TC-ERROR-019: Schema validation with AI guidance
   it("attaches AI guidance to schema validation errors", () => {
     const error = createModuleError(

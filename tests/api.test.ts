@@ -3,8 +3,9 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { toOpenaiTools } from "../src/index.js";
+import { toOpenaiTools, asyncServe } from "../src/index.js";
 import type { Registry, Executor, ModuleDescriptor } from "../src/types.js";
+import { ErrorCodes } from "../src/types.js";
 
 function createDescriptor(
   moduleId: string,
@@ -148,5 +149,89 @@ describe("serve()", () => {
       // @ts-expect-error testing invalid transport after auto-resolve
       serve(registry, { transport: "invalid" }),
     ).rejects.toThrow("Unknown transport");
+  });
+});
+
+describe("ErrorCodes", () => {
+  it("contains VERSION_INCOMPATIBLE", () => {
+    expect(ErrorCodes.VERSION_INCOMPATIBLE).toBe("VERSION_INCOMPATIBLE");
+  });
+
+  it("contains ERROR_CODE_COLLISION", () => {
+    expect(ErrorCodes.ERROR_CODE_COLLISION).toBe("ERROR_CODE_COLLISION");
+  });
+
+  it("contains EXECUTION_CANCELLED", () => {
+    expect(ErrorCodes.EXECUTION_CANCELLED).toBe("EXECUTION_CANCELLED");
+  });
+});
+
+describe("asyncServe()", () => {
+  it("returns handler and close functions for an executor", async () => {
+    const registry = createMockRegistry({
+      "test.module": createDescriptor("test.module"),
+    });
+    const executor = createMockExecutor(registry);
+
+    const app = await asyncServe(executor, { name: "test-app" });
+
+    expect(typeof app.handler).toBe("function");
+    expect(typeof app.close).toBe("function");
+
+    // Clean up
+    await app.close();
+  });
+
+  it("validates name must not be empty", async () => {
+    const executor = createMockExecutor(createMockRegistry({}));
+
+    await expect(
+      asyncServe(executor, { name: "" }),
+    ).rejects.toThrow("name must not be empty");
+  });
+
+  it("validates explorerPrefix must start with /", async () => {
+    const executor = createMockExecutor(createMockRegistry({}));
+
+    await expect(
+      asyncServe(executor, { explorer: true, explorerPrefix: "noslash" }),
+    ).rejects.toThrow("explorerPrefix must start with '/'");
+  });
+
+  it("handler responds to /health with 200", async () => {
+    const registry = createMockRegistry({
+      "test.module": createDescriptor("test.module"),
+    });
+    const executor = createMockExecutor(registry);
+
+    const app = await asyncServe(executor);
+
+    // Create mock req/res to test handler
+    const { IncomingMessage, ServerResponse } = await import("node:http");
+    const { Socket } = await import("node:net");
+
+    const socket = new Socket();
+    const req = new IncomingMessage(socket);
+    req.url = "/health";
+    req.method = "GET";
+
+    let statusCode = 0;
+    let body = "";
+    const res = new ServerResponse(req);
+    res.writeHead = vi.fn((code: number) => {
+      statusCode = code;
+      return res;
+    }) as any;
+    res.end = vi.fn((data?: string) => {
+      if (data) body = data;
+      return res;
+    }) as any;
+
+    await app.handler(req, res);
+
+    expect(statusCode).toBe(200);
+    expect(JSON.parse(body)).toHaveProperty("status", "ok");
+
+    await app.close();
   });
 });
