@@ -21,6 +21,7 @@ export const REGISTRY_EVENTS = Object.freeze({
 /** Framework error codes used by ErrorMapper. */
 export const ErrorCodes = Object.freeze({
   MODULE_NOT_FOUND: "MODULE_NOT_FOUND",
+  MODULE_DISABLED: "MODULE_DISABLED",
   SCHEMA_VALIDATION_ERROR: "SCHEMA_VALIDATION_ERROR",
   ACL_DENIED: "ACL_DENIED",
   CALL_DEPTH_EXCEEDED: "CALL_DEPTH_EXCEEDED",
@@ -34,6 +35,9 @@ export const ErrorCodes = Object.freeze({
   APPROVAL_DENIED: "APPROVAL_DENIED",
   APPROVAL_TIMEOUT: "APPROVAL_TIMEOUT",
   APPROVAL_PENDING: "APPROVAL_PENDING",
+  EXECUTION_CANCELLED: "EXECUTION_CANCELLED",
+  VERSION_INCOMPATIBLE: "VERSION_INCOMPATIBLE",
+  FEATURE_NOT_IMPLEMENTED: "FEATURE_NOT_IMPLEMENTED",
 } as const);
 
 /** Valid module ID pattern. No hyphens allowed. */
@@ -48,6 +52,11 @@ export interface ModuleAnnotations {
   requiresApproval: boolean;
   openWorld: boolean;
   streaming: boolean;
+  cacheable?: boolean;
+  cacheTtl?: number;
+  cacheKeyFields?: string[] | null;
+  paginated?: boolean;
+  paginationStyle?: "cursor" | "offset" | "page";
 }
 
 export interface ModuleDescriptor {
@@ -62,6 +71,7 @@ export interface ModuleDescriptor {
   version?: string;
   examples?: unknown[];
   metadata?: Record<string, unknown>;
+  sunsetDate?: string | null;
 }
 
 // ─── Core Interfaces (duck-typed for apcore-typescript compatibility) ────────

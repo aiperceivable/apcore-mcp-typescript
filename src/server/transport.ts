@@ -12,7 +12,6 @@ import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import type { ExplorerHandler } from "../explorer/handler.js";
 import type { Authenticator } from "../auth/types.js";
 import { identityStorage } from "../auth/storage.js";
 
@@ -89,8 +88,11 @@ export class TransportManager {
   /** Optional metrics collector for Prometheus /metrics endpoint. */
   private _metricsCollector?: MetricsExporter;
 
-  /** Optional explorer handler for Tool Explorer UI. */
-  private _explorerHandler?: ExplorerHandler;
+  /** Optional explorer node handler (from mcp-embedded-ui). */
+  private _explorerNodeHandler?: (req: IncomingMessage, res: ServerResponse) => void;
+
+  /** URL prefix for the explorer UI. */
+  private _explorerPrefix?: string;
 
   /** Optional authenticator for request authentication. */
   private _authenticator?: Authenticator;
@@ -137,10 +139,15 @@ export class TransportManager {
   /**
    * Set the explorer handler for Tool Explorer UI routes.
    *
-   * @param handler - An ExplorerHandler instance
+   * @param handler - A Node.js HTTP handler (from mcp-embedded-ui's createNodeHandler)
+   * @param prefix - The URL prefix for the explorer (e.g. "/explorer")
    */
-  setExplorerHandler(handler: ExplorerHandler): void {
-    this._explorerHandler = handler;
+  setExplorer(
+    handler: (req: IncomingMessage, res: ServerResponse) => void,
+    prefix: string,
+  ): void {
+    this._explorerNodeHandler = handler;
+    this._explorerPrefix = prefix;
   }
 
   /**
@@ -196,9 +203,11 @@ export class TransportManager {
    */
   _isAuthExempt(pathname: string, method: string): boolean {
     if (method === "GET" && this._exemptPaths.has(pathname)) return true;
-    // Explorer GET routes are exempt (browsing the UI)
-    if (this._explorerHandler && method === "GET") {
-      const prefix = this._explorerHandler.prefix;
+    // Explorer GET routes are exempt (browsing the UI).
+    // Note: in practice, explorer routes are dispatched before _authenticateRequest
+    // is called, so this branch is a defensive fallback for safety.
+    if (this._explorerPrefix && method === "GET") {
+      const prefix = this._explorerPrefix;
       if (pathname === prefix || pathname === prefix + "/" || pathname.startsWith(prefix + "/")) {
         return true;
       }
@@ -271,29 +280,24 @@ export class TransportManager {
 
     await server.connect(transport);
 
-    const explorerHandler = this._explorerHandler;
+    const explorerNodeHandler = this._explorerNodeHandler;
+    const explorerPrefix = this._explorerPrefix;
 
     const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
       const url = new URL(req.url ?? "/", `http://${options.host}:${options.port}`);
 
       if (this._handleBuiltinRoute(req, res, url)) return;
 
+      // Delegate to explorer handler if path matches prefix (handles its own auth)
+      if (explorerNodeHandler && explorerPrefix &&
+          (url.pathname === explorerPrefix || url.pathname.startsWith(explorerPrefix + "/"))) {
+        explorerNodeHandler(req, res);
+        return;
+      }
+
       // Authenticate non-exempt requests
       const { identity, blocked } = await this._authenticateRequest(req, res, url);
       if (blocked) return;
-
-      // Check explorer routes before MCP transport
-      if (explorerHandler) {
-        try {
-          const handled = await explorerHandler.handleRequest(req, res, url, identity);
-          if (handled) return;
-        } catch (err) {
-          if (!res.headersSent) {
-            res.writeHead(500).end("Internal Server Error");
-          }
-          return;
-        }
-      }
 
       if (url.pathname !== endpoint) {
         res.writeHead(404).end("Not Found");
@@ -365,29 +369,24 @@ export class TransportManager {
     const messagesEndpoint = "/messages";
     const transports = new Map<string, SSEServerTransport>();
 
-    const explorerHandler = this._explorerHandler;
+    const explorerNodeHandler = this._explorerNodeHandler;
+    const explorerPrefix = this._explorerPrefix;
 
     const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
       const url = new URL(req.url ?? "/", `http://${options.host}:${options.port}`);
 
       if (this._handleBuiltinRoute(req, res, url)) return;
 
+      // Delegate to explorer handler if path matches prefix (handles its own auth)
+      if (explorerNodeHandler && explorerPrefix &&
+          (url.pathname === explorerPrefix || url.pathname.startsWith(explorerPrefix + "/"))) {
+        explorerNodeHandler(req, res);
+        return;
+      }
+
       // Authenticate non-exempt requests
       const { identity, blocked } = await this._authenticateRequest(req, res, url);
       if (blocked) return;
-
-      // Check explorer routes before SSE transport
-      if (explorerHandler) {
-        try {
-          const handled = await explorerHandler.handleRequest(req, res, url, identity);
-          if (handled) return;
-        } catch (err) {
-          if (!res.headersSent) {
-            res.writeHead(500).end("Internal Server Error");
-          }
-          return;
-        }
-      }
 
       const handleSse = async () => {
         if (url.pathname === endpoint && req.method === "GET") {

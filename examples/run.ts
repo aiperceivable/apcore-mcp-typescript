@@ -99,4 +99,7 @@ serve(registry, {
   explorer: true,
   allowExecute: true,
   authenticator,
+  explorerTitle: "APCore MCP Tool Explorer",
+  explorerProjectName: "APCore MCP",
+  explorerProjectUrl: "https://github.com/aipartnerup/apcore-mcp-typescript",
 });

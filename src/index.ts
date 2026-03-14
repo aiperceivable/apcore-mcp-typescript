@@ -7,13 +7,13 @@
  */
 
 import { createRequire } from "node:module";
+import { createNodeHandler, type Tool as UITool } from "mcp-embedded-ui";
 import { OpenAIConverter } from "./converters/openai.js";
 import type { ConvertRegistryOptions } from "./converters/openai.js";
 import { MCPServerFactory } from "./server/factory.js";
 import { ExecutionRouter } from "./server/router.js";
 import { TransportManager } from "./server/transport.js";
 import type { MetricsExporter } from "./server/transport.js";
-import { ExplorerHandler } from "./explorer/handler.js";
 import type {
   RegistryOrExecutor,
   Registry,
@@ -21,6 +21,7 @@ import type {
   OpenAIToolDef,
 } from "./types.js";
 import type { Authenticator } from "./auth/types.js";
+import { buildExplorerAuthHook } from "./auth/hooks.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json") as { version: string };
@@ -50,6 +51,7 @@ export { JWTAuthenticator } from "./auth/jwt.js";
 export type { ClaimMapping, JWTAuthenticatorOptions } from "./auth/jwt.js";
 export type { Authenticator, Identity } from "./auth/types.js";
 export { identityStorage, getCurrentIdentity } from "./auth/storage.js";
+export { buildExplorerAuthHook } from "./auth/hooks.js";
 
 // ─── Building Block Exports ──────────────────────────────────────────────────
 export { MCPServerFactory } from "./server/factory.js";
@@ -58,8 +60,6 @@ export type { CallResult, HandleCallExtra, ExecutionRouterOptions } from "./serv
 export { RegistryListener } from "./server/listener.js";
 export { TransportManager } from "./server/transport.js";
 export type { MetricsExporter } from "./server/transport.js";
-export { ExplorerHandler } from "./explorer/index.js";
-export type { ExplorerHandlerOptions } from "./explorer/index.js";
 export { AnnotationMapper } from "./adapters/annotations.js";
 export { SchemaConverter } from "./adapters/schema.js";
 export { ErrorMapper } from "./adapters/errors.js";
@@ -156,6 +156,12 @@ export interface ServeOptions {
   explorerPrefix?: string;
   /** Allow tool execution from the explorer UI. Default: false */
   allowExecute?: boolean;
+  /** Title for the explorer UI page. Default: "MCP Tool Explorer" */
+  explorerTitle?: string;
+  /** Project name shown in the explorer UI footer. */
+  explorerProjectName?: string;
+  /** Project URL shown in the explorer UI footer. */
+  explorerProjectUrl?: string;
   /** Optional authenticator for request authentication (HTTP transports only). */
   authenticator?: Authenticator;
   /** Custom paths exempt from authentication. Default: ["/health", "/metrics"] */
@@ -190,6 +196,9 @@ export async function serve(
     explorer = false,
     explorerPrefix = "/explorer",
     allowExecute = false,
+    explorerTitle = "APCore MCP Tool Explorer",
+    explorerProjectName,
+    explorerProjectUrl,
     authenticator,
     exemptPaths,
     approvalHandler,
@@ -226,10 +235,10 @@ export async function serve(
   if (logLevel) {
     const levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
     const minLevel = levels.indexOf(logLevel);
-    if (minLevel > 0) console.debug = () => {};
-    if (minLevel > 1) console.info = () => {};
-    if (minLevel > 2) console.warn = () => {};
-    if (minLevel > 3) console.error = () => {};
+    if (minLevel > 0) console.debug = () => { };
+    if (minLevel > 1) console.info = () => { };
+    if (minLevel > 2) console.warn = () => { };
+    if (minLevel > 3) console.error = () => { };
   }
 
   const registry = resolveRegistry(registryOrExecutor);
@@ -266,12 +275,24 @@ export async function serve(
   // Mount explorer for HTTP transports only
   const transportLower = transport.toLowerCase();
   if (explorer && (transportLower === "streamable-http" || transportLower === "sse")) {
-    const explorerHandler = new ExplorerHandler(tools, router, {
-      allowExecute,
-      prefix: explorerPrefix,
-      authenticator,
-    });
-    transportManager.setExplorerHandler(explorerHandler);
+    // Build auth hook for POST (tool execution) calls
+    const authHook = authenticator
+      ? buildExplorerAuthHook(authenticator)
+      : undefined;
+
+    const explorerNodeHandler = createNodeHandler(
+      tools as UITool[],
+      async (name: string, args: Record<string, unknown>) => router.handleCall(name, args),
+      {
+        prefix: explorerPrefix,
+        allowExecute,
+        authHook,
+        title: explorerTitle,
+        projectName: explorerProjectName,
+        projectUrl: explorerProjectUrl,
+      },
+    );
+    transportManager.setExplorer(explorerNodeHandler, explorerPrefix);
     origInfo(`Tool Explorer enabled at ${explorerPrefix}`);
   }
 
@@ -297,7 +318,7 @@ export async function serve(
 }
 
 /** Options for toOpenaiTools() */
-export interface ToOpenaiToolsOptions extends ConvertRegistryOptions {}
+export interface ToOpenaiToolsOptions extends ConvertRegistryOptions { }
 
 /**
  * Export apcore Registry modules as OpenAI-compatible tool definitions.

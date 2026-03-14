@@ -91,4 +91,7 @@ serve(registry, {
   port: 8000,
   explorer: true,
   allowExecute: true,
+  explorerTitle: "APCore MCP Tool Explorer",
+  explorerProjectName: "APCore MCP",
+  explorerProjectUrl: "https://github.com/aipartnerup/apcore-mcp-typescript",
 });

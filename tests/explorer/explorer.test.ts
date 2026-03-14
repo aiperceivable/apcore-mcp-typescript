@@ -1,7 +1,8 @@
 /**
  * Tests for the MCP Tool Explorer (TC-EXPLORER spec).
  *
- * Mirrors the Python test suite for consistency:
+ * Uses mcp-embedded-ui's createNodeHandler as the explorer backend.
+ *
  * TC-001: Explorer page returns HTML
  * TC-002: Explorer disabled by default (endpoints 404 when not mounted)
  * TC-003: Tool listing returns JSON array
@@ -13,9 +14,9 @@
  */
 
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
-import { createServer, type Server as HttpServer } from "node:http";
+import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
+import { createNodeHandler, type Tool as UITool } from "mcp-embedded-ui";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { ExplorerHandler } from "../../src/explorer/handler.js";
 import type { ExecutionRouter } from "../../src/server/router.js";
 import type { TextContentDict } from "../../src/types.js";
 
@@ -79,8 +80,10 @@ function createMockRouter(
 }
 
 // ---------------------------------------------------------------------------
-// Helper: create HTTP server with ExplorerHandler and send requests
+// Helper: create HTTP server with explorer handler and send requests
 // ---------------------------------------------------------------------------
+
+type NodeHandler = (req: IncomingMessage, res: ServerResponse) => void;
 
 interface TestServer {
   server: HttpServer;
@@ -89,19 +92,27 @@ interface TestServer {
   close: () => Promise<void>;
 }
 
+function buildExplorerHandler(
+  router: ExecutionRouter,
+  options: { prefix?: string; allowExecute?: boolean } = {},
+): NodeHandler {
+  const prefix = options.prefix ?? "/explorer";
+  return createNodeHandler(
+    sampleTools as UITool[],
+    async (name: string, args: Record<string, unknown>) => router.handleCall(name, args),
+    { prefix, allowExecute: options.allowExecute ?? false },
+  );
+}
+
 async function createTestServer(
-  handler: ExplorerHandler | null,
+  handler: NodeHandler | null,
+  prefix = "/explorer",
 ): Promise<TestServer> {
   const httpServer = createServer(async (req, res) => {
     if (handler) {
-      const url = new URL(req.url ?? "/", `http://127.0.0.1`);
-      try {
-        const handled = await handler.handleRequest(req, res, url);
-        if (handled) return;
-      } catch {
-        if (!res.headersSent) {
-          res.writeHead(500).end("Internal Server Error");
-        }
+      const url = new URL(req.url ?? "/", "http://127.0.0.1");
+      if (url.pathname === prefix || url.pathname.startsWith(prefix + "/")) {
+        handler(req, res);
         return;
       }
     }
@@ -130,13 +141,10 @@ async function createTestServer(
 
 describe("TC-001: Explorer page returns HTML", () => {
   let ts: TestServer;
-  let router: ExecutionRouter;
 
   beforeAll(async () => {
-    router = createMockRouter();
-    const handler = new ExplorerHandler(sampleTools, router, {
-      allowExecute: true,
-    });
+    const router = createMockRouter();
+    const handler = buildExplorerHandler(router, { allowExecute: true });
     ts = await createTestServer(handler);
   });
 
@@ -202,9 +210,7 @@ describe("TC-003: List tools", () => {
 
   beforeAll(async () => {
     const router = createMockRouter();
-    const handler = new ExplorerHandler(sampleTools, router, {
-      allowExecute: true,
-    });
+    const handler = buildExplorerHandler(router, { allowExecute: true });
     ts = await createTestServer(handler);
   });
 
@@ -246,9 +252,7 @@ describe("TC-004: Tool detail", () => {
 
   beforeAll(async () => {
     const router = createMockRouter();
-    const handler = new ExplorerHandler(sampleTools, router, {
-      allowExecute: true,
-    });
+    const handler = buildExplorerHandler(router, { allowExecute: true });
     ts = await createTestServer(handler);
   });
 
@@ -291,9 +295,7 @@ describe("TC-005: Call tool", () => {
 
   beforeAll(async () => {
     mockRouter = createMockRouter();
-    const handler = new ExplorerHandler(sampleTools, mockRouter, {
-      allowExecute: true,
-    });
+    const handler = buildExplorerHandler(mockRouter, { allowExecute: true });
     ts = await createTestServer(handler);
   });
 
@@ -355,9 +357,7 @@ describe("TC-006: Execute disabled", () => {
 
   beforeAll(async () => {
     const router = createMockRouter();
-    const handler = new ExplorerHandler(sampleTools, router, {
-      allowExecute: false,
-    });
+    const handler = buildExplorerHandler(router, { allowExecute: false });
     ts = await createTestServer(handler);
   });
 
@@ -375,7 +375,7 @@ describe("TC-006: Execute disabled", () => {
     const data = await res.json();
     expect(data).toHaveProperty("error");
     const error = data.error.toLowerCase();
-    expect(error.includes("disabled") || error.includes("allow-execute")).toBe(
+    expect(error.includes("disabled") || error.includes("execution")).toBe(
       true,
     );
   });
@@ -393,8 +393,8 @@ describe("TC-006: Execute disabled", () => {
 // ---------------------------------------------------------------------------
 
 describe("TC-007: Stdio ignored", () => {
-  it("ExplorerHandler can be created without error", () => {
-    const tools: Tool[] = [
+  it("createNodeHandler can be called without error", () => {
+    const tools = [
       {
         name: "test.tool",
         description: "Test",
@@ -404,10 +404,12 @@ describe("TC-007: Stdio ignored", () => {
         },
       },
     ];
-    const router = createMockRouter();
-    const handler = new ExplorerHandler(tools, router);
+    const handler = createNodeHandler(
+      tools,
+      async () => [[{ type: "text" as const, text: "ok" }], false],
+    );
     expect(handler).toBeDefined();
-    expect(handler.prefix).toBe("/explorer");
+    expect(typeof handler).toBe("function");
   });
 });
 
@@ -420,11 +422,11 @@ describe("TC-008: Custom prefix", () => {
 
   beforeAll(async () => {
     const router = createMockRouter();
-    const handler = new ExplorerHandler(sampleTools, router, {
+    const handler = buildExplorerHandler(router, {
       prefix: "/custom",
       allowExecute: true,
     });
-    ts = await createTestServer(handler);
+    ts = await createTestServer(handler, "/custom");
   });
 
   afterAll(async () => {

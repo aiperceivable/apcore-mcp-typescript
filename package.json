@@ -1,6 +1,6 @@
 {
   "name": "apcore-mcp",
-  "version": "0.8.1",
+  "version": "0.10.0",
   "description": "Automatic MCP Server & OpenAI Tools Bridge for apcore",
   "type": "module",
   "main": "./dist/index.js",
@@ -49,8 +49,9 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "apcore-js": "^0.6.0",
-    "jsonwebtoken": "^9.0.3"
+    "apcore-js": "^0.13.0",
+    "jsonwebtoken": "^9.0.3",
+    "mcp-embedded-ui": "^0.3.0"
   },
   "devDependencies": {
     "@sinclair/typebox": "^0.34.48",

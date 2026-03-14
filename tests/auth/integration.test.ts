@@ -9,9 +9,10 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import jwt from "jsonwebtoken";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { AddressInfo } from "node:net";
+import { createNodeHandler, type Tool as UITool } from "mcp-embedded-ui";
 import { TransportManager } from "../../src/server/transport.js";
 import { JWTAuthenticator } from "../../src/auth/jwt.js";
-import { ExplorerHandler } from "../../src/explorer/handler.js";
+import { buildExplorerAuthHook } from "../../src/auth/hooks.js";
 import type { ExecutionRouter } from "../../src/server/router.js";
 import type { TextContentDict } from "../../src/types.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
@@ -49,6 +50,29 @@ const sampleTools: Tool[] = [
     inputSchema: { type: "object" as const, properties: {} },
   },
 ];
+
+/**
+ * Build a mcp-embedded-ui node handler and set it on the TransportManager,
+ * matching the pattern used in serve().
+ */
+function setupExplorer(
+  mgr: TransportManager,
+  router: ExecutionRouter,
+  options: { authenticator?: JWTAuthenticator; allowExecute?: boolean; prefix?: string } = {},
+): void {
+  const prefix = options.prefix ?? "/explorer";
+  const authHook = options.authenticator
+    ? buildExplorerAuthHook(options.authenticator)
+    : undefined;
+
+  const handler = createNodeHandler(
+    sampleTools as UITool[],
+    async (name: string, args: Record<string, unknown>) => router.handleCall(name, args),
+    { prefix, allowExecute: options.allowExecute ?? true, authHook },
+  );
+
+  mgr.setExplorer(handler, prefix);
+}
 
 // ---------------------------------------------------------------------------
 // Transport + Auth Integration
@@ -216,11 +240,7 @@ describe("Explorer auth integration", () => {
     vi.spyOn(mgr, "_validateHostPort").mockImplementation(() => {});
 
     const router = createMockRouter();
-    const handler = new ExplorerHandler(sampleTools, router, {
-      allowExecute: true,
-      authenticator,
-    });
-    mgr.setExplorerHandler(handler);
+    setupExplorer(mgr, router, { authenticator, allowExecute: true });
 
     await mgr.runStreamableHttp(createMockServer(), { host: "127.0.0.1", port: 0 });
     const addr = mgr.httpServer!.address() as AddressInfo;
@@ -238,11 +258,7 @@ describe("Explorer auth integration", () => {
     vi.spyOn(mgr, "_validateHostPort").mockImplementation(() => {});
 
     const router = createMockRouter();
-    const handler = new ExplorerHandler(sampleTools, router, {
-      allowExecute: true,
-      authenticator,
-    });
-    mgr.setExplorerHandler(handler);
+    setupExplorer(mgr, router, { authenticator, allowExecute: true });
 
     await mgr.runStreamableHttp(createMockServer(), { host: "127.0.0.1", port: 0 });
     const addr = mgr.httpServer!.address() as AddressInfo;
@@ -258,11 +274,7 @@ describe("Explorer auth integration", () => {
     vi.spyOn(mgr, "_validateHostPort").mockImplementation(() => {});
 
     const router = createMockRouter();
-    const handler = new ExplorerHandler(sampleTools, router, {
-      allowExecute: true,
-      authenticator,
-    });
-    mgr.setExplorerHandler(handler);
+    setupExplorer(mgr, router, { authenticator, allowExecute: true });
 
     await mgr.runStreamableHttp(createMockServer(), { host: "127.0.0.1", port: 0 });
     const addr = mgr.httpServer!.address() as AddressInfo;
@@ -274,7 +286,7 @@ describe("Explorer auth integration", () => {
     });
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.error).toContain("Authentication required");
+    expect(body.error).toContain("Unauthorized");
   });
 
   it("POST /explorer/tools/{name}/call succeeds with valid token", async () => {
@@ -284,11 +296,7 @@ describe("Explorer auth integration", () => {
     vi.spyOn(mgr, "_validateHostPort").mockImplementation(() => {});
 
     const router = createMockRouter();
-    const handler = new ExplorerHandler(sampleTools, router, {
-      allowExecute: true,
-      authenticator,
-    });
-    mgr.setExplorerHandler(handler);
+    setupExplorer(mgr, router, { authenticator, allowExecute: true });
 
     await mgr.runStreamableHttp(createMockServer(), { host: "127.0.0.1", port: 0 });
     const addr = mgr.httpServer!.address() as AddressInfo;
@@ -316,16 +324,12 @@ describe("Explorer auth integration", () => {
     vi.spyOn(mgr, "_validateHostPort").mockImplementation(() => {});
 
     const router = createMockRouter();
-    const handler = new ExplorerHandler(sampleTools, router, {
-      allowExecute: true,
-      authenticator,
-    });
-    mgr.setExplorerHandler(handler);
+    setupExplorer(mgr, router, { authenticator, allowExecute: true });
 
     await mgr.runStreamableHttp(createMockServer(), { host: "127.0.0.1", port: 0 });
     const addr = mgr.httpServer!.address() as AddressInfo;
 
-    // Explorer GET routes should still be exempt because of the explorer handler logic
+    // Explorer GET routes should still be exempt because explorer is handled before auth
     const htmlRes = await fetch(`http://127.0.0.1:${addr.port}/explorer/`);
     expect(htmlRes.status).toBe(200);
     const text = await htmlRes.text();
@@ -356,10 +360,7 @@ describe("Explorer auth integration", () => {
     vi.spyOn(mgr, "_validateHostPort").mockImplementation(() => {});
 
     const router = createMockRouter();
-    const handler = new ExplorerHandler(sampleTools, router, {
-      allowExecute: true,
-    });
-    mgr.setExplorerHandler(handler);
+    setupExplorer(mgr, router, { allowExecute: true });
 
     await mgr.runStreamableHttp(createMockServer(), { host: "127.0.0.1", port: 0 });
     const addr = mgr.httpServer!.address() as AddressInfo;
@@ -398,18 +399,17 @@ describe("TransportManager._isAuthExempt", () => {
     expect(mgr._isAuthExempt("/mcp", "POST")).toBe(false);
   });
 
-  it("exempts GET /explorer/ when explorer handler is set", () => {
+  it("exempts GET /explorer/ when explorer is set", () => {
     const mgr = new TransportManager();
-    const router = createMockRouter();
-    const handler = new ExplorerHandler(sampleTools, router);
-    mgr.setExplorerHandler(handler);
+    const noop = () => {};
+    mgr.setExplorer(noop as never, "/explorer");
 
     expect(mgr._isAuthExempt("/explorer/", "GET")).toBe(true);
     expect(mgr._isAuthExempt("/explorer/tools", "GET")).toBe(true);
     expect(mgr._isAuthExempt("/explorer", "GET")).toBe(true);
   });
 
-  it("does not exempt explorer GET when no handler is set", () => {
+  it("does not exempt explorer GET when no explorer is set", () => {
     const mgr = new TransportManager();
     expect(mgr._isAuthExempt("/explorer/", "GET")).toBe(false);
   });
