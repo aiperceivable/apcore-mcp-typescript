@@ -318,37 +318,6 @@ function toOpenaiTools(
 - `tags` — Filter modules by tags
 - `prefix` — Filter modules by ID prefix
 
-## Architecture
-
-```
-src/
-├── index.ts              # Public API: serve(), toOpenaiTools()
-├── cli.ts                # CLI entry point
-├── types.ts              # TypeScript interfaces
-├── helpers.ts            # reportProgress() / elicit() helpers
-├── adapters/
-│   ├── schema.ts         # JSON Schema $ref inlining
-│   ├── annotations.ts    # Module annotations -> MCP hints
-│   ├── errors.ts         # Error sanitization
-│   ├── idNormalizer.ts   # Dot-notation <-> dash-notation
-│   └── approval.ts       # Elicitation-based approval handler
-├── auth/
-│   ├── jwt.ts            # JWT Bearer token authenticator
-│   ├── storage.ts        # AsyncLocalStorage identity propagation
-│   └── types.ts          # Authenticator / Identity interfaces
-├── converters/
-│   └── openai.ts         # OpenAI tool definition converter
-├── explorer/
-│   ├── handler.ts        # Explorer HTTP route handler
-│   └── html.ts           # Self-contained HTML/CSS/JS page
-└── server/
-    ├── factory.ts        # MCP Server creation & handler registration
-    ├── router.ts         # Tool call execution routing
-    ├── context.ts        # BridgeContext for executor call chains
-    ├── transport.ts      # Transport lifecycle (stdio/HTTP/SSE)
-    └── listener.ts       # Dynamic registry event listener
-```
-
 ## Examples
 
 See [examples/README.md](examples/README.md) for runnable demos covering both class-based modules and zero-code-intrusion wrapping via the `module()` factory.
