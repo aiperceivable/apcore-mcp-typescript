@@ -350,10 +350,6 @@ npm run build
 npm run dev
 ```
 
-## Testing
-
-313 tests across 23 test suites.
-
 ## License
 
 Apache-2.0
