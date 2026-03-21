@@ -7,7 +7,6 @@
  * - toOpenaiTools(registryOrExecutor, options?) - Export OpenAI tool definitions
  */
 
-import { createRequire } from "node:module";
 import { createNodeHandler, type Tool as UITool } from "mcp-embedded-ui";
 import { OpenAIConverter } from "./converters/openai.js";
 import type { ConvertRegistryOptions } from "./converters/openai.js";
@@ -23,9 +22,8 @@ import type {
 } from "./types.js";
 import type { Authenticator } from "./auth/types.js";
 import { buildExplorerAuthHook } from "./auth/hooks.js";
+import pkg from "../package.json" with { type: "json" };
 
-const require = createRequire(import.meta.url);
-const pkg = require("../package.json") as { version: string };
 export const VERSION: string = pkg.version;
 
 // ─── Type Exports ────────────────────────────────────────────────────────────
