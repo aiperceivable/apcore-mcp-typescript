@@ -1,6 +1,6 @@
 {
   "name": "apcore-mcp",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "description": "Automatic MCP Server & OpenAI Tools Bridge for apcore",
   "type": "module",
   "main": "./dist/index.js",
@@ -72,10 +72,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/aipartnerup/apcore-mcp-typescript.git"
+    "url": "https://github.com/aiperceivable/apcore-mcp-typescript.git"
   },
-  "homepage": "https://github.com/aipartnerup",
+  "homepage": "https://github.com/aiperceivable",
   "bugs": {
-    "url": "https://github.com/aipartnerup/apcore-mcp-typescript/issues"
+    "url": "https://github.com/aiperceivable/apcore-mcp-typescript/issues"
   }
 }

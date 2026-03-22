@@ -1,10 +1,10 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/aipartnerup/apcore-mcp/main/apcore-mcp-logo.svg" alt="apcore-mcp logo" width="200"/>
+  <img src="https://raw.githubusercontent.com/aiperceivable/apcore-mcp/main/apcore-mcp-logo.svg" alt="apcore-mcp logo" width="200"/>
 </div>
 
 # apcore-mcp
 
-Automatic MCP Server & OpenAI Tools Bridge for [apcore](https://github.com/aipartnerup/apcore).
+Automatic MCP Server & OpenAI Tools Bridge for [apcore](https://github.com/aiperceivable/apcore).
 
 Converts apcore module registries into [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) tool definitions and [OpenAI-compatible function calling](https://platform.openai.com/docs/guides/function-calling) formats — zero boilerplate required.
 
@@ -23,7 +23,7 @@ Converts apcore module registries into [Model Context Protocol (MCP)](https://mo
 ## Documentation
 
 For full documentation, including Quick Start guides for both Python and TypeScript, visit:
-**[https://aipartnerup.github.io/apcore-mcp/](https://aipartnerup.github.io/apcore-mcp/)**
+**[https://aiperceivable.github.io/apcore-mcp/](https://aiperceivable.github.io/apcore-mcp/)**
 
 ## Requirements
 

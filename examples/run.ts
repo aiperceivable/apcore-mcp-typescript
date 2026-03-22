@@ -101,5 +101,5 @@ serve(registry, {
   authenticator,
   explorerTitle: "APCore MCP Tool Explorer",
   explorerProjectName: "APCore MCP",
-  explorerProjectUrl: "https://github.com/aipartnerup/apcore-mcp-typescript",
+  explorerProjectUrl: "https://github.com/aiperceivable/apcore-mcp-typescript",
 });
