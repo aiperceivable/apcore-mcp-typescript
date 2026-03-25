@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-03-25
+
+### Added
+- **Display overlay in `buildTool()`** — MCP tool name, description, and guidance now sourced from `metadata.display.mcp` when present.
+  - Tool name: `metadata.display.mcp.alias` (pre-sanitized by `DisplayResolver`, already `[a-zA-Z_][a-zA-Z0-9_-]*` and ≤ 64 chars).
+  - Tool description: `metadata.display.mcp.description`, with `guidance` appended as `\n\nGuidance: <text>` when set.
+  - Falls back to raw `descriptor.moduleId` / `descriptor.description` when no display overlay is present.
+- Added `reportProgress()` and `elicit()` to README API reference.
+- Added missing `serve()` options to README: `explorerTitle`, `explorerProjectName`, `explorerProjectUrl`, `requireAuth`, `outputFormatter`.
+
+### Changed
+- Dependency recommendation: works best with `apcore-toolkit >= 0.4.0` for `DisplayResolver`.
+
+### Fixed
+- Removed reference to nonexistent `examples/` directory in README.
+
+### Tests
+- `TestBuildToolDisplayOverlay` (6 tests): MCP alias used as tool name, MCP description used, guidance appended to description, surface-specific override wins over default, fallback to scanner values when no overlay, all fields combined.
+
 ## [0.10.2] - 2026-03-22
 
 ### Changed
