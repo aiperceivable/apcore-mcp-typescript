@@ -149,7 +149,7 @@ export interface BaseServeOptions {
   allowExecute?: boolean;
   /** Title for the explorer UI page. Default: "APCore MCP Explorer" */
   explorerTitle?: string;
-  /** Project name shown in the explorer UI footer. */
+  /** Project name shown in the explorer UI footer. Default: "apcore-mcp" */
   explorerProjectName?: string;
   /** Project URL shown in the explorer UI footer. */
   explorerProjectUrl?: string;

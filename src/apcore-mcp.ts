@@ -112,6 +112,12 @@ export interface APCoreMCPAsyncServeOptions {
   explorerPrefix?: string;
   /** Allow tool execution from the explorer UI. Default: false */
   allowExecute?: boolean;
+  /** Title for the explorer UI page. */
+  explorerTitle?: string;
+  /** Project name shown in the explorer UI footer. */
+  explorerProjectName?: string;
+  /** Project URL shown in the explorer UI footer. */
+  explorerProjectUrl?: string;
   /** MCP endpoint path. Default: "/mcp" */
   endpoint?: string;
 }
@@ -294,6 +300,9 @@ export class APCoreMCP {
       explorer: options.explorer,
       explorerPrefix: options.explorerPrefix,
       allowExecute: options.allowExecute,
+      explorerTitle: options.explorerTitle,
+      explorerProjectName: options.explorerProjectName,
+      explorerProjectUrl: options.explorerProjectUrl,
       authenticator: this._options.authenticator,
       requireAuth: this._options.requireAuth,
       exemptPaths: this._options.exemptPaths,
