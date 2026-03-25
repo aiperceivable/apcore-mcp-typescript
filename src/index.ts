@@ -125,20 +125,12 @@ export async function resolveExecutor(
   );
 }
 
-/** Options for serve() */
-export interface ServeOptions {
-  /** Transport type. Default: "stdio" */
-  transport?: "stdio" | "streamable-http" | "sse";
-  /** Host address for HTTP-based transports. Default: "127.0.0.1" */
-  host?: string;
-  /** Port number for HTTP-based transports. Default: 8000 */
-  port?: number;
+/** Common options shared by serve() and asyncServe(). */
+export interface BaseServeOptions {
   /** MCP server name. Default: "apcore-mcp" */
   name?: string;
   /** MCP server version. Default: package version */
   version?: string;
-  /** Enable dynamic tool registration/unregistration. Default: false */
-  dynamic?: boolean;
   /** Enable input validation against schemas. Default: false */
   validateInputs?: boolean;
   /** Filter modules by tags. Default: null (no filtering) */
@@ -147,10 +139,6 @@ export interface ServeOptions {
   prefix?: string | null;
   /** Minimum log level. Suppresses console methods below this level. Default: undefined (no suppression) */
   logLevel?: "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
-  /** Callback invoked before the server starts. */
-  onStartup?: () => void | Promise<void>;
-  /** Callback invoked after the server stops (or on error). */
-  onShutdown?: () => void | Promise<void>;
   /** Optional MetricsCollector for Prometheus /metrics endpoint. */
   metricsCollector?: MetricsExporter;
   /** Enable the browser-based Tool Explorer UI (HTTP transports only). Default: false */
@@ -159,7 +147,7 @@ export interface ServeOptions {
   explorerPrefix?: string;
   /** Allow tool execution from the explorer UI. Default: false */
   allowExecute?: boolean;
-  /** Title for the explorer UI page. Default: "MCP Tool Explorer" */
+  /** Title for the explorer UI page. Default: "APCore MCP Explorer" */
   explorerTitle?: string;
   /** Project name shown in the explorer UI footer. */
   explorerProjectName?: string;
@@ -183,6 +171,22 @@ export interface ServeOptions {
    * Only applied to plain-object results; non-object results always use JSON.stringify.
    */
   outputFormatter?: (result: Record<string, unknown>) => string;
+}
+
+/** Options for serve() */
+export interface ServeOptions extends BaseServeOptions {
+  /** Transport type. Default: "stdio" */
+  transport?: "stdio" | "streamable-http" | "sse";
+  /** Host address for HTTP-based transports. Default: "127.0.0.1" */
+  host?: string;
+  /** Port number for HTTP-based transports. Default: 8000 */
+  port?: number;
+  /** Enable dynamic tool registration/unregistration. Default: false */
+  dynamic?: boolean;
+  /** Callback invoked before the server starts. */
+  onStartup?: () => void | Promise<void>;
+  /** Callback invoked after the server stops (or on error). */
+  onShutdown?: () => void | Promise<void>;
 }
 
 /**
@@ -337,48 +341,10 @@ export async function serve(
   }
 }
 
-/** Options for asyncServe() — same as ServeOptions but without transport/host/port/lifecycle hooks. */
-export interface AsyncServeOptions {
-  /** MCP server name. Default: "apcore-mcp" */
-  name?: string;
-  /** MCP server version. Default: package version */
-  version?: string;
-  /** Enable input validation against schemas. Default: false */
-  validateInputs?: boolean;
-  /** Filter modules by tags. Default: null (no filtering) */
-  tags?: string[] | null;
-  /** Filter modules by prefix. Default: null (no filtering) */
-  prefix?: string | null;
-  /** Minimum log level. Default: undefined (no suppression) */
-  logLevel?: "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
-  /** Optional MetricsCollector for Prometheus /metrics endpoint. */
-  metricsCollector?: MetricsExporter;
-  /** Enable the browser-based Tool Explorer UI. Default: false */
-  explorer?: boolean;
-  /** URL prefix for the explorer. Default: "/explorer" */
-  explorerPrefix?: string;
-  /** Allow tool execution from the explorer UI. Default: false */
-  allowExecute?: boolean;
-  /** Optional authenticator for request authentication. */
-  authenticator?: Authenticator;
-  /**
-   * If true (default), unauthenticated requests are rejected with 401.
-   * If false, requests proceed without identity (permissive mode).
-   * Overrides the authenticator's own requireAuth when set explicitly.
-   */
-  requireAuth?: boolean;
-  /** Custom paths exempt from authentication. Default: ["/health", "/metrics"] */
-  exemptPaths?: string[];
-  /** Optional approval handler passed to the Executor. */
-  approvalHandler?: unknown;
+/** Options for asyncServe() — extends BaseServeOptions with embed-specific options. */
+export interface AsyncServeOptions extends BaseServeOptions {
   /** MCP endpoint path. Default: "/mcp" */
   endpoint?: string;
-  /**
-   * Optional function that formats execution results into text for LLM consumption.
-   * When undefined, results are serialised with `JSON.stringify(result)`.
-   * Only applied to plain-object results; non-object results always use JSON.stringify.
-   */
-  outputFormatter?: (result: Record<string, unknown>) => string;
 }
 
 /** Return type of asyncServe(). */
@@ -431,6 +397,9 @@ export async function asyncServe(
     explorer = false,
     explorerPrefix = "/explorer",
     allowExecute = false,
+    explorerTitle = "APCore MCP Explorer",
+    explorerProjectName = "apcore-mcp",
+    explorerProjectUrl = "https://github.com/aiperceivable/apcore-mcp-typescript",
     authenticator,
     requireAuth,
     exemptPaths,
@@ -520,6 +489,9 @@ export async function asyncServe(
         prefix: explorerPrefix,
         allowExecute,
         authHook,
+        title: explorerTitle,
+        projectName: explorerProjectName,
+        projectUrl: explorerProjectUrl,
       },
     );
     transportManager.setExplorer(explorerNodeHandler, explorerPrefix);
