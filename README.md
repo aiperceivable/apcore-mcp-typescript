@@ -182,9 +182,22 @@ function serve(
     authenticator?: Authenticator;
     exemptPaths?: string[];
     approvalHandler?: unknown;
+    explorerTitle?: string;
+    explorerProjectName?: string;
+    explorerProjectUrl?: string;
+    requireAuth?: boolean;
+    outputFormatter?: (result: Record<string, unknown>) => string;
   }
 ): Promise<void>;
 ```
+
+**Additional options:**
+
+- `explorerTitle` — Custom title for the Tool Explorer UI page
+- `explorerProjectName` — Project name shown in the explorer UI footer
+- `explorerProjectUrl` — Project URL shown in the explorer UI footer
+- `requireAuth` — If `true` (default), unauthenticated requests are rejected with 401. Set to `false` for permissive mode
+- `outputFormatter` — Custom function to format tool execution results. When undefined, results are serialized with `JSON.stringify(result)`
 
 ### `asyncServe(registryOrExecutor, options?)`
 
@@ -318,15 +331,57 @@ function toOpenaiTools(
 - `tags` — Filter modules by tags
 - `prefix` — Filter modules by ID prefix
 
-## Examples
+### `reportProgress(context, progress, total?, message?)`
 
-See [examples/README.md](examples/README.md) for runnable demos covering both class-based modules and zero-code-intrusion wrapping via the `module()` factory.
+Report execution progress to the MCP client. No-ops silently when called outside an MCP context (no callback injected).
 
-```bash
-# Launch all 5 example modules with the Tool Explorer UI
-npx tsx examples/run.ts
-# Open http://127.0.0.1:8000/explorer/
+```typescript
+import { reportProgress } from "apcore-mcp";
+
+// Inside a module's execute() method:
+await reportProgress(context, 5, 10, "Processing item 5 of 10");
 ```
+
+**Parameters:**
+
+- `context` — Object with a `data` dict (apcore Context or BridgeContext)
+- `progress` — Current progress value
+- `total` — Optional total for percentage calculation
+- `message` — Optional human-readable progress message
+
+### `elicit(context, message, requestedSchema?)`
+
+Ask the MCP client for user input via the elicitation protocol. Returns `null` when called outside an MCP context.
+
+```typescript
+import { elicit } from "apcore-mcp";
+import type { ElicitResult } from "apcore-mcp";
+
+// Inside a module's execute() method:
+const result: ElicitResult | null = await elicit(
+  context,
+  "Are you sure you want to proceed?",
+  {
+    type: "object",
+    properties: {
+      confirmed: { type: "boolean", description: "Confirm action" },
+    },
+    required: ["confirmed"],
+  },
+);
+
+if (result?.action === "accept") {
+  // User confirmed
+}
+```
+
+**Parameters:**
+
+- `context` — Object with a `data` dict (apcore Context or BridgeContext)
+- `message` — Message to display to the user
+- `requestedSchema` — Optional JSON Schema describing the expected input
+
+**Returns:** `ElicitResult` with `action` (`"accept"`, `"decline"`, or `"cancel"`) and optional `content`, or `null` if not in an MCP context.
 
 ## Development
 

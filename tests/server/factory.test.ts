@@ -315,6 +315,116 @@ describe("MCPServerFactory", () => {
     });
   });
 
+  // TC-FACTORY-DISPLAY-001: MCP alias used as tool name when present
+  it("uses MCP display alias as tool name when present", () => {
+    const descriptor = makeDescriptor({
+      moduleId: "original.id",
+      description: "Original description",
+      metadata: {
+        display: {
+          mcp: {
+            alias: "custom_alias",
+          },
+        },
+      },
+    });
+
+    const tool = factory.buildTool(descriptor);
+
+    expect(tool.name).toBe("custom_alias");
+  });
+
+  // TC-FACTORY-DISPLAY-002: MCP description used when present
+  it("uses MCP display description when present", () => {
+    const descriptor = makeDescriptor({
+      moduleId: "test.display",
+      description: "Original description",
+      metadata: {
+        display: {
+          mcp: {
+            description: "Custom MCP description",
+          },
+        },
+      },
+    });
+
+    const tool = factory.buildTool(descriptor);
+
+    expect(tool.description).toBe("Custom MCP description");
+  });
+
+  // TC-FACTORY-DISPLAY-003: Guidance appended to description when present
+  it("appends guidance to description when present in MCP display", () => {
+    const descriptor = makeDescriptor({
+      moduleId: "test.guidance",
+      description: "Base description",
+      metadata: {
+        display: {
+          mcp: {
+            guidance: "Use this tool for X, not Y",
+          },
+        },
+      },
+    });
+
+    const tool = factory.buildTool(descriptor);
+
+    expect(tool.description).toBe("Base description\n\nGuidance: Use this tool for X, not Y");
+  });
+
+  // TC-FACTORY-DISPLAY-004: Fallback to descriptor values when no overlay
+  it("falls back to descriptor values when no display overlay present", () => {
+    const descriptor = makeDescriptor({
+      moduleId: "test.fallback",
+      description: "Fallback description",
+    });
+
+    const tool = factory.buildTool(descriptor);
+
+    expect(tool.name).toBe("test.fallback");
+    expect(tool.description).toBe("Fallback description");
+  });
+
+  // TC-FACTORY-DISPLAY-005: All display overlay fields together
+  it("applies alias, description, and guidance together", () => {
+    const descriptor = makeDescriptor({
+      moduleId: "original.name",
+      description: "Original desc",
+      metadata: {
+        display: {
+          mcp: {
+            alias: "better_name",
+            description: "Better description",
+            guidance: "Always provide the id field",
+          },
+        },
+      },
+    });
+
+    const tool = factory.buildTool(descriptor);
+
+    expect(tool.name).toBe("better_name");
+    expect(tool.description).toBe("Better description\n\nGuidance: Always provide the id field");
+  });
+
+  // TC-FACTORY-DISPLAY-006: Empty display.mcp falls back to descriptor
+  it("falls back to descriptor when display.mcp is empty object", () => {
+    const descriptor = makeDescriptor({
+      moduleId: "test.empty.mcp",
+      description: "Original",
+      metadata: {
+        display: {
+          mcp: {},
+        },
+      },
+    });
+
+    const tool = factory.buildTool(descriptor);
+
+    expect(tool.name).toBe("test.empty.mcp");
+    expect(tool.description).toBe("Original");
+  });
+
   // TC-FACTORY-AI-INTENT-001: AI intent metadata appended to description
   it("appends AI intent metadata to tool description", () => {
     const descriptor = makeDescriptor({

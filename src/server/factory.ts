@@ -90,9 +90,21 @@ export class MCPServerFactory {
 
     const hasApproval = this._annotationMapper.hasRequiresApproval(descriptor.annotations);
 
-    // Append AI intent metadata to description for agent visibility
-    let description = descriptor.description;
+    // Resolve display overlay fields (§5.13)
     const metadata = descriptor.metadata ?? {};
+    const display = (metadata.display as Record<string, unknown>) ?? {};
+    const mcpDisplay = (display.mcp as Record<string, unknown>) ?? {};
+
+    const toolName: string = (mcpDisplay.alias as string) || descriptor.moduleId;
+    let description: string = (mcpDisplay.description as string) || descriptor.description;
+
+    // Append guidance if present (AI usage hints)
+    const guidance = mcpDisplay.guidance as string | undefined;
+    if (guidance) {
+      description = `${description}\n\nGuidance: ${guidance}`;
+    }
+
+    // Append legacy x- AI intent metadata for backward compatibility
     const intentParts: string[] = [];
     for (const key of AI_INTENT_KEYS) {
       const val = metadata[key];
@@ -106,7 +118,7 @@ export class MCPServerFactory {
     }
 
     const tool: Tool = {
-      name: descriptor.moduleId,
+      name: toolName,
       description,
       inputSchema: convertedSchema as Tool["inputSchema"],
       annotations: {
