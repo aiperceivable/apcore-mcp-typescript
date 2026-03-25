@@ -211,9 +211,9 @@ export async function serve(
     explorer = false,
     explorerPrefix = "/explorer",
     allowExecute = false,
-    explorerTitle = "APCore MCP Tool Explorer",
-    explorerProjectName,
-    explorerProjectUrl,
+    explorerTitle = "APCore MCP Explorer",
+    explorerProjectName = "apcore-mcp",
+    explorerProjectUrl = "https://github.com/aiperceivable/apcore-mcp-typescript",
     authenticator,
     requireAuth,
     exemptPaths,
@@ -470,10 +470,10 @@ export async function asyncServe(
   if (logLevel) {
     const levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
     const minLevel = levels.indexOf(logLevel);
-    if (minLevel > 0) console.debug = () => {};
-    if (minLevel > 1) console.info = () => {};
-    if (minLevel > 2) console.warn = () => {};
-    if (minLevel > 3) console.error = () => {};
+    if (minLevel > 0) console.debug = () => { };
+    if (minLevel > 1) console.info = () => { };
+    if (minLevel > 2) console.warn = () => { };
+    if (minLevel > 3) console.error = () => { };
   }
 
   const registry = resolveRegistry(registryOrExecutor);
