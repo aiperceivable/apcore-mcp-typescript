@@ -68,6 +68,7 @@ export async function main(): Promise<void> {
         "explorer-prefix": { type: "string", default: "/explorer" },
         "allow-execute": { type: "boolean", default: false },
         "jwt-secret": { type: "string" },
+        "jwt-key-file": { type: "string" },
         "jwt-algorithm": { type: "string" },
         "jwt-audience": { type: "string" },
         "jwt-issuer": { type: "string" },
@@ -193,13 +194,24 @@ export async function main(): Promise<void> {
     }
   }
 
-  // Build JWT authenticator if --jwt-secret or APCORE_JWT_SECRET is provided.
-  // Resolution: --jwt-secret (CLI arg) > APCORE_JWT_SECRET (env var)
-  const jwtSecret = values["jwt-secret"] || process.env.APCORE_JWT_SECRET;
+  // Build JWT authenticator.
+  // Resolution: --jwt-key-file > --jwt-secret > APCORE_JWT_SECRET env var
+  let jwtKey: string | undefined;
+  const keyFile = values["jwt-key-file"] as string | undefined;
+  if (keyFile) {
+    const { readFileSync } = await import("fs");
+    try {
+      jwtKey = readFileSync(keyFile, "utf-8").trim();
+    } catch (err) {
+      fail(`Cannot read JWT key file: ${keyFile} (${err})`);
+    }
+  } else {
+    jwtKey = (values["jwt-secret"] as string) || process.env.APCORE_JWT_SECRET;
+  }
   const jwtRequireAuth = values["jwt-permissive"] ? false : (values["jwt-require-auth"] as boolean);
-  const authenticator = jwtSecret
+  const authenticator = jwtKey
     ? new JWTAuthenticator({
-        secret: jwtSecret,
+        secret: jwtKey,
         algorithms: values["jwt-algorithm"]
           ? [values["jwt-algorithm"] as Algorithm]
           : undefined,

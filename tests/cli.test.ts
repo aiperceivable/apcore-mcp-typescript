@@ -350,6 +350,44 @@ describe("CLI (cli.ts)", () => {
     expect(opts.authenticator).toBeDefined();
   });
 
+  // ── --jwt-key-file ────────────────────────────────────────────────
+
+  it("reads JWT key from --jwt-key-file", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const keyPath = path.join(tmpDir, "test-key.pem");
+    fs.writeFileSync(keyPath, "file-secret\n");
+
+    const serveFn = vi.fn().mockResolvedValue(undefined);
+    const { exitCode } = await runMain(
+      ["--extensions-dir", tmpDir, "--jwt-key-file", keyPath],
+      { apcoreAvailable: true, discoverCount: 1, serveFn },
+    );
+
+    expect(exitCode).toBe(-1);
+    expect(serveFn).toHaveBeenCalled();
+    const opts = serveFn.mock.calls[0][1];
+    expect(opts.authenticator).toBeDefined();
+  });
+
+  it("--jwt-key-file takes priority over --jwt-secret", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const keyPath = path.join(tmpDir, "priority-key.pem");
+    fs.writeFileSync(keyPath, "file-wins\n");
+
+    const serveFn = vi.fn().mockResolvedValue(undefined);
+    const { exitCode } = await runMain(
+      ["--extensions-dir", tmpDir, "--jwt-key-file", keyPath, "--jwt-secret", "cli-secret"],
+      { apcoreAvailable: true, discoverCount: 1, serveFn },
+    );
+
+    expect(exitCode).toBe(-1);
+    expect(serveFn).toHaveBeenCalled();
+    const opts = serveFn.mock.calls[0][1];
+    expect(opts.authenticator).toBeDefined();
+  });
+
   // ── APCORE_JWT_SECRET env var fallback ─────────────────────────────
 
   it("uses APCORE_JWT_SECRET env var when --jwt-secret is not provided", async () => {

@@ -89,13 +89,14 @@ npx apcore-mcp --extensions-dir ./extensions --transport sse --port 8000
 | `--explorer-prefix` | `/explorer` | URL prefix for the explorer UI |
 | `--allow-execute` | off | Allow tool execution from the explorer UI |
 | `--jwt-secret` | — | JWT secret key for Bearer token authentication |
+| `--jwt-key-file` | — | Path to PEM key file for JWT verification (RS256/ES256) |
 | `--jwt-algorithm` | `HS256` | JWT algorithm |
 | `--jwt-audience` | — | Expected JWT audience claim |
 | `--jwt-issuer` | — | Expected JWT issuer claim |
 | `--jwt-require-auth` | `true` | Require auth (use `--no-jwt-require-auth` for permissive mode) |
 | `--exempt-paths` | `/health,/metrics` | Comma-separated paths exempt from auth |
 
-JWT key resolution priority: `--jwt-secret` > `APCORE_JWT_SECRET` environment variable.
+JWT key resolution priority: `--jwt-key-file` > `--jwt-secret` > `APCORE_JWT_SECRET` environment variable.
 
 ## MCP Client Configuration
 
@@ -291,13 +292,14 @@ await serve(executor, {
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--jwt-secret` | — | JWT secret key for Bearer token authentication |
+| `--jwt-key-file` | — | Path to PEM key file for JWT verification |
 | `--jwt-algorithm` | `HS256` | JWT algorithm |
 | `--jwt-audience` | — | Expected audience claim |
 | `--jwt-issuer` | — | Expected issuer claim |
 | `--jwt-require-auth` | `true` | Require auth. Use `--no-jwt-require-auth` for permissive mode |
 | `--exempt-paths` | `/health,/metrics` | Comma-separated paths exempt from auth |
 
-JWT key resolution priority: `--jwt-secret` > `APCORE_JWT_SECRET` environment variable.
+JWT key resolution priority: `--jwt-key-file` > `--jwt-secret` > `APCORE_JWT_SECRET` environment variable.
 
 #### curl Examples
 
