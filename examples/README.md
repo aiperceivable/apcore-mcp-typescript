@@ -65,10 +65,10 @@ npx tsx examples/binding_demo/run.ts
 
 ## JWT Authentication
 
-Enable JWT authentication by setting the `JWT_SECRET` environment variable:
+Enable JWT authentication by setting the `APCORE_JWT_SECRET` environment variable:
 
 ```bash
-JWT_SECRET=my-secret npx tsx examples/run.ts
+APCORE_JWT_SECRET=my-secret npx tsx examples/run.ts
 ```
 
 ### Test Token
