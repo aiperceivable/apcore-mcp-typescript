@@ -350,6 +350,75 @@ describe("CLI (cli.ts)", () => {
     expect(opts.authenticator).toBeDefined();
   });
 
+  // ── APCORE_JWT_SECRET env var fallback ─────────────────────────────
+
+  it("uses APCORE_JWT_SECRET env var when --jwt-secret is not provided", async () => {
+    const originalEnv = process.env.APCORE_JWT_SECRET;
+    process.env.APCORE_JWT_SECRET = "env-secret";
+    try {
+      const serveFn = vi.fn().mockResolvedValue(undefined);
+      const { exitCode } = await runMain(
+        ["--extensions-dir", tmpDir],
+        { apcoreAvailable: true, discoverCount: 1, serveFn },
+      );
+
+      expect(exitCode).toBe(-1);
+      expect(serveFn).toHaveBeenCalled();
+      const opts = serveFn.mock.calls[0][1];
+      expect(opts.authenticator).toBeDefined();
+    } finally {
+      if (originalEnv === undefined) {
+        delete process.env.APCORE_JWT_SECRET;
+      } else {
+        process.env.APCORE_JWT_SECRET = originalEnv;
+      }
+    }
+  });
+
+  it("--jwt-secret takes priority over APCORE_JWT_SECRET env var", async () => {
+    const originalEnv = process.env.APCORE_JWT_SECRET;
+    process.env.APCORE_JWT_SECRET = "env-secret";
+    try {
+      const serveFn = vi.fn().mockResolvedValue(undefined);
+      const { exitCode } = await runMain(
+        ["--extensions-dir", tmpDir, "--jwt-secret", "cli-secret"],
+        { apcoreAvailable: true, discoverCount: 1, serveFn },
+      );
+
+      expect(exitCode).toBe(-1);
+      expect(serveFn).toHaveBeenCalled();
+      const opts = serveFn.mock.calls[0][1];
+      expect(opts.authenticator).toBeDefined();
+    } finally {
+      if (originalEnv === undefined) {
+        delete process.env.APCORE_JWT_SECRET;
+      } else {
+        process.env.APCORE_JWT_SECRET = originalEnv;
+      }
+    }
+  });
+
+  it("no authenticator when neither --jwt-secret nor APCORE_JWT_SECRET is set", async () => {
+    const originalEnv = process.env.APCORE_JWT_SECRET;
+    delete process.env.APCORE_JWT_SECRET;
+    try {
+      const serveFn = vi.fn().mockResolvedValue(undefined);
+      const { exitCode } = await runMain(
+        ["--extensions-dir", tmpDir],
+        { apcoreAvailable: true, discoverCount: 1, serveFn },
+      );
+
+      expect(exitCode).toBe(-1);
+      expect(serveFn).toHaveBeenCalled();
+      const opts = serveFn.mock.calls[0][1];
+      expect(opts.authenticator).toBeUndefined();
+    } finally {
+      if (originalEnv !== undefined) {
+        process.env.APCORE_JWT_SECRET = originalEnv;
+      }
+    }
+  });
+
   // ── Approval flags ──────────────────────────────────────────────────
 
   it("fails for invalid --approval mode", async () => {

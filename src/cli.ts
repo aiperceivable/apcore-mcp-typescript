@@ -193,8 +193,9 @@ export async function main(): Promise<void> {
     }
   }
 
-  // Build JWT authenticator if --jwt-secret is provided
-  const jwtSecret = values["jwt-secret"];
+  // Build JWT authenticator if --jwt-secret or APCORE_JWT_SECRET is provided.
+  // Resolution: --jwt-secret (CLI arg) > APCORE_JWT_SECRET (env var)
+  const jwtSecret = values["jwt-secret"] || process.env.APCORE_JWT_SECRET;
   const jwtRequireAuth = values["jwt-permissive"] ? false : (values["jwt-require-auth"] as boolean);
   const authenticator = jwtSecret
     ? new JWTAuthenticator({

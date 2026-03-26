@@ -95,6 +95,8 @@ npx apcore-mcp --extensions-dir ./extensions --transport sse --port 8000
 | `--jwt-require-auth` | `true` | Require auth (use `--no-jwt-require-auth` for permissive mode) |
 | `--exempt-paths` | `/health,/metrics` | Comma-separated paths exempt from auth |
 
+JWT key resolution priority: `--jwt-secret` > `APCORE_JWT_SECRET` environment variable.
+
 ## MCP Client Configuration
 
 ### Claude Desktop
@@ -294,6 +296,8 @@ await serve(executor, {
 | `--jwt-issuer` | — | Expected issuer claim |
 | `--jwt-require-auth` | `true` | Require auth. Use `--no-jwt-require-auth` for permissive mode |
 | `--exempt-paths` | `/health,/metrics` | Comma-separated paths exempt from auth |
+
+JWT key resolution priority: `--jwt-secret` > `APCORE_JWT_SECRET` environment variable.
 
 #### curl Examples
 
