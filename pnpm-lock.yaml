@@ -18,8 +18,8 @@ importers:
         specifier: ^9.0.3
         version: 9.0.3
       mcp-embedded-ui:
-        specifier: '>=0.3.0'
-        version: 0.3.0
+        specifier: '>=0.3.2'
+        version: 0.3.2
     devDependencies:
       '@sinclair/typebox':
         specifier: ^0.34.48
@@ -875,8 +875,8 @@ packages:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
     engines: {node: '>= 0.4'}
 
-  mcp-embedded-ui@0.3.0:
-    resolution: {integrity: sha512-EpaxDzU/NdKt4yr59237qaArKLiW5meCugtYYD7GilhApzfwml3MP/jpBPnHfbE6cHOoHw33ydwOHQ90Z0duXA==}
+  mcp-embedded-ui@0.3.2:
+    resolution: {integrity: sha512-yYfwcY2yjJ83Dyp/dgGLquk1cDpigKN5n8C+cYstH+3T9Wu5+GrHjX9S0t01Jusg5jFVPRod/KOnoJUQVc8aqQ==}
     engines: {node: '>=18.0.0'}
 
   media-typer@1.1.0:
@@ -1996,7 +1996,7 @@ snapshots:
 
   math-intrinsics@1.1.0: {}
 
-  mcp-embedded-ui@0.3.0: {}
+  mcp-embedded-ui@0.3.2: {}
 
   media-typer@1.1.0: {}
 
