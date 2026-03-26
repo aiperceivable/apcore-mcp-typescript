@@ -51,7 +51,7 @@
     "@modelcontextprotocol/sdk": "^1.26.0",
     "apcore-js": ">=0.14.0",
     "jsonwebtoken": "^9.0.3",
-    "mcp-embedded-ui": ">=0.3.0"
+    "mcp-embedded-ui": ">=0.3.2"
   },
   "devDependencies": {
     "@sinclair/typebox": "^0.34.48",
