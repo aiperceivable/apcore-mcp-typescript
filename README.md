@@ -19,6 +19,8 @@ Converts apcore module registries into [Model Context Protocol (MCP)](https://mo
 - **Dynamic Registration** — Listen for registry changes and update tools at runtime
 - **Tool Explorer** — Browser-based UI for browsing schemas and testing tools interactively
 - **CLI** — Launch an MCP server from the command line
+- **Config Bus integration** — Registers an `mcp` namespace with the apcore Config Bus; configure via unified `apcore.yaml` or `APCORE_MCP_*` env vars
+- **Error Formatter Registry** — Registers an MCP-specific error formatter for ecosystem-wide consistent error handling
 
 ## Documentation
 
@@ -28,6 +30,7 @@ For full documentation, including Quick Start guides for both Python and TypeScr
 ## Requirements
 
 - Node.js >= 18.0.0
+- `apcore-js >= 0.15.1`
 
 ## Installation
 
@@ -388,6 +391,37 @@ if (result?.action === "accept") {
 - `requestedSchema` — Optional JSON Schema describing the expected input
 
 **Returns:** `ElicitResult` with `action` (`"accept"`, `"decline"`, or `"cancel"`) and optional `content`, or `null` if not in an MCP context.
+
+## Config Bus Integration
+
+apcore-mcp registers an `mcp` namespace with the apcore Config Bus when `serve()` or `asyncServe()` is called. MCP settings can live alongside other apcore configuration in a single `apcore.yaml`:
+
+```yaml
+apcore:
+  version: "1.0.0"
+mcp:
+  transport: streamable-http
+  host: 0.0.0.0
+  port: 9000
+  explorer: true
+  require_auth: false
+```
+
+Environment variable overrides use the `APCORE_MCP_` prefix:
+
+```bash
+APCORE_MCP_TRANSPORT=streamable-http
+APCORE_MCP_PORT=9000
+APCORE_MCP_EXPLORER=true
+```
+
+**Defaults:** `transport=stdio`, `host=127.0.0.1`, `port=8000`, `explorer=false`, `require_auth=true`.
+
+The namespace, prefix, and defaults are also available as importable constants:
+
+```typescript
+import { MCP_NAMESPACE, MCP_ENV_PREFIX, MCP_DEFAULTS, registerMcpNamespace } from "apcore-mcp";
+```
 
 ## Development
 

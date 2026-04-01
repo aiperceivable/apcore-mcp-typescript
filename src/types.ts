@@ -38,6 +38,20 @@ export const ErrorCodes = Object.freeze({
   VERSION_INCOMPATIBLE: "VERSION_INCOMPATIBLE",
   ERROR_CODE_COLLISION: "ERROR_CODE_COLLISION",
   EXECUTION_CANCELLED: "EXECUTION_CANCELLED",
+  CONFIG_NAMESPACE_DUPLICATE: "CONFIG_NAMESPACE_DUPLICATE",
+  CONFIG_NAMESPACE_RESERVED: "CONFIG_NAMESPACE_RESERVED",
+  CONFIG_ENV_PREFIX_CONFLICT: "CONFIG_ENV_PREFIX_CONFLICT",
+  CONFIG_MOUNT_ERROR: "CONFIG_MOUNT_ERROR",
+  CONFIG_BIND_ERROR: "CONFIG_BIND_ERROR",
+  ERROR_FORMATTER_DUPLICATE: "ERROR_FORMATTER_DUPLICATE",
+} as const);
+
+/** Dot-namespaced event types introduced in apcore 0.15.0 (§9.16). */
+export const APCORE_EVENTS = Object.freeze({
+  MODULE_TOGGLED: "apcore.module.toggled",
+  MODULE_RELOADED: "apcore.module.reloaded",
+  CONFIG_UPDATED: "apcore.config.updated",
+  HEALTH_RECOVERED: "apcore.health.recovered",
 } as const);
 
 /** Valid module ID pattern. No hyphens allowed. */

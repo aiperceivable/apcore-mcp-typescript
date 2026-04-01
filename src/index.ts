@@ -13,6 +13,8 @@ import type { ConvertRegistryOptions } from "./converters/openai.js";
 import { MCPServerFactory } from "./server/factory.js";
 import { ExecutionRouter } from "./server/router.js";
 import { TransportManager } from "./server/transport.js";
+import { registerMcpNamespace } from "./config.js";
+import { registerMcpFormatter } from "./adapters/mcpErrorFormatter.js";
 import type { MetricsExporter } from "./server/transport.js";
 import type {
   RegistryOrExecutor,
@@ -37,7 +39,7 @@ export type {
   McpErrorResponse,
   TextContentDict,
 } from "./types.js";
-export { REGISTRY_EVENTS, ErrorCodes, MODULE_ID_PATTERN } from "./types.js";
+export { REGISTRY_EVENTS, ErrorCodes, MODULE_ID_PATTERN, APCORE_EVENTS } from "./types.js";
 
 // ─── Extension Helpers ───────────────────────────────────────────────────────
 export { reportProgress, elicit, MCP_PROGRESS_KEY, MCP_ELICIT_KEY } from "./helpers.js";
@@ -69,6 +71,8 @@ export { ErrorMapper } from "./adapters/errors.js";
 export { ModuleIDNormalizer } from "./adapters/idNormalizer.js";
 export { ElicitationApprovalHandler } from "./adapters/approval.js";
 export type { ApprovalRequest, ApprovalResult } from "./adapters/approval.js";
+export { McpErrorFormatter, registerMcpFormatter } from "./adapters/mcpErrorFormatter.js";
+export { registerMcpNamespace, MCP_NAMESPACE, MCP_ENV_PREFIX, MCP_DEFAULTS } from "./config.js";
 export { OpenAIConverter } from "./converters/openai.js";
 export type { ConvertOptions, ConvertRegistryOptions } from "./converters/openai.js";
 export type { BuildToolsOptions } from "./server/factory.js";
@@ -265,6 +269,10 @@ export async function serve(
   const registry = resolveRegistry(registryOrExecutor);
   const executor = await resolveExecutor(registryOrExecutor, { approvalHandler });
 
+  // Register MCP config namespace and error formatter (idempotent)
+  registerMcpNamespace();
+  await registerMcpFormatter();
+
   // Build MCP server components
   const factory = new MCPServerFactory();
   const server = factory.createServer(name, version);
@@ -447,6 +455,10 @@ export async function asyncServe(
 
   const registry = resolveRegistry(registryOrExecutor);
   const executor = await resolveExecutor(registryOrExecutor, { approvalHandler });
+
+  // Register MCP config namespace and error formatter (idempotent)
+  registerMcpNamespace();
+  await registerMcpFormatter();
 
   // Build MCP server components
   const factory = new MCPServerFactory();

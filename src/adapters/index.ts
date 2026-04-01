@@ -8,3 +8,4 @@ export { ErrorMapper } from "./errors.js";
 export { ModuleIDNormalizer } from "./idNormalizer.js";
 export { ElicitationApprovalHandler } from "./approval.js";
 export type { ApprovalRequest, ApprovalResult } from "./approval.js";
+export { McpErrorFormatter, registerMcpFormatter } from "./mcpErrorFormatter.js";
