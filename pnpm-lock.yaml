@@ -12,7 +12,7 @@ importers:
         specifier: ^1.26.0
         version: 1.26.0(zod@4.3.6)
       apcore-js:
-        specifier: ^0.17.1
+        specifier: '>=0.17.1'
         version: 0.17.1
       jsonwebtoken:
         specifier: ^9.0.3
