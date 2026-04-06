@@ -128,6 +128,56 @@ export class ErrorMapper {
         return result;
       }
 
+      // Config env map conflict -> formatted message with env_var
+      if (code === ErrorCodes.CONFIG_ENV_MAP_CONFLICT) {
+        const envVar = details?.env_var ?? "unknown";
+        const result: McpErrorResponse = {
+          isError: true,
+          errorType: code,
+          message: `Config env map conflict: ${String(envVar)}`,
+          details,
+        };
+        this._attachAiGuidance(error, result);
+        return result;
+      }
+
+      // Pipeline abort -> formatted message with step
+      if (code === ErrorCodes.PIPELINE_ABORT) {
+        const step = details?.step ?? "unknown";
+        const result: McpErrorResponse = {
+          isError: true,
+          errorType: code,
+          message: `Pipeline aborted at step: ${String(step)}`,
+          details,
+        };
+        this._attachAiGuidance(error, result);
+        return result;
+      }
+
+      // Step not found -> formatted message
+      if (code === ErrorCodes.STEP_NOT_FOUND) {
+        const result: McpErrorResponse = {
+          isError: true,
+          errorType: code,
+          message: `Pipeline step not found: ${error.message}`,
+          details,
+        };
+        this._attachAiGuidance(error, result);
+        return result;
+      }
+
+      // Version incompatible -> formatted message
+      if (code === ErrorCodes.VERSION_INCOMPATIBLE) {
+        const result: McpErrorResponse = {
+          isError: true,
+          errorType: code,
+          message: `Version incompatible: ${error.message}`,
+          details,
+        };
+        this._attachAiGuidance(error, result);
+        return result;
+      }
+
       // Other known ModuleError codes -> pass through
       const result: McpErrorResponse = {
         isError: true,

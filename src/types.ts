@@ -44,6 +44,9 @@ export const ErrorCodes = Object.freeze({
   CONFIG_MOUNT_ERROR: "CONFIG_MOUNT_ERROR",
   CONFIG_BIND_ERROR: "CONFIG_BIND_ERROR",
   ERROR_FORMATTER_DUPLICATE: "ERROR_FORMATTER_DUPLICATE",
+  CONFIG_ENV_MAP_CONFLICT: "CONFIG_ENV_MAP_CONFLICT",
+  PIPELINE_ABORT: "PIPELINE_ABORT",
+  STEP_NOT_FOUND: "STEP_NOT_FOUND",
 } as const);
 
 /** Dot-namespaced event types introduced in apcore 0.15.0 (§9.16). */
@@ -71,6 +74,7 @@ export interface ModuleAnnotations {
   cacheKeyFields?: string[] | null;
   paginated?: boolean;
   paginationStyle?: "cursor" | "offset" | "page";
+  extra?: Record<string, unknown>;
 }
 
 export interface ModuleDescriptor {
@@ -104,6 +108,7 @@ export interface Executor {
   callAsync?(moduleId: string, inputs: Record<string, unknown>, context?: unknown): Promise<Record<string, unknown>>;
   stream?(moduleId: string, inputs: Record<string, unknown>, context?: unknown): AsyncIterable<Record<string, unknown>>;
   validate?(toolName: string, args: Record<string, unknown>): unknown | Promise<unknown>;
+  callWithTrace?(moduleId: string, inputs: Record<string, unknown>, context?: unknown): Promise<[Record<string, unknown>, unknown]>;
 }
 
 // ─── Error Type ──────────────────────────────────────────────────────────────

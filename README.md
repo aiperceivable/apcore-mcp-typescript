@@ -30,7 +30,7 @@ For full documentation, including Quick Start guides for both Python and TypeScr
 ## Requirements
 
 - Node.js >= 18.0.0
-- `apcore-js >= 0.15.1`
+- `apcore-js >= 0.17.1`
 
 ## Installation
 

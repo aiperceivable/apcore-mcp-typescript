@@ -24,12 +24,17 @@ export const MCP_DEFAULTS: Record<string, unknown> = {
 /** Register the 'mcp' config namespace. Safe to call multiple times. */
 export function registerMcpNamespace(): void {
   try {
-    Config.registerNamespace({
-      name: MCP_NAMESPACE,
-      envPrefix: MCP_ENV_PREFIX,
-      defaults: MCP_DEFAULTS,
-    });
+    const reg = (Config as unknown as Record<string, unknown>)["registerNamespace"] as
+      | ((opts: Record<string, unknown>) => void)
+      | undefined;
+    if (reg) {
+      reg({
+        name: MCP_NAMESPACE,
+        envPrefix: MCP_ENV_PREFIX,
+        defaults: MCP_DEFAULTS,
+      });
+    }
   } catch {
-    // Already registered (ConfigNamespaceDuplicateError)
+    // Already registered or registerNamespace not available in this apcore-js version
   }
 }

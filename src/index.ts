@@ -12,6 +12,7 @@ import { OpenAIConverter } from "./converters/openai.js";
 import type { ConvertRegistryOptions } from "./converters/openai.js";
 import { MCPServerFactory } from "./server/factory.js";
 import { ExecutionRouter } from "./server/router.js";
+import { RegistryListener } from "./server/listener.js";
 import { TransportManager } from "./server/transport.js";
 import { registerMcpNamespace } from "./config.js";
 import { registerMcpFormatter } from "./adapters/mcpErrorFormatter.js";
@@ -103,10 +104,15 @@ export function resolveRegistry(registryOrExecutor: RegistryOrExecutor): Registr
  */
 export async function resolveExecutor(
   registryOrExecutor: RegistryOrExecutor,
-  options?: { approvalHandler?: unknown },
+  options?: { approvalHandler?: unknown; strategy?: string },
 ): Promise<Executor> {
   if ("call" in registryOrExecutor || "callAsync" in registryOrExecutor) {
     // Already an Executor
+    if (options?.strategy) {
+      console.warn(
+        `strategy='${options.strategy}' ignored: input is already an Executor instance.`,
+      );
+    }
     return registryOrExecutor as Executor;
   }
   // It's a bare Registry — create a default Executor
@@ -119,6 +125,9 @@ export async function resolveExecutor(
       if (options?.approvalHandler) {
         executorOpts.approvalHandler = options.approvalHandler;
       }
+      if (options?.strategy) {
+        executorOpts.strategy = options.strategy;
+      }
       return new ExecutorClass(executorOpts) as Executor;
     }
   } catch {
@@ -127,6 +136,22 @@ export async function resolveExecutor(
   throw new Error(
     "serve() requires an Executor instance, or apcore-js must be installed to auto-create one from a Registry.",
   );
+}
+
+/**
+ * Build a map of module_id → output_schema from the registry.
+ *
+ * Only includes modules whose output_schema is a non-empty object.
+ */
+function buildOutputSchemaMap(registry: Registry): Record<string, Record<string, unknown>> {
+  const map: Record<string, Record<string, unknown>> = {};
+  for (const moduleId of registry.list()) {
+    const def = registry.getDefinition(moduleId);
+    if (def?.outputSchema && Object.keys(def.outputSchema).length > 0) {
+      map[moduleId] = def.outputSchema;
+    }
+  }
+  return map;
 }
 
 /** Common options shared by serve() and asyncServe(). */
@@ -169,12 +194,24 @@ export interface BaseServeOptions {
   exemptPaths?: string[];
   /** Optional approval handler passed to the Executor (e.g. ElicitationApprovalHandler). */
   approvalHandler?: unknown;
+  /** Execution strategy name passed to the Executor constructor (e.g. "standard", "internal"). */
+  strategy?: string;
   /**
    * Optional function that formats execution results into text for LLM consumption.
    * When undefined, results are serialised with `JSON.stringify(result)`.
    * Only applied to plain-object results; non-object results always use JSON.stringify.
    */
   outputFormatter?: (result: Record<string, unknown>) => string;
+  /**
+   * When true (default), redact sensitive fields from tool output using apcore's
+   * `redactSensitive()` before formatting. Requires apcore-js to be installed.
+   */
+  redactOutput?: boolean;
+  /**
+   * When true, enable pipeline trace via callWithTrace(). Adds `_meta.trace`
+   * to non-streaming tool responses. Default: false.
+   */
+  trace?: boolean;
 }
 
 /** Options for serve() */
@@ -227,6 +264,9 @@ export async function serve(
     exemptPaths,
     approvalHandler,
     outputFormatter,
+    redactOutput,
+    strategy,
+    trace,
   } = options;
 
   // Input validation (matching Python's checks)
@@ -266,20 +306,53 @@ export async function serve(
     if (minLevel > 3) console.error = () => { };
   }
 
+  // ── F-040: YAML Pipeline Config via Config Bus ─────────────────────
+  let resolvedStrategy = strategy;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const apcoreConfig = await import("apcore-js") as any;
+    const Config = apcoreConfig.Config ?? apcoreConfig.default?.Config;
+    const buildStrategyFromConfig = apcoreConfig.buildStrategyFromConfig ?? apcoreConfig.default?.buildStrategyFromConfig;
+    if (Config && buildStrategyFromConfig) {
+      const config = typeof Config.getInstance === 'function' ? Config.getInstance() : new Config();
+      const pipelineCfg = config.get?.("mcp.pipeline");
+      if (pipelineCfg && typeof pipelineCfg === 'object' && Object.keys(pipelineCfg).length > 0) {
+        if (resolvedStrategy) {
+          console.warn(
+            `YAML pipeline config found in Config Bus — overriding strategy='${resolvedStrategy}' with config-driven strategy.`,
+          );
+        }
+        resolvedStrategy = buildStrategyFromConfig(pipelineCfg);
+      }
+    }
+  } catch {
+    // apcore-js not installed or Config Bus not available — use strategy param as-is
+  }
+
   const registry = resolveRegistry(registryOrExecutor);
-  const executor = await resolveExecutor(registryOrExecutor, { approvalHandler });
+  const executor = await resolveExecutor(registryOrExecutor, { approvalHandler, strategy: resolvedStrategy });
 
   // Register MCP config namespace and error formatter (idempotent)
   registerMcpNamespace();
   await registerMcpFormatter();
 
+  // Build output schema map for redaction
+  const outputSchemaMap = buildOutputSchemaMap(registry);
+
   // Build MCP server components
   const factory = new MCPServerFactory();
   const server = factory.createServer(name, version);
   const tools = factory.buildTools(registry, { tags, prefix });
-  const router = new ExecutionRouter(executor, { validateInputs, outputFormatter });
+  const router = new ExecutionRouter(executor, { validateInputs, outputFormatter, redactOutput, outputSchemaMap, trace });
   factory.registerHandlers(server, tools, router);
   factory.registerResourceHandlers(server, registry);
+
+  // Start dynamic tool registration listener if enabled
+  if (options.dynamic) {
+    const listener = new RegistryListener(registry, factory);
+    listener.start();
+    origInfo("Dynamic tool registration enabled via RegistryListener");
+  }
 
   origInfo(
     `Starting MCP server '${name}' v${version} with ${tools.length} tools via ${transport}`,
@@ -414,6 +487,9 @@ export async function asyncServe(
     approvalHandler,
     endpoint,
     outputFormatter,
+    redactOutput,
+    strategy,
+    trace,
   } = options;
 
   // Input validation (same as serve())
@@ -453,18 +529,44 @@ export async function asyncServe(
     if (minLevel > 3) console.error = () => { };
   }
 
+  // ── F-040: YAML Pipeline Config via Config Bus ─────────────────────
+  let resolvedStrategy = strategy;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const apcoreConfig = await import("apcore-js") as any;
+    const Config = apcoreConfig.Config ?? apcoreConfig.default?.Config;
+    const buildStrategyFromConfig = apcoreConfig.buildStrategyFromConfig ?? apcoreConfig.default?.buildStrategyFromConfig;
+    if (Config && buildStrategyFromConfig) {
+      const config = typeof Config.getInstance === 'function' ? Config.getInstance() : new Config();
+      const pipelineCfg = config.get?.("mcp.pipeline");
+      if (pipelineCfg && typeof pipelineCfg === 'object' && Object.keys(pipelineCfg).length > 0) {
+        if (resolvedStrategy) {
+          console.warn(
+            `YAML pipeline config found in Config Bus — overriding strategy='${resolvedStrategy}' with config-driven strategy.`,
+          );
+        }
+        resolvedStrategy = buildStrategyFromConfig(pipelineCfg);
+      }
+    }
+  } catch {
+    // apcore-js not installed or Config Bus not available — use strategy param as-is
+  }
+
   const registry = resolveRegistry(registryOrExecutor);
-  const executor = await resolveExecutor(registryOrExecutor, { approvalHandler });
+  const executor = await resolveExecutor(registryOrExecutor, { approvalHandler, strategy: resolvedStrategy });
 
   // Register MCP config namespace and error formatter (idempotent)
   registerMcpNamespace();
   await registerMcpFormatter();
 
+  // Build output schema map for redaction
+  const outputSchemaMap = buildOutputSchemaMap(registry);
+
   // Build MCP server components
   const factory = new MCPServerFactory();
   const server = factory.createServer(name, version);
   const tools = factory.buildTools(registry, { tags, prefix });
-  const router = new ExecutionRouter(executor, { validateInputs, outputFormatter });
+  const router = new ExecutionRouter(executor, { validateInputs, outputFormatter, redactOutput, outputSchemaMap, trace });
   factory.registerHandlers(server, tools, router);
   factory.registerResourceHandlers(server, registry);
 

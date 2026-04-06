@@ -79,6 +79,22 @@ export interface ExecutionRouterOptions {
    * Only applied to plain-object results; non-object results always use JSON.stringify.
    */
   outputFormatter?: (result: Record<string, unknown>) => string;
+  /**
+   * When true (default), redact sensitive fields from output using apcore's
+   * `redactSensitive()` before formatting. Requires apcore-js to be installed
+   * and the tool to have an output_schema in `outputSchemaMap`.
+   */
+  redactOutput?: boolean;
+  /**
+   * When true, use callWithTrace() (if available on the executor) to include
+   * pipeline trace metadata in the response `_meta.trace`. Default: false.
+   */
+  trace?: boolean;
+  /**
+   * Map of module_id to output_schema, used by redactSensitive() to identify
+   * which fields should be redacted.
+   */
+  outputSchemaMap?: Record<string, Record<string, unknown>>;
 }
 
 export class ExecutionRouter {
@@ -86,6 +102,9 @@ export class ExecutionRouter {
   private readonly _errorMapper: ErrorMapper;
   private readonly _validateInputs: boolean;
   private readonly _outputFormatter?: (result: Record<string, unknown>) => string;
+  private readonly _redactOutput: boolean;
+  private readonly _outputSchemaMap: Record<string, Record<string, unknown>>;
+  private readonly _trace: boolean;
 
   /**
    * Create an ExecutionRouter.
@@ -98,6 +117,44 @@ export class ExecutionRouter {
     this._errorMapper = new ErrorMapper();
     this._validateInputs = options?.validateInputs ?? false;
     this._outputFormatter = options?.outputFormatter;
+    this._redactOutput = options?.redactOutput ?? true;
+    this._outputSchemaMap = options?.outputSchemaMap ?? {};
+    this._trace = options?.trace ?? false;
+  }
+
+  /**
+   * Attempt to redact sensitive fields from the result using apcore's redactSensitive().
+   *
+   * Returns the original result if apcore-js is not available, redactSensitive is not
+   * exported, or if an error occurs during redaction.
+   */
+  private async _maybeRedact(
+    toolName: string,
+    result: unknown,
+  ): Promise<unknown> {
+    if (!this._redactOutput) return result;
+    const outputSchema = this._outputSchemaMap[toolName];
+    if (!outputSchema) return result;
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const apcore = await import("apcore-js") as any;
+      const redactSensitive = apcore.redactSensitive ?? apcore.default?.redactSensitive;
+      if (typeof redactSensitive !== "function") {
+        console.debug(
+          `redactSensitive not available in apcore-js, skipping redaction for "${toolName}"`,
+        );
+        return result;
+      }
+      return redactSensitive(result, outputSchema);
+    } catch (err: unknown) {
+      console.warn(
+        `redactSensitive failed for "${toolName}", returning unredacted result: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return result;
+    }
   }
 
   /**
@@ -284,10 +341,12 @@ export class ExecutionRouter {
           chunkIndex++;
         }
 
+        const redacted = await this._maybeRedact(toolName, accumulated);
+
         const content: TextContentDict[] = [
           {
             type: "text",
-            text: this._formatResult(accumulated),
+            text: this._formatResult(redacted),
           },
         ];
 
@@ -296,21 +355,49 @@ export class ExecutionRouter {
       }
 
       // ── Non-streaming path ────────────────────────────────────────────
-      const callFn = typeof this._executor.call === 'function'
-        ? this._executor.call.bind(this._executor)
-        : typeof this._executor.callAsync === 'function'
-        ? this._executor.callAsync.bind(this._executor)
-        : null;
-      if (!callFn) {
-        throw new Error('Executor must implement call() or callAsync()');
+      let result: Record<string, unknown>;
+      let traceMeta: Record<string, unknown> | undefined;
+
+      if (this._trace && typeof this._executor.callWithTrace === 'function') {
+        const [traceResult, pipelineTrace] = await this._executor.callWithTrace(toolName, args, context);
+        result = traceResult;
+        // Convert pipeline trace to a serialisable dict
+        if (pipelineTrace && typeof pipelineTrace === 'object') {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const pt = pipelineTrace as any;
+          traceMeta = {
+            strategyName: pt.strategyName ?? pt.strategy_name ?? undefined,
+            totalDurationMs: pt.totalDurationMs ?? pt.total_duration_ms ?? undefined,
+            steps: Array.isArray(pt.steps)
+              ? pt.steps.map((s: Record<string, unknown>) => ({
+                  name: s.name,
+                  durationMs: s.durationMs ?? s.duration_ms,
+                  skipped: s.skipped ?? false,
+                  skipReason: s.skipReason ?? s.skip_reason ?? undefined,
+                }))
+              : [],
+          };
+        }
+      } else {
+        const callFn = typeof this._executor.call === 'function'
+          ? this._executor.call.bind(this._executor)
+          : typeof this._executor.callAsync === 'function'
+          ? this._executor.callAsync.bind(this._executor)
+          : null;
+        if (!callFn) {
+          throw new Error('Executor must implement call() or callAsync()');
+        }
+        result = await callFn(toolName, args, context);
       }
-      const result = await callFn(toolName, args, context);
+
+      const redacted = await this._maybeRedact(toolName, result);
 
       const content: TextContentDict[] = [
         {
           type: "text",
-          text: this._formatResult(result),
-        },
+          text: this._formatResult(redacted),
+          ...(traceMeta ? { _meta: { trace: traceMeta } } : {}),
+        } as TextContentDict,
       ];
 
       const traceId = context?.traceId;
@@ -327,6 +414,80 @@ export class ExecutionRouter {
       ];
 
       return [content, true, undefined];
+    }
+  }
+
+  /**
+   * Preflight validation for a tool call without executing it.
+   *
+   * Delegates to `executor.validate()` if the executor supports it, and
+   * returns a structured validation result.
+   *
+   * @param toolName - The MCP tool name (maps to apcore moduleId)
+   * @param arguments_ - The tool call arguments to validate
+   * @returns Structured validation result with checks array
+   */
+  async validateTool(
+    toolName: string,
+    arguments_: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    try {
+      if (typeof this._executor.validate !== 'function') {
+        return {
+          valid: true,
+          checks: [],
+          requiresApproval: false,
+        };
+      }
+
+      const rawResult = await this._executor.validate(toolName, arguments_);
+
+      // Normalise result into {valid, checks, requiresApproval}
+      if (rawResult && typeof rawResult === 'object' && 'valid' in (rawResult as object)) {
+        const vr = rawResult as Record<string, unknown>;
+        return {
+          valid: vr.valid ?? true,
+          checks: Array.isArray(vr.checks) ? vr.checks : [],
+          requiresApproval: vr.requiresApproval ?? vr.requires_approval ?? false,
+        };
+      }
+
+      // Array of errors → convert to checks format
+      if (Array.isArray(rawResult)) {
+        if (rawResult.length === 0) {
+          return { valid: true, checks: [], requiresApproval: false };
+        }
+        const checks = rawResult.map((e: unknown) => {
+          const msg = typeof e === 'string' ? e
+            : (typeof e === 'object' && e !== null)
+              ? (e as Record<string, unknown>).message ?? String(e)
+              : String(e);
+          return {
+            check: typeof e === 'object' && e !== null ? ((e as Record<string, unknown>).field ?? 'validation') : 'validation',
+            passed: false,
+            error: { message: msg },
+            warnings: [],
+          };
+        });
+        return { valid: false, checks, requiresApproval: false };
+      }
+
+      // Unexpected shape — treat as valid
+      return { valid: true, checks: [], requiresApproval: false };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        valid: false,
+        checks: [
+          {
+            check: "unexpected",
+            passed: false,
+            error: { message },
+            warnings: [],
+          },
+        ],
+        requiresApproval: false,
+      };
     }
   }
 }

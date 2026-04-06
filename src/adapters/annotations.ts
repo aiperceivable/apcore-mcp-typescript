@@ -94,7 +94,18 @@ export class AnnotationMapper {
     if ((annotations.paginated ?? false) !== DEFAULT_ANNOTATIONS.paginated)
       parts.push(`paginated=${annotations.paginated}`);
 
-    if (warnings.length === 0 && parts.length === 0) {
+    // Append mcp_-prefixed extra fields
+    const extraLines: string[] = [];
+    if (annotations.extra && typeof annotations.extra === "object") {
+      for (const [key, value] of Object.entries(annotations.extra)) {
+        if (key.startsWith("mcp_") && typeof value === "string") {
+          const strippedKey = key.slice(4); // remove "mcp_" prefix
+          extraLines.push(`${strippedKey}: ${value}`);
+        }
+      }
+    }
+
+    if (warnings.length === 0 && parts.length === 0 && extraLines.length === 0) {
       return "";
     }
 
@@ -106,7 +117,11 @@ export class AnnotationMapper {
       sections.push(`[Annotations: ${parts.join(", ")}]`);
     }
 
-    return "\n\n" + sections.join("\n\n");
+    let suffix = "\n\n" + sections.join("\n\n");
+    if (extraLines.length > 0) {
+      suffix += "\n" + extraLines.join("\n");
+    }
+    return suffix;
   }
 
   /**

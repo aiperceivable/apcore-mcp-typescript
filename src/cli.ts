@@ -41,6 +41,7 @@ Options:
   --jwt-issuer <string>      Expected JWT issuer claim
   --jwt-require-auth         Require auth (default: true)
   --jwt-permissive           Permissive mode: allow unauthenticated requests (overrides --jwt-require-auth)
+  --strategy <name>          Execution strategy: standard, internal, testing, performance, minimal
   --approval <mode>          Approval mode: elicit, auto-approve, always-deny, off (default: off)
   --exempt-paths <paths>     Comma-separated paths exempt from auth (default: /health,/metrics)
   --help                     Show this help message
@@ -75,6 +76,7 @@ export async function main(): Promise<void> {
         "jwt-require-auth": { type: "boolean", default: true },
         "jwt-permissive": { type: "boolean", default: false },
         approval: { type: "string", default: "off" },
+        strategy: { type: "string" },
         "exempt-paths": { type: "string" },
         help: { type: "boolean", default: false },
       },
@@ -167,6 +169,17 @@ export async function main(): Promise<void> {
     );
   }
 
+  // Validate strategy
+  const strategy = values.strategy as string | undefined;
+  if (strategy) {
+    const validStrategies = ["standard", "internal", "testing", "performance", "minimal"];
+    if (!validStrategies.includes(strategy)) {
+      fail(
+        `--strategy must be one of: ${validStrategies.join(", ")}. Got '${strategy}'.`,
+      );
+    }
+  }
+
   let approvalHandler: unknown;
   if (approvalMode === "elicit") {
     approvalHandler = new ElicitationApprovalHandler();
@@ -242,6 +255,7 @@ export async function main(): Promise<void> {
       authenticator,
       exemptPaths,
       approvalHandler,
+      strategy,
     });
   } catch (error) {
     console.error("Server startup failed:", error);
