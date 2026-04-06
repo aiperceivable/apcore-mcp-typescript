@@ -58,7 +58,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.0.0",
     "@vitest/coverage-v8": "^3.0.0",
-    "apdev-js": ">=0.2.0",
+    "apdev-js": ">=0.2.4",
     "typescript": "^5.5.0",
     "vitest": "^3.0.0"
   },
