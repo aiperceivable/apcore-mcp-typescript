@@ -100,15 +100,16 @@ export interface Registry {
   has?(moduleId: string): boolean;
   on(event: string, callback: (...args: unknown[]) => void): void;
   discover?(): Promise<number>;
+  exportSchema?(moduleId: string, strict?: boolean): Record<string, unknown> | null;
 }
 
 export interface Executor {
   registry: Registry;
-  call(moduleId: string, inputs: Record<string, unknown>, context?: unknown): Promise<Record<string, unknown>>;
-  callAsync?(moduleId: string, inputs: Record<string, unknown>, context?: unknown): Promise<Record<string, unknown>>;
-  stream?(moduleId: string, inputs: Record<string, unknown>, context?: unknown): AsyncIterable<Record<string, unknown>>;
+  call(moduleId: string, inputs: Record<string, unknown>, context?: unknown, versionHint?: string): Promise<Record<string, unknown>>;
+  callAsync?(moduleId: string, inputs: Record<string, unknown>, context?: unknown, versionHint?: string): Promise<Record<string, unknown>>;
+  stream?(moduleId: string, inputs: Record<string, unknown>, context?: unknown, versionHint?: string): AsyncIterable<Record<string, unknown>>;
   validate?(toolName: string, args: Record<string, unknown>): unknown | Promise<unknown>;
-  callWithTrace?(moduleId: string, inputs: Record<string, unknown>, context?: unknown): Promise<[Record<string, unknown>, unknown]>;
+  callWithTrace?(moduleId: string, inputs: Record<string, unknown>, context?: unknown, versionHint?: string): Promise<[Record<string, unknown>, unknown]>;
 }
 
 // ─── Error Type ──────────────────────────────────────────────────────────────

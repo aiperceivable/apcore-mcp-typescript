@@ -67,7 +67,8 @@ export type CallResult = [TextContentDict[], boolean, string | undefined];
 export interface HandleCallExtra {
   sendNotification?: (notification: Record<string, unknown>) => Promise<void>;
   sendRequest?: (request: Record<string, unknown>, resultSchema: unknown) => Promise<unknown>;
-  _meta?: { progressToken?: string | number };
+  _meta?: { progressToken?: string | number; apcore?: { version?: string } };
+  versionHint?: string;
 }
 
 /** Options for the ExecutionRouter constructor. */
@@ -315,6 +316,21 @@ export class ExecutionRouter {
         }
       }
 
+      // ── Resolve versionHint from request metadata or descriptor ──────
+      let versionHint: string | undefined = extra?.versionHint
+        ?? extra?._meta?.apcore?.version;
+      if (!versionHint) {
+        try {
+          const descriptor = this._executor.registry?.getDefinition?.(toolName);
+          const metaHint = descriptor?.metadata?.versionHint;
+          if (typeof metaHint === "string") {
+            versionHint = metaHint;
+          }
+        } catch {
+          // ignore — registry lookup is best-effort
+        }
+      }
+
       // ── Streaming path ────────────────────────────────────────────────
       if (
         this._executor.stream &&
@@ -324,7 +340,8 @@ export class ExecutionRouter {
         let accumulated: Record<string, unknown> = {};
         let chunkIndex = 0;
 
-        for await (const chunk of this._executor.stream(toolName, args, context)) {
+        // TODO(apcore>=0.19): streaming traces via streamWithTrace
+        for await (const chunk of this._executor.stream(toolName, args, context, versionHint)) {
           // Deep-merge each chunk into the accumulated result
           accumulated = deepMerge(accumulated, chunk);
 
@@ -359,7 +376,7 @@ export class ExecutionRouter {
       let traceMeta: Record<string, unknown> | undefined;
 
       if (this._trace && typeof this._executor.callWithTrace === 'function') {
-        const [traceResult, pipelineTrace] = await this._executor.callWithTrace(toolName, args, context);
+        const [traceResult, pipelineTrace] = await this._executor.callWithTrace(toolName, args, context, versionHint);
         result = traceResult;
         // Convert pipeline trace to a serialisable dict
         if (pipelineTrace && typeof pipelineTrace === 'object') {
@@ -387,7 +404,7 @@ export class ExecutionRouter {
         if (!callFn) {
           throw new Error('Executor must implement call() or callAsync()');
         }
-        result = await callFn(toolName, args, context);
+        result = await callFn(toolName, args, context, versionHint);
       }
 
       const redacted = await this._maybeRedact(toolName, result);

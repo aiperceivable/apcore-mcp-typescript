@@ -7,25 +7,35 @@
 
 import type { JsonSchema, ModuleDescriptor } from "../types.js";
 
+export interface ConvertSchemaOptions {
+  strict?: boolean;
+}
+
 export class SchemaConverter {
   /**
    * Convert a module descriptor's inputSchema to an MCP-compatible schema.
    */
-  convertInputSchema(descriptor: ModuleDescriptor): JsonSchema {
-    return this._convertSchema(descriptor.inputSchema);
+  convertInputSchema(
+    descriptor: ModuleDescriptor,
+    options?: ConvertSchemaOptions,
+  ): JsonSchema {
+    return this._convertSchema(descriptor.inputSchema, options);
   }
 
   /**
    * Convert a module descriptor's outputSchema to an MCP-compatible schema.
    */
-  convertOutputSchema(descriptor: ModuleDescriptor): JsonSchema {
-    return this._convertSchema(descriptor.outputSchema);
+  convertOutputSchema(
+    descriptor: ModuleDescriptor,
+    options?: ConvertSchemaOptions,
+  ): JsonSchema {
+    return this._convertSchema(descriptor.outputSchema, options);
   }
 
   /**
    * Apply all schema transformations: deep copy, inline $ref, ensure object type.
    */
-  _convertSchema(schema: JsonSchema): JsonSchema {
+  _convertSchema(schema: JsonSchema, options?: ConvertSchemaOptions): JsonSchema {
     // Deep copy to avoid mutating the original
     const copied = structuredClone(schema);
 
@@ -37,7 +47,111 @@ export class SchemaConverter {
     const inlined = this._inlineRefs(copied, defs, new Set<string>()) as JsonSchema;
 
     // Ensure the top-level schema has type: "object"
-    return this._ensureObjectType(inlined);
+    const normalized = this._ensureObjectType(inlined);
+
+    if (options?.strict) {
+      return this._applyStrict(normalized) as JsonSchema;
+    }
+    return normalized;
+  }
+
+  /**
+   * Recursively set `additionalProperties: false` on every object-shaped
+   * schema node that does not already specify `additionalProperties`.
+   *
+   * A node is treated as an object schema when ANY of:
+   *   - `type === "object"`
+   *   - `Array.isArray(type) && type.includes("object")`
+   *   - `"properties" in node` AND the declared scalar `type` (if any) isn't
+   *     a non-object scalar (string/number/integer/boolean/null)
+   *
+   * Recurses only into known subschema slots. Opaque value slots like
+   * `enum`, `const`, `examples`, `default` are left untouched.
+   */
+  _applyStrict(node: unknown): unknown {
+    if (Array.isArray(node)) {
+      return node.map((item) => this._applyStrict(item));
+    }
+    if (node === null || typeof node !== "object") {
+      return node;
+    }
+
+    const obj = node as Record<string, unknown>;
+    const result: Record<string, unknown> = { ...obj };
+
+    // Recurse into subschema slots only
+    if ("properties" in result && result.properties !== null && typeof result.properties === "object" && !Array.isArray(result.properties)) {
+      const props = result.properties as Record<string, unknown>;
+      const newProps: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(props)) {
+        newProps[k] = this._applyStrict(v);
+      }
+      result.properties = newProps;
+    }
+    if ("patternProperties" in result && result.patternProperties !== null && typeof result.patternProperties === "object" && !Array.isArray(result.patternProperties)) {
+      const pp = result.patternProperties as Record<string, unknown>;
+      const newPP: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(pp)) {
+        newPP[k] = this._applyStrict(v);
+      }
+      result.patternProperties = newPP;
+    }
+    if ("$defs" in result && result.$defs !== null && typeof result.$defs === "object" && !Array.isArray(result.$defs)) {
+      const defs = result.$defs as Record<string, unknown>;
+      const newDefs: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(defs)) {
+        newDefs[k] = this._applyStrict(v);
+      }
+      result.$defs = newDefs;
+    }
+    if ("definitions" in result && result.definitions !== null && typeof result.definitions === "object" && !Array.isArray(result.definitions)) {
+      const defs = result.definitions as Record<string, unknown>;
+      const newDefs: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(defs)) {
+        newDefs[k] = this._applyStrict(v);
+      }
+      result.definitions = newDefs;
+    }
+    if ("items" in result) {
+      result.items = this._applyStrict(result.items);
+    }
+    if ("additionalProperties" in result && typeof result.additionalProperties === "object" && result.additionalProperties !== null) {
+      result.additionalProperties = this._applyStrict(result.additionalProperties);
+    }
+    if ("not" in result) {
+      result.not = this._applyStrict(result.not);
+    }
+    for (const key of ["oneOf", "anyOf", "allOf"] as const) {
+      if (Array.isArray(result[key])) {
+        result[key] = (result[key] as unknown[]).map((v) => this._applyStrict(v));
+      }
+    }
+    for (const key of ["if", "then", "else"] as const) {
+      if (key in result) {
+        result[key] = this._applyStrict(result[key]);
+      }
+    }
+
+    // Decide whether this node is object-shaped
+    const type = result["type"];
+    const SCALAR_TYPES = new Set(["string", "number", "integer", "boolean", "null"]);
+    let isObjectShaped = false;
+    if (type === "object") {
+      isObjectShaped = true;
+    } else if (Array.isArray(type) && type.includes("object")) {
+      isObjectShaped = true;
+    } else if (type === undefined && "properties" in result) {
+      isObjectShaped = true;
+    } else if (typeof type === "string" && !SCALAR_TYPES.has(type) && "properties" in result) {
+      // Unknown string type with properties — treat as object
+      isObjectShaped = true;
+    }
+
+    if (isObjectShaped && !("additionalProperties" in result)) {
+      result["additionalProperties"] = false;
+    }
+
+    return result;
   }
 
   /**

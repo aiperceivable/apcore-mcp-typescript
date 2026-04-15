@@ -60,6 +60,7 @@ describe("ExecutionRouter", () => {
       "text.summarize",
       { text: "Hello world" },
       undefined,
+      undefined,
     );
   });
 
@@ -166,7 +167,7 @@ describe("ExecutionRouter", () => {
     expect(isError).toBe(false);
     expect(traceId).toBeUndefined();
     // No extra → context is undefined
-    expect(executor.call).toHaveBeenCalledWith("test.module", {}, undefined);
+    expect(executor.call).toHaveBeenCalledWith("test.module", {}, undefined, undefined);
   });
 
   // TC-ROUTER-008: context has _mcp_progress when progressToken + sendNotification present
@@ -215,7 +216,7 @@ describe("ExecutionRouter", () => {
 
     await router.handleCall("test.module", {});
 
-    expect(executor.call).toHaveBeenCalledWith("test.module", {}, undefined);
+    expect(executor.call).toHaveBeenCalledWith("test.module", {}, undefined, undefined);
   });
 
   // TC-ROUTER-011: elicit callback sends elicitation/create request
@@ -389,5 +390,49 @@ describe("ExecutionRouter outputFormatter", () => {
 
     expect(isError).toBe(false);
     expect(content[0].text).toBe(JSON.stringify(result));
+  });
+
+  // TC-ROUTER-VERSIONHINT-001: forwards versionHint from extra._meta.apcore.version
+  it("forwards versionHint from request _meta.apcore.version", async () => {
+    const executor = createMockExecutor({ ok: true });
+    const router = new ExecutionRouter(executor);
+
+    await router.handleCall("test.module", { a: 1 }, {
+      _meta: { apcore: { version: "2.1.0" } },
+    });
+
+    expect(executor.call).toHaveBeenCalledWith(
+      "test.module",
+      { a: 1 },
+      undefined,
+      "2.1.0",
+    );
+  });
+
+  // TC-ROUTER-VERSIONHINT-002: falls back to descriptor.metadata.versionHint
+  it("uses descriptor.metadata.versionHint when extra does not provide one", async () => {
+    const executor: Executor = {
+      registry: {
+        getDefinition: vi.fn().mockReturnValue({
+          moduleId: "test.module",
+          description: "",
+          inputSchema: {},
+          outputSchema: {},
+          annotations: null,
+          metadata: { versionHint: "1.4.0" },
+        }),
+      } as any,
+      call: vi.fn().mockResolvedValue({ ok: true }),
+    };
+    const router = new ExecutionRouter(executor);
+
+    await router.handleCall("test.module", {});
+
+    expect(executor.call).toHaveBeenCalledWith(
+      "test.module",
+      {},
+      undefined,
+      "1.4.0",
+    );
   });
 });

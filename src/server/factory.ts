@@ -23,7 +23,7 @@ import type {
 
 import { SchemaConverter } from "../adapters/schema.js";
 import { AnnotationMapper } from "../adapters/annotations.js";
-import type { Registry, ModuleDescriptor } from "../types.js";
+import type { Registry, ModuleDescriptor, JsonSchema } from "../types.js";
 import type { ExecutionRouter } from "./router.js";
 import type { HandleCallExtra } from "./router.js";
 
@@ -34,6 +34,14 @@ const AI_INTENT_KEYS = ["x-when-to-use", "x-when-not-to-use", "x-common-mistakes
 export interface BuildToolsOptions {
   tags?: string[] | null;
   prefix?: string | null;
+  strict?: boolean;
+  registry?: Registry;
+}
+
+/** Options for building a single MCP tool. */
+export interface BuildToolOptions {
+  strict?: boolean;
+  registry?: Registry;
 }
 
 export class MCPServerFactory {
@@ -71,7 +79,7 @@ export class MCPServerFactory {
    * - inputSchema = converted via SchemaConverter
    * - annotations = mapped from AnnotationMapper with camelCase keys
    */
-  buildTool(descriptor: ModuleDescriptor): Tool {
+  buildTool(descriptor: ModuleDescriptor, options?: BuildToolOptions): Tool {
     if (!descriptor.moduleId || typeof descriptor.moduleId !== "string") {
       throw new Error("ModuleDescriptor.moduleId is required and must be a string");
     }
@@ -86,7 +94,23 @@ export class MCPServerFactory {
       descriptor.annotations,
     );
 
-    const convertedSchema = this._schemaConverter.convertInputSchema(descriptor);
+    const strict = options?.strict ?? true;
+    let convertedSchema: JsonSchema | undefined;
+    if (strict && options?.registry && typeof options.registry.exportSchema === "function") {
+      try {
+        const exported = options.registry.exportSchema(descriptor.moduleId, true);
+        const inputSchema = (exported as Record<string, unknown> | null)?.["input_schema"]
+          ?? (exported as Record<string, unknown> | null)?.["inputSchema"];
+        if (inputSchema && typeof inputSchema === "object") {
+          convertedSchema = inputSchema as JsonSchema;
+        }
+      } catch {
+        // Fall through to local conversion
+      }
+    }
+    if (!convertedSchema) {
+      convertedSchema = this._schemaConverter.convertInputSchema(descriptor, { strict });
+    }
 
     const hasApproval = this._annotationMapper.hasRequiresApproval(descriptor.annotations);
 
@@ -167,7 +191,7 @@ export class MCPServerFactory {
           );
           continue;
         }
-        tools.push(this.buildTool(descriptor));
+        tools.push(this.buildTool(descriptor, { strict: options?.strict, registry }));
       } catch (error) {
         console.warn(
           `Skipping module "${moduleId}": ${error instanceof Error ? error.message : String(error)}`,
@@ -282,6 +306,15 @@ export class MCPServerFactory {
           ? { progressToken: extra._meta.progressToken }
           : undefined,
       };
+
+      const reqMeta = (request.params as { _meta?: Record<string, unknown> })._meta;
+      const apcoreMeta = reqMeta?.["apcore"] as { version?: string } | undefined;
+      if (apcoreMeta?.version) {
+        handleCallExtra._meta = {
+          ...(handleCallExtra._meta ?? {}),
+          apcore: { version: apcoreMeta.version },
+        };
+      }
 
       const [content, isError, _traceId] = await router.handleCall(
         name,

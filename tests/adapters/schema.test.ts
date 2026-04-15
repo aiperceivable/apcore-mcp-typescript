@@ -518,4 +518,50 @@ describe("SchemaConverter", () => {
       description: "ISO timestamp",
     });
   });
+
+  // TC-SCHEMA-STRICT-001: strict mode injects additionalProperties:false at root
+  it("strict mode sets additionalProperties:false on the root object", () => {
+    const descriptor = makeDescriptor({
+      type: "object",
+      properties: { name: { type: "string" } },
+    });
+    const result = converter.convertInputSchema(descriptor, { strict: true });
+    expect(result.additionalProperties).toBe(false);
+  });
+
+  // TC-SCHEMA-STRICT-002: strict mode cascades into nested object properties
+  it("strict mode sets additionalProperties:false on nested objects", () => {
+    const descriptor = makeDescriptor({
+      type: "object",
+      properties: {
+        profile: {
+          type: "object",
+          properties: { email: { type: "string" } },
+        },
+      },
+    });
+    const result = converter.convertInputSchema(descriptor, { strict: true });
+    expect(result.additionalProperties).toBe(false);
+    const props = result.properties as Record<string, Record<string, unknown>>;
+    expect(props.profile.additionalProperties).toBe(false);
+  });
+
+  // TC-SCHEMA-STRICT-003: preserves explicit additionalProperties:true
+  it("strict mode preserves user-set additionalProperties:true", () => {
+    const descriptor = makeDescriptor({
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        bag: {
+          type: "object",
+          additionalProperties: true,
+          properties: {},
+        },
+      },
+    });
+    const result = converter.convertInputSchema(descriptor, { strict: true });
+    expect(result.additionalProperties).toBe(true);
+    const props = result.properties as Record<string, Record<string, unknown>>;
+    expect(props.bag.additionalProperties).toBe(true);
+  });
 });

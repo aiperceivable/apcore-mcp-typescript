@@ -193,7 +193,7 @@ describe("ExecutionRouter — streaming", () => {
     expect(extra.sendNotification).not.toHaveBeenCalled();
 
     // call() should have been invoked — no progressToken means no context callbacks
-    expect(executor.call).toHaveBeenCalledWith("test.noprogress", {}, undefined);
+    expect(executor.call).toHaveBeenCalledWith("test.noprogress", {}, undefined, undefined);
   });
 
   // TC-STREAM-005: Falls back to call() when no extra provided at all
@@ -211,7 +211,7 @@ describe("ExecutionRouter — streaming", () => {
     expect(isError).toBe(false);
     expect(JSON.parse(content[0].text)).toEqual(callResult);
     expect(traceId).toBeUndefined();
-    expect(executor.call).toHaveBeenCalledWith("test.noextra", {}, undefined);
+    expect(executor.call).toHaveBeenCalledWith("test.noextra", {}, undefined, undefined);
   });
 
   // TC-STREAM-006: Numeric progressToken works
