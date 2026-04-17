@@ -76,6 +76,19 @@ export interface APCoreMCPOptions {
    * When undefined, results are serialised with `JSON.stringify(result)`.
    */
   outputFormatter?: (result: Record<string, unknown>) => string;
+  /**
+   * Optional list of apcore `Middleware` instances to install on the Executor
+   * via `executor.use()`. Appended to any middleware declared under Config
+   * Bus key `mcp.middleware`. Chain execution order is controlled by
+   * `Middleware.priority`, not insertion order.
+   */
+  middleware?: unknown[];
+  /**
+   * Optional apcore `ACL` instance to install via `executor.setAcl()`.
+   * When omitted, the bridge falls back to any ACL declared under Config
+   * Bus key `mcp.acl`. Caller-supplied ACL takes precedence over Config Bus.
+   */
+  acl?: unknown;
 }
 
 /** Options for APCoreMCP.serve() (transport + lifecycle subset). */
@@ -232,6 +245,8 @@ export class APCoreMCP {
       exemptPaths: this._options.exemptPaths,
       approvalHandler: this._options.approvalHandler,
       outputFormatter: this._options.outputFormatter,
+      middleware: this._options.middleware,
+      acl: this._options.acl,
     };
   }
 
@@ -309,6 +324,8 @@ export class APCoreMCP {
       approvalHandler: this._options.approvalHandler,
       endpoint: options.endpoint,
       outputFormatter: this._options.outputFormatter,
+      middleware: this._options.middleware,
+      acl: this._options.acl,
     };
 
     return asyncServe(backend, asyncOpts);

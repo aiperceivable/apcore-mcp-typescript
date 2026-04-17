@@ -104,8 +104,15 @@ export function resolveRegistry(registryOrExecutor: RegistryOrExecutor): Registr
  */
 export async function resolveExecutor(
   registryOrExecutor: RegistryOrExecutor,
-  options?: { approvalHandler?: unknown; strategy?: string },
+  options?: {
+    approvalHandler?: unknown;
+    strategy?: string;
+    middleware?: unknown[];
+    acl?: unknown;
+  },
 ): Promise<Executor> {
+  let executor: Executor | undefined;
+
   if ("call" in registryOrExecutor || "callAsync" in registryOrExecutor) {
     // Already an Executor
     if (options?.strategy) {
@@ -113,29 +120,66 @@ export async function resolveExecutor(
         `strategy='${options.strategy}' ignored: input is already an Executor instance.`,
       );
     }
-    return registryOrExecutor as Executor;
-  }
-  // It's a bare Registry — create a default Executor
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const apcore = await import("apcore-js") as any;
-    const ExecutorClass = apcore.Executor ?? apcore.default?.Executor;
-    if (ExecutorClass) {
-      const executorOpts: Record<string, unknown> = { registry: registryOrExecutor };
-      if (options?.approvalHandler) {
-        executorOpts.approvalHandler = options.approvalHandler;
+    executor = registryOrExecutor as Executor;
+  } else {
+    // It's a bare Registry — create a default Executor
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const apcore = (await import("apcore-js")) as any;
+      const ExecutorClass = apcore.Executor ?? apcore.default?.Executor;
+      if (ExecutorClass) {
+        const executorOpts: Record<string, unknown> = {
+          registry: registryOrExecutor,
+        };
+        if (options?.approvalHandler) {
+          executorOpts.approvalHandler = options.approvalHandler;
+        }
+        if (options?.strategy) {
+          executorOpts.strategy = options.strategy;
+        }
+        executor = new ExecutorClass(executorOpts) as Executor;
       }
-      if (options?.strategy) {
-        executorOpts.strategy = options.strategy;
-      }
-      return new ExecutorClass(executorOpts) as Executor;
+    } catch {
+      // apcore-js not installed — fall through to error
     }
-  } catch {
-    // apcore-js not installed — fall through to error
+    if (!executor) {
+      throw new Error(
+        "serve() requires an Executor instance, or apcore-js must be installed to auto-create one from a Registry.",
+      );
+    }
   }
-  throw new Error(
-    "serve() requires an Executor instance, or apcore-js must be installed to auto-create one from a Registry.",
-  );
+
+  // Apply middleware via executor.use() per instance. Mirrors the Python
+  // bridge's resolve_executor contract.
+  const middleware = options?.middleware ?? [];
+  if (middleware.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const useFn = (executor as any).use;
+    if (typeof useFn !== "function") {
+      throw new Error(
+        "Executor does not support .use() — 'middleware' option requires apcore-js>=0.18",
+      );
+    }
+    for (const mw of middleware) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (executor as any).use(mw);
+    }
+  }
+
+  // Install ACL via executor.setAcl() if provided.
+  if (options?.acl !== undefined && options.acl !== null) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const setAcl = (executor as any).setAcl;
+    if (typeof setAcl !== "function") {
+      throw new Error(
+        "Executor does not support .setAcl() — 'acl' option requires apcore-js>=0.18",
+      );
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (executor as any).setAcl(options.acl);
+  }
+
+  return executor;
 }
 
 /**
@@ -212,6 +256,20 @@ export interface BaseServeOptions {
    * to non-streaming tool responses. Default: false.
    */
   trace?: boolean;
+  /**
+   * Optional list of apcore `Middleware` instances to install on the Executor
+   * via `executor.use()`. Appended to any middleware declared under Config
+   * Bus key `mcp.middleware`. Chain execution order is controlled by
+   * `Middleware.priority`, not insertion order.
+   */
+  middleware?: unknown[];
+  /**
+   * Optional apcore `ACL` instance to install via `executor.setAcl()`.
+   * When omitted, the bridge falls back to any ACL declared under Config
+   * Bus key `mcp.acl` (rules + default_effect). Caller-supplied ACL takes
+   * precedence over Config Bus.
+   */
+  acl?: unknown;
 }
 
 /** Options for serve() */
@@ -267,6 +325,8 @@ export async function serve(
     redactOutput,
     strategy,
     trace,
+    middleware: callerMiddleware,
+    acl: callerAcl,
   } = options;
 
   // Input validation (matching Python's checks)
@@ -308,6 +368,8 @@ export async function serve(
 
   // ── F-040: YAML Pipeline Config via Config Bus ─────────────────────
   let resolvedStrategy = strategy;
+  let configMiddleware: unknown[] = [];
+  let configAcl: unknown | null = null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const apcoreConfig = await import("apcore-js") as any;
@@ -324,13 +386,40 @@ export async function serve(
         }
         resolvedStrategy = buildStrategyFromConfig(pipelineCfg);
       }
+      // Load declarative middleware from Config Bus (`mcp.middleware`).
+      const mwCfg = config.get?.("mcp.middleware");
+      if (Array.isArray(mwCfg) && mwCfg.length > 0) {
+        const { buildMiddlewareFromConfig } = await import(
+          "./middleware-builder.js"
+        );
+        configMiddleware = await buildMiddlewareFromConfig(mwCfg);
+      }
+      // Load declarative ACL from Config Bus (`mcp.acl`).
+      const aclCfg = config.get?.("mcp.acl");
+      if (aclCfg) {
+        const { buildAclFromConfig } = await import("./acl-builder.js");
+        configAcl = await buildAclFromConfig(aclCfg);
+      }
     }
   } catch {
     // apcore-js not installed or Config Bus not available — use strategy param as-is
   }
 
+  const combinedMiddleware: unknown[] = [...configMiddleware];
+  if (callerMiddleware && callerMiddleware.length > 0) {
+    combinedMiddleware.push(...callerMiddleware);
+  }
+
+  // Caller-supplied ACL wins over Config Bus.
+  const effectiveAcl = callerAcl !== undefined ? callerAcl : configAcl;
+
   const registry = resolveRegistry(registryOrExecutor);
-  const executor = await resolveExecutor(registryOrExecutor, { approvalHandler, strategy: resolvedStrategy });
+  const executor = await resolveExecutor(registryOrExecutor, {
+    approvalHandler,
+    strategy: resolvedStrategy,
+    middleware: combinedMiddleware,
+    acl: effectiveAcl,
+  });
 
   // Register MCP config namespace and error formatter (idempotent)
   registerMcpNamespace();
@@ -490,6 +579,8 @@ export async function asyncServe(
     redactOutput,
     strategy,
     trace,
+    middleware: callerMiddleware,
+    acl: callerAcl,
   } = options;
 
   // Input validation (same as serve())
@@ -531,6 +622,8 @@ export async function asyncServe(
 
   // ── F-040: YAML Pipeline Config via Config Bus ─────────────────────
   let resolvedStrategy = strategy;
+  let configMiddleware: unknown[] = [];
+  let configAcl: unknown | null = null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const apcoreConfig = await import("apcore-js") as any;
@@ -547,13 +640,40 @@ export async function asyncServe(
         }
         resolvedStrategy = buildStrategyFromConfig(pipelineCfg);
       }
+      // Load declarative middleware from Config Bus (`mcp.middleware`).
+      const mwCfg = config.get?.("mcp.middleware");
+      if (Array.isArray(mwCfg) && mwCfg.length > 0) {
+        const { buildMiddlewareFromConfig } = await import(
+          "./middleware-builder.js"
+        );
+        configMiddleware = await buildMiddlewareFromConfig(mwCfg);
+      }
+      // Load declarative ACL from Config Bus (`mcp.acl`).
+      const aclCfg = config.get?.("mcp.acl");
+      if (aclCfg) {
+        const { buildAclFromConfig } = await import("./acl-builder.js");
+        configAcl = await buildAclFromConfig(aclCfg);
+      }
     }
   } catch {
     // apcore-js not installed or Config Bus not available — use strategy param as-is
   }
 
+  const combinedMiddleware: unknown[] = [...configMiddleware];
+  if (callerMiddleware && callerMiddleware.length > 0) {
+    combinedMiddleware.push(...callerMiddleware);
+  }
+
+  // Caller-supplied ACL wins over Config Bus.
+  const effectiveAcl = callerAcl !== undefined ? callerAcl : configAcl;
+
   const registry = resolveRegistry(registryOrExecutor);
-  const executor = await resolveExecutor(registryOrExecutor, { approvalHandler, strategy: resolvedStrategy });
+  const executor = await resolveExecutor(registryOrExecutor, {
+    approvalHandler,
+    strategy: resolvedStrategy,
+    middleware: combinedMiddleware,
+    acl: effectiveAcl,
+  });
 
   // Register MCP config namespace and error formatter (idempotent)
   registerMcpNamespace();

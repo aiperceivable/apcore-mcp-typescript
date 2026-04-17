@@ -1,0 +1,106 @@
+/**
+ * Cross-language conformance: middleware Config Bus loading.
+ *
+ * Drives the TypeScript builder from the shared fixture at
+ * `apcore-mcp/conformance/fixtures/middleware_config.json`. The Python and
+ * Rust bridges run the same fixture through their own builders; all three
+ * implementations must agree on the resulting middleware names and on which
+ * inputs are rejected.
+ */
+
+import { readFileSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, it, expect } from "vitest";
+import { buildMiddlewareFromConfig } from "../src/middleware-builder.js";
+
+// ---------------------------------------------------------------------------
+// Fixture loader
+// ---------------------------------------------------------------------------
+
+const FIXTURE_PATH = resolve(
+  __dirname,
+  "..",
+  "..",
+  "apcore-mcp",
+  "conformance",
+  "fixtures",
+  "middleware_config.json",
+);
+
+interface Fixture {
+  test_cases: Array<{
+    id: string;
+    description: string;
+    input_entries: unknown;
+    expected_middleware_names: string[];
+  }>;
+  error_cases: Array<{
+    id: string;
+    description: string;
+    input_entries: unknown;
+    expected_error_substring: string;
+  }>;
+}
+
+function loadFixture(): Fixture | null {
+  if (!existsSync(FIXTURE_PATH)) return null;
+  return JSON.parse(readFileSync(FIXTURE_PATH, "utf-8")) as Fixture;
+}
+
+const FIXTURE = loadFixture();
+
+// ---------------------------------------------------------------------------
+// Class-name → conformance-label mapping
+// ---------------------------------------------------------------------------
+
+const CLASS_TO_LABEL: Record<string, string> = {
+  RetryMiddleware: "retry",
+  LoggingMiddleware: "logging",
+  ErrorHistoryMiddleware: "error_history",
+};
+
+function labels(instances: unknown[]): string[] {
+  return instances.map((mw) => {
+    const cls = (mw as { constructor: { name: string } }).constructor.name;
+    const label = CLASS_TO_LABEL[cls];
+    if (!label) {
+      throw new Error(`Unexpected middleware class '${cls}'`);
+    }
+    return label;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Test suites (parameterised over fixture cases)
+// ---------------------------------------------------------------------------
+
+describe("conformance: buildMiddlewareFromConfig success cases", () => {
+  if (!FIXTURE) {
+    it.skip(`fixture not found at ${FIXTURE_PATH}`, () => {});
+    return;
+  }
+  for (const c of FIXTURE.test_cases) {
+    it(c.id, async () => {
+      const result = await buildMiddlewareFromConfig(
+        c.input_entries as Parameters<typeof buildMiddlewareFromConfig>[0],
+      );
+      expect(labels(result)).toEqual(c.expected_middleware_names);
+    });
+  }
+});
+
+describe("conformance: buildMiddlewareFromConfig error cases", () => {
+  if (!FIXTURE) {
+    it.skip(`fixture not found at ${FIXTURE_PATH}`, () => {});
+    return;
+  }
+  for (const c of FIXTURE.error_cases) {
+    it(c.id, async () => {
+      await expect(
+        buildMiddlewareFromConfig(
+          c.input_entries as Parameters<typeof buildMiddlewareFromConfig>[0],
+        ),
+      ).rejects.toThrow(c.expected_error_substring);
+    });
+  }
+});

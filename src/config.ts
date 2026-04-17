@@ -19,6 +19,12 @@ export const MCP_DEFAULTS: Record<string, unknown> = {
   explorer: false,
   explorer_prefix: "/explorer",
   require_auth: true,
+  // Declarative middleware list — each entry is { type: string, ...kwargs }.
+  // See middleware-builder.ts for supported types.
+  middleware: [],
+  // Declarative ACL — { default_effect: "deny"|"allow", rules: [ACLRule...] }.
+  // null / empty means "no ACL" (allow all). See acl-builder.ts.
+  acl: null,
 };
 
 /** Register the 'mcp' config namespace. Safe to call multiple times. */
