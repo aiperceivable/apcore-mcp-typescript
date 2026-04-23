@@ -27,6 +27,12 @@ export interface MetricsExporter {
   exportPrometheus(): string;
 }
 
+/** Duck-typed interface for apcore-js's UsageCollector. */
+export interface UsageExporter {
+  getSummary(period?: string): unknown;
+  getModule(moduleId: string, period?: string): unknown;
+}
+
 /** Default maximum request body size in bytes (4MB). */
 const DEFAULT_MAX_BODY_BYTES = 4 * 1024 * 1024;
 
@@ -88,6 +94,9 @@ export class TransportManager {
   /** Optional metrics collector for Prometheus /metrics endpoint. */
   private _metricsCollector?: MetricsExporter;
 
+  /** Optional usage collector for /usage endpoint. */
+  private _usageCollector?: UsageExporter;
+
   /** Optional explorer node handler (from mcp-embedded-ui). */
   private _explorerNodeHandler?: (req: IncomingMessage, res: ServerResponse) => void;
 
@@ -98,7 +107,7 @@ export class TransportManager {
   private _authenticator?: Authenticator;
 
   /** Configurable set of paths exempt from authentication. */
-  private _exemptPaths = new Set(["/health", "/metrics"]);
+  private _exemptPaths = new Set(["/health", "/metrics", "/usage"]);
 
   /** Explicit requireAuth override (when set, takes precedence over authenticator's own value). */
   private _requireAuth?: boolean;
@@ -149,6 +158,15 @@ export class TransportManager {
    */
   setMetricsCollector(collector: MetricsExporter): void {
     this._metricsCollector = collector;
+  }
+
+  /**
+   * Set the usage collector for the /usage JSON endpoint.
+   *
+   * @param collector - A UsageExporter instance (e.g. UsageCollector from apcore)
+   */
+  setUsageCollector(collector: UsageExporter): void {
+    this._usageCollector = collector;
   }
 
   /**
@@ -205,6 +223,26 @@ export class TransportManager {
       } catch {
         res.writeHead(500);
         res.end();
+      }
+      return true;
+    }
+    if (url.pathname === "/usage" && req.method === "GET") {
+      if (!this._usageCollector) {
+        res.writeHead(404);
+        res.end();
+        return true;
+      }
+      try {
+        const period = url.searchParams.get("period") ?? "24h";
+        const moduleId = url.searchParams.get("module_id");
+        const payload = moduleId
+          ? this._usageCollector.getModule(moduleId, period)
+          : { summary: this._usageCollector.getSummary(period), period };
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(payload));
+      } catch (err) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
       }
       return true;
     }

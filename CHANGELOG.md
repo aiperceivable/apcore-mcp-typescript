@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-04-23
+
+### Changed
+
+- **Dependency bump**: `apcore-js >= 0.19.0` (was `>= 0.18.0`). Picks up the expanded 12-field `ModuleAnnotations`, `auto_schema` modes, `spec_version` in binding YAML, and new dependency/binding error classes (see apcore-js 0.19.0 CHANGELOG).
+- **New dependency**: `apcore-toolkit >= 0.5.0` — provides `BindingLoader`, `BindingParser`, and `ScannedModule.display` for consumers that load `.binding.yaml` files.
+- `BridgeContext` now accepts an optional `traceId` argument so inbound W3C traceparent trace_ids propagate through the call chain.
+- `/usage` added to the default authentication exempt-paths list (alongside `/health` and `/metrics`).
+- **`ModuleAnnotations.paginationStyle`** widened from `"cursor" | "offset" | "page"` union to `string`, matching apcore-js 0.16.0's relaxed type.
+
+### Added
+
+- **W3C Trace Context bridging (F-042)** — `tools/call` requests carrying
+  `_meta.traceparent` now flow through to the apcore `Context.traceId` so the
+  downstream trace chain stays linked. Successful tool responses include a
+  freshly minted `_meta.traceparent` so clients can continue the W3C trace
+  chain across subsequent MCP invocations. New `parseTraceparent()` and
+  `buildTraceparent()` helpers live under `src/server/traceContext.ts` and are
+  re-exported from the package root. Traceparent parsing delegates to
+  apcore-js's `TraceContext.fromTraceparent()` when available for a single
+  source of truth on validation.
+- **Async Task Bridge (F-043)** — New `AsyncTaskBridge` class in
+  `src/server/asyncTaskBridge.ts` routes async-hinted modules
+  (`metadata.async === true` OR `annotations.extra["mcp_async"] === "true"`)
+  through apcore-js's `AsyncTaskManager.submit()` and returns an immediate
+  `{task_id, status: "pending"}` envelope. Four reserved meta-tools
+  (`__apcore_task_submit`, `__apcore_task_status`, `__apcore_task_cancel`,
+  `__apcore_task_list`) are advertised via `tools/list` and dispatched by the
+  execution router. `MCPServerFactory.buildTools()` now rejects any module id
+  starting with `__apcore_` to prevent namespace collision. Completed task
+  results are redacted via apcore-js's `redactSensitive()` before being inlined
+  in `__apcore_task_status`. Enabled by default; disable via
+  `serve({ async: false })` or CLI `--no-async`.
+- **Observability auto-wiring (F-044)** — `serve()`, `asyncServe()`, and
+  `APCoreMCP` now accept `observability: true` (or `metricsCollector: true`)
+  to auto-instantiate apcore-js's `MetricsCollector` + `MetricsMiddleware` and
+  `UsageCollector` + `UsageMiddleware` via `executor.use()`. A new `/usage`
+  HTTP endpoint returns module and caller summaries. CLI flag `--observability`
+  enables the full stack. Back-compat: passing a pre-instantiated
+  `MetricsExporter` in `metricsCollector` still works unchanged.
+- **`instanceof` dispatch for apcore-js error classes** — `ErrorMapper` now
+  imports apcore-js's concrete `TaskLimitExceededError`,
+  `VersionConstraintError`, `DependencyNotFoundError`, and
+  `DependencyVersionMismatchError` classes and dispatches via `instanceof` when
+  available, preserving structured fields across the cross-language contract.
+  Falls back to the duck-typed `error.code` path when apcore-js is unavailable.
+- **8 new error code mappings** in `ErrorCodes` and `ErrorMapper` — `DEPENDENCY_NOT_FOUND`, `DEPENDENCY_VERSION_MISMATCH`, `TASK_LIMIT_EXCEEDED`, `VERSION_CONSTRAINT_INVALID`, `BINDING_SCHEMA_INFERENCE_FAILED`, `BINDING_SCHEMA_MODE_CONFLICT`, `BINDING_STRICT_SCHEMA_INCOMPATIBLE`, `BINDING_POLICY_VIOLATION`. Dependency errors are marked `userFixable: true`; `TASK_LIMIT_EXCEEDED` is marked `retryable: true`; binding/version-constraint errors pass through with `userFixable: true`.
+- **Annotation description suffix** — `AnnotationMapper.toDescriptionSuffix()` now emits `cache_ttl`, `cache_key_fields`, and `pagination_style` when present, alongside the existing `cacheable`/`paginated` fields.
+
+---
+
 ## [0.13.0] - 2026-04-06
 
 ### Added

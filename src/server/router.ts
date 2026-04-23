@@ -15,6 +15,8 @@ import { createBridgeContext } from "./context.js";
 import { MCP_PROGRESS_KEY, MCP_ELICIT_KEY } from "../helpers.js";
 import type { ElicitResult } from "../helpers.js";
 import { getCurrentIdentity } from "../auth/storage.js";
+import { parseTraceparent } from "./traceContext.js";
+import type { AsyncTaskBridge } from "./asyncTaskBridge.js";
 
 /** Maximum recursion depth for deep merge to prevent stack overflow. */
 const DEEP_MERGE_MAX_DEPTH = 32;
@@ -63,11 +65,16 @@ export type CallResult = [TextContentDict[], boolean, string | undefined];
  * - `sendNotification` — sends an out-of-band notification on the current session
  * - `sendRequest` — sends a request to the client (used for elicitation)
  * - `_meta.progressToken` — opaque token the client attached to the request
+ * - `_meta.traceparent` — W3C trace_context header propagated from caller
  */
 export interface HandleCallExtra {
   sendNotification?: (notification: Record<string, unknown>) => Promise<void>;
   sendRequest?: (request: Record<string, unknown>, resultSchema: unknown) => Promise<unknown>;
-  _meta?: { progressToken?: string | number; apcore?: { version?: string } };
+  _meta?: {
+    progressToken?: string | number;
+    apcore?: { version?: string };
+    traceparent?: string;
+  };
   versionHint?: string;
 }
 
@@ -96,6 +103,12 @@ export interface ExecutionRouterOptions {
    * which fields should be redacted.
    */
   outputSchemaMap?: Record<string, Record<string, unknown>>;
+  /**
+   * Optional AsyncTaskBridge that intercepts calls to async-hinted modules
+   * and the four reserved `__apcore_task_*` meta-tools. When absent, all
+   * calls go through the synchronous executor path.
+   */
+  asyncTaskBridge?: AsyncTaskBridge;
 }
 
 export class ExecutionRouter {
@@ -106,6 +119,7 @@ export class ExecutionRouter {
   private readonly _redactOutput: boolean;
   private readonly _outputSchemaMap: Record<string, Record<string, unknown>>;
   private readonly _trace: boolean;
+  private readonly _asyncTaskBridge?: AsyncTaskBridge;
 
   /**
    * Create an ExecutionRouter.
@@ -121,6 +135,12 @@ export class ExecutionRouter {
     this._redactOutput = options?.redactOutput ?? true;
     this._outputSchemaMap = options?.outputSchemaMap ?? {};
     this._trace = options?.trace ?? false;
+    this._asyncTaskBridge = options?.asyncTaskBridge;
+  }
+
+  /** Expose the async task bridge (for factory tool-list merging). */
+  get asyncTaskBridge(): AsyncTaskBridge | undefined {
+    return this._asyncTaskBridge;
   }
 
   /**
@@ -225,6 +245,16 @@ export class ExecutionRouter {
       const progressToken = extra?._meta?.progressToken;
       const sendNotification = extra?.sendNotification;
       const sendRequest = extra?.sendRequest;
+      const traceparentRaw = extra?._meta?.traceparent;
+
+      // Parse incoming W3C traceparent so the downstream trace chain continues.
+      let inboundTraceId: string | undefined;
+      if (typeof traceparentRaw === "string" && traceparentRaw.length > 0) {
+        const parsed = await parseTraceparent(traceparentRaw);
+        if (parsed) {
+          inboundTraceId = parsed.traceId;
+        }
+      }
 
       const contextData: Record<string, unknown> = {};
       let hasCallbacks = false;
@@ -272,9 +302,61 @@ export class ExecutionRouter {
 
       const identity = getCurrentIdentity();
 
-      const context = (hasCallbacks || identity)
-        ? createBridgeContext(contextData, identity)
+      // Always create a context when we have an inbound traceparent so the
+      // downstream trace chain is linked even without callbacks/identity.
+      const context = (hasCallbacks || identity || inboundTraceId)
+        ? createBridgeContext(contextData, identity, inboundTraceId)
         : undefined;
+
+      // ── F-043: Async Task Bridge meta-tool dispatch ────────────────────
+      if (this._asyncTaskBridge && this._asyncTaskBridge.isMetaTool(toolName)) {
+        try {
+          const metaResult = await this._asyncTaskBridge.handleMetaTool(
+            toolName,
+            args,
+            context,
+          );
+          const content: TextContentDict[] = [
+            { type: "text", text: this._formatResult(metaResult) },
+          ];
+          return [content, false, context?.traceId];
+        } catch (err: unknown) {
+          const errorInfo = this._errorMapper.toMcpError(err);
+          const content: TextContentDict[] = [
+            { type: "text", text: ExecutionRouter._buildErrorText(errorInfo) },
+          ];
+          return [content, true, context?.traceId];
+        }
+      }
+
+      // ── F-043: Async-hinted module → AsyncTaskManager.submit() ─────────
+      if (this._asyncTaskBridge && this._asyncTaskBridge.enabled) {
+        let descriptor: import("../types.js").ModuleDescriptor | null = null;
+        try {
+          descriptor = this._executor.registry?.getDefinition?.(toolName) ?? null;
+        } catch {
+          // registry lookup is best-effort — leave descriptor null
+        }
+        if (this._asyncTaskBridge.isAsyncModule(descriptor)) {
+          try {
+            const envelope = await this._asyncTaskBridge.submit(
+              toolName,
+              args,
+              context,
+            );
+            const content: TextContentDict[] = [
+              { type: "text", text: this._formatResult(envelope) },
+            ];
+            return [content, false, context?.traceId];
+          } catch (err: unknown) {
+            const errorInfo = this._errorMapper.toMcpError(err);
+            const content: TextContentDict[] = [
+              { type: "text", text: ExecutionRouter._buildErrorText(errorInfo) },
+            ];
+            return [content, true, context?.traceId];
+          }
+        }
+      }
 
       // ── Pre-execution validation ────────────────────────────────────
       if (this._validateInputs && this._executor.validate) {

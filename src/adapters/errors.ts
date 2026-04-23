@@ -4,10 +4,52 @@
  * Handles ModuleError instances with specific error codes, sanitizes
  * internal error details, formats schema validation errors with
  * field-level detail, and extracts AI guidance fields.
+ *
+ * Cross-language contract: apcore-js exposes concrete error classes
+ * (e.g. `TaskLimitExceededError`). We prefer `instanceof` dispatch when
+ * those classes are importable so structured fields flow through
+ * losslessly; we fall back to duck-typing (`error.code` inspection)
+ * when apcore-js is unavailable or the caller constructs a bare
+ * `ModuleError`.
  */
 
 import { ErrorCodes } from "../types.js";
 import type { McpErrorResponse } from "../types.js";
+
+/**
+ * Lazy snapshot of apcore-js error classes used for `instanceof` dispatch.
+ * Populated on first use; falls back to duck-typing when apcore-js is
+ * unavailable. Cached across calls for perf.
+ */
+let _apcoreErrorClasses: {
+  TaskLimitExceededError?: new (...args: unknown[]) => Error;
+  VersionConstraintError?: new (...args: unknown[]) => Error;
+  DependencyNotFoundError?: new (...args: unknown[]) => Error;
+  DependencyVersionMismatchError?: new (...args: unknown[]) => Error;
+  loaded?: true;
+} | null = null;
+
+async function _loadApcoreErrorClasses(): Promise<NonNullable<typeof _apcoreErrorClasses>> {
+  if (_apcoreErrorClasses) return _apcoreErrorClasses;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const apcore = (await import("apcore-js")) as any;
+    _apcoreErrorClasses = {
+      TaskLimitExceededError: apcore.TaskLimitExceededError,
+      VersionConstraintError: apcore.VersionConstraintError,
+      DependencyNotFoundError: apcore.DependencyNotFoundError,
+      DependencyVersionMismatchError: apcore.DependencyVersionMismatchError,
+      loaded: true,
+    };
+  } catch {
+    _apcoreErrorClasses = { loaded: true };
+  }
+  return _apcoreErrorClasses;
+}
+
+// Kick off the load eagerly but don't await; toMcpError is sync and will
+// observe the populated cache on subsequent invocations.
+void _loadApcoreErrorClasses();
 
 /** Internal error codes that should be sanitized to a generic message. */
 const INTERNAL_ERROR_CODES: Set<string> = new Set([
@@ -41,6 +83,13 @@ export class ErrorMapper {
         retryable: true,
       };
     }
+
+    // Preferred: instanceof dispatch against apcore-js's concrete error
+    // classes so cross-language contracts stay tight. Falls back to the
+    // duck-typed code-based dispatch below when apcore-js was unavailable
+    // at load time.
+    const instanceMatch = this._matchApcoreErrorInstance(error);
+    if (instanceMatch) return instanceMatch;
 
     // Duck-type check for ModuleError-like objects
     if (this._isModuleError(error)) {
@@ -178,6 +227,54 @@ export class ErrorMapper {
         return result;
       }
 
+      // Dependency resolution errors (apcore 0.19) -> pass through with user-fixable hint
+      if (
+        code === ErrorCodes.DEPENDENCY_NOT_FOUND ||
+        code === ErrorCodes.DEPENDENCY_VERSION_MISMATCH
+      ) {
+        const result: McpErrorResponse = {
+          isError: true,
+          errorType: code,
+          message: error.message,
+          details,
+          userFixable: true,
+        };
+        this._attachAiGuidance(error, result);
+        return result;
+      }
+
+      // Task limit exceeded -> retryable
+      if (code === ErrorCodes.TASK_LIMIT_EXCEEDED) {
+        const result: McpErrorResponse = {
+          isError: true,
+          errorType: code,
+          message: error.message,
+          details,
+          retryable: true,
+        };
+        this._attachAiGuidance(error, result);
+        return result;
+      }
+
+      // Binding / version-constraint validation errors (apcore 0.19) -> pass through
+      if (
+        code === ErrorCodes.VERSION_CONSTRAINT_INVALID ||
+        code === ErrorCodes.BINDING_SCHEMA_INFERENCE_FAILED ||
+        code === ErrorCodes.BINDING_SCHEMA_MODE_CONFLICT ||
+        code === ErrorCodes.BINDING_STRICT_SCHEMA_INCOMPATIBLE ||
+        code === ErrorCodes.BINDING_POLICY_VIOLATION
+      ) {
+        const result: McpErrorResponse = {
+          isError: true,
+          errorType: code,
+          message: error.message,
+          details,
+          userFixable: true,
+        };
+        this._attachAiGuidance(error, result);
+        return result;
+      }
+
       // Other known ModuleError codes -> pass through
       const result: McpErrorResponse = {
         isError: true,
@@ -196,6 +293,72 @@ export class ErrorMapper {
       message: "Internal error occurred",
       details: null,
     };
+  }
+
+  /**
+   * Preferred `instanceof` dispatch for concrete apcore-js error classes.
+   *
+   * When the cache hasn't been populated yet (first call before the lazy
+   * load settles), returns null and the caller falls back to duck-typing.
+   * Once the cache is warm, subsequent calls produce identical output
+   * whether the error was thrown as a concrete class or a duck-typed
+   * plain object — the duck-typed branch below handles the latter.
+   */
+  private _matchApcoreErrorInstance(error: unknown): McpErrorResponse | null {
+    if (!(error instanceof Error) || !_apcoreErrorClasses?.loaded) return null;
+    const classes = _apcoreErrorClasses;
+
+    const asModErr = error as Error & { code?: string; details?: Record<string, unknown> | null };
+
+    if (classes.TaskLimitExceededError && error instanceof classes.TaskLimitExceededError) {
+      const result: McpErrorResponse = {
+        isError: true,
+        errorType: ErrorCodes.TASK_LIMIT_EXCEEDED,
+        message: error.message,
+        details: asModErr.details ?? null,
+        retryable: true,
+      };
+      this._attachAiGuidance(error as unknown as Record<string, unknown>, result);
+      return result;
+    }
+
+    if (classes.DependencyNotFoundError && error instanceof classes.DependencyNotFoundError) {
+      const result: McpErrorResponse = {
+        isError: true,
+        errorType: ErrorCodes.DEPENDENCY_NOT_FOUND,
+        message: error.message,
+        details: asModErr.details ?? null,
+        userFixable: true,
+      };
+      this._attachAiGuidance(error as unknown as Record<string, unknown>, result);
+      return result;
+    }
+
+    if (classes.DependencyVersionMismatchError && error instanceof classes.DependencyVersionMismatchError) {
+      const result: McpErrorResponse = {
+        isError: true,
+        errorType: ErrorCodes.DEPENDENCY_VERSION_MISMATCH,
+        message: error.message,
+        details: asModErr.details ?? null,
+        userFixable: true,
+      };
+      this._attachAiGuidance(error as unknown as Record<string, unknown>, result);
+      return result;
+    }
+
+    if (classes.VersionConstraintError && error instanceof classes.VersionConstraintError) {
+      const result: McpErrorResponse = {
+        isError: true,
+        errorType: ErrorCodes.VERSION_CONSTRAINT_INVALID,
+        message: error.message,
+        details: asModErr.details ?? null,
+        userFixable: true,
+      };
+      this._attachAiGuidance(error as unknown as Record<string, unknown>, result);
+      return result;
+    }
+
+    return null;
   }
 
   /**

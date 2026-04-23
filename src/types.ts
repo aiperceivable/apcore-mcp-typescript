@@ -47,6 +47,14 @@ export const ErrorCodes = Object.freeze({
   CONFIG_ENV_MAP_CONFLICT: "CONFIG_ENV_MAP_CONFLICT",
   PIPELINE_ABORT: "PIPELINE_ABORT",
   STEP_NOT_FOUND: "STEP_NOT_FOUND",
+  DEPENDENCY_NOT_FOUND: "DEPENDENCY_NOT_FOUND",
+  DEPENDENCY_VERSION_MISMATCH: "DEPENDENCY_VERSION_MISMATCH",
+  TASK_LIMIT_EXCEEDED: "TASK_LIMIT_EXCEEDED",
+  VERSION_CONSTRAINT_INVALID: "VERSION_CONSTRAINT_INVALID",
+  BINDING_SCHEMA_INFERENCE_FAILED: "BINDING_SCHEMA_INFERENCE_FAILED",
+  BINDING_SCHEMA_MODE_CONFLICT: "BINDING_SCHEMA_MODE_CONFLICT",
+  BINDING_STRICT_SCHEMA_INCOMPATIBLE: "BINDING_STRICT_SCHEMA_INCOMPATIBLE",
+  BINDING_POLICY_VIOLATION: "BINDING_POLICY_VIOLATION",
 } as const);
 
 /** Dot-namespaced event types introduced in apcore 0.15.0 (§9.16). */
@@ -73,7 +81,7 @@ export interface ModuleAnnotations {
   cacheTtl?: number;
   cacheKeyFields?: string[] | null;
   paginated?: boolean;
-  paginationStyle?: "cursor" | "offset" | "page";
+  paginationStyle?: string;
   extra?: Record<string, unknown>;
 }
 

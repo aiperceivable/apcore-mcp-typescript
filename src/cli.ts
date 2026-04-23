@@ -43,7 +43,10 @@ Options:
   --jwt-permissive           Permissive mode: allow unauthenticated requests (overrides --jwt-require-auth)
   --strategy <name>          Execution strategy: standard, internal, testing, performance, minimal
   --approval <mode>          Approval mode: elicit, auto-approve, always-deny, off (default: off)
-  --exempt-paths <paths>     Comma-separated paths exempt from auth (default: /health,/metrics)
+  --exempt-paths <paths>     Comma-separated paths exempt from auth (default: /health,/metrics,/usage)
+  --observability            Enable metrics + usage middleware and expose /metrics and /usage endpoints
+  --async                    Enable the Async Task Bridge (default: on; use --no-async to disable)
+  --no-async                 Disable the Async Task Bridge
   --help                     Show this help message
 `);
 }
@@ -78,6 +81,9 @@ export async function main(): Promise<void> {
         approval: { type: "string", default: "off" },
         strategy: { type: "string" },
         "exempt-paths": { type: "string" },
+        observability: { type: "boolean", default: false },
+        async: { type: "boolean", default: true },
+        "no-async": { type: "boolean", default: false },
         help: { type: "boolean", default: false },
       },
       strict: true,
@@ -240,6 +246,10 @@ export async function main(): Promise<void> {
     ? exemptPathsRaw.split(",").map((p) => p.trim())
     : undefined;
 
+  const observabilityEnabled = values.observability as boolean;
+  const asyncDisabled = values["no-async"] as boolean;
+  const asyncEnabled = asyncDisabled ? false : (values.async as boolean);
+
   // Launch the MCP server
   try {
     await serve(registry as never, {
@@ -256,6 +266,8 @@ export async function main(): Promise<void> {
       exemptPaths,
       approvalHandler,
       strategy,
+      observability: observabilityEnabled,
+      async: asyncEnabled,
     });
   } catch (error) {
     console.error("Server startup failed:", error);

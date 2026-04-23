@@ -155,6 +155,7 @@ vi.mock("../src/server/factory.js", () => ({
   MCPServerFactory: vi.fn().mockImplementation(() => ({
     createServer: vi.fn().mockReturnValue({}),
     buildTools: mockBuildTools,
+    attachAsyncMetaTools: (tools: unknown[]) => tools,
     registerHandlers: vi.fn(),
     registerResourceHandlers: vi.fn(),
   })),

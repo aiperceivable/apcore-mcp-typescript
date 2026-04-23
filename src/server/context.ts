@@ -32,13 +32,17 @@ export interface BridgeContext {
  *
  * @param data - Shared data dict (MCP callbacks are injected here)
  * @param identity - Authenticated identity, if any
+ * @param traceId - Optional pre-existing traceId (32-hex, W3C format). When
+ *   omitted, a fresh UUID is generated. Used to propagate incoming W3C
+ *   `traceparent` trace_id so the downstream trace chain stays linked.
  * @returns A BridgeContext with a working child() method
  */
 export function createBridgeContext(
   data: Record<string, unknown>,
   identity?: Identity | null,
+  traceId?: string,
 ): BridgeContext {
-  return _buildContext(data, randomUUID(), null, [], identity ?? null);
+  return _buildContext(data, traceId ?? randomUUID(), null, [], identity ?? null);
 }
 
 function _buildContext(

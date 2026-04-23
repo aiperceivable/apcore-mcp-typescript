@@ -54,7 +54,10 @@ const FIXTURE = loadFixture();
 // ---------------------------------------------------------------------------
 
 const CLASS_TO_LABEL: Record<string, string> = {
+  // In apcore-js 0.19.0, RetryMiddleware is a deprecated alias for RetryHintMiddleware.
+  // Accept both names so the conformance label mapping tolerates either version.
   RetryMiddleware: "retry",
+  RetryHintMiddleware: "retry",
   LoggingMiddleware: "logging",
   ErrorHistoryMiddleware: "error_history",
 };

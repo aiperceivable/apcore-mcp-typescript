@@ -34,6 +34,7 @@ import type {
 } from "./types.js";
 import type { Authenticator } from "./auth/types.js";
 import type { MetricsExporter } from "./server/transport.js";
+import type { ObservabilityFlag } from "./server/observability.js";
 import {
   serve,
   asyncServe,
@@ -61,8 +62,12 @@ export interface APCoreMCPOptions {
   logLevel?: "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
   /** Enable input validation against schemas. Default: false */
   validateInputs?: boolean;
-  /** Optional MetricsCollector for Prometheus /metrics endpoint. */
-  metricsCollector?: MetricsExporter;
+  /** Optional MetricsCollector for Prometheus /metrics endpoint. Pass `true` to auto-instantiate. */
+  metricsCollector?: MetricsExporter | boolean;
+  /** Enable the full observability stack (metrics + usage middleware). */
+  observability?: ObservabilityFlag;
+  /** Async Task Bridge configuration (F-043). */
+  async?: boolean | { enabled?: boolean; maxConcurrent?: number; maxTasks?: number };
   /** Optional authenticator for request authentication (HTTP transports only). */
   authenticator?: Authenticator;
   /** If true (default), unauthenticated requests are rejected with 401. */
@@ -234,6 +239,8 @@ export class APCoreMCP {
       onStartup: overrides.onStartup,
       onShutdown: overrides.onShutdown,
       metricsCollector: this._options.metricsCollector,
+      observability: this._options.observability,
+      async: this._options.async,
       explorer: overrides.explorer,
       explorerPrefix: overrides.explorerPrefix,
       allowExecute: overrides.allowExecute,
@@ -312,6 +319,8 @@ export class APCoreMCP {
       prefix: this._options.prefix,
       logLevel: this._options.logLevel,
       metricsCollector: this._options.metricsCollector,
+      observability: this._options.observability,
+      async: this._options.async,
       explorer: options.explorer,
       explorerPrefix: options.explorerPrefix,
       allowExecute: options.allowExecute,

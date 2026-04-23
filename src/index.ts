@@ -17,6 +17,8 @@ import { TransportManager } from "./server/transport.js";
 import { registerMcpNamespace } from "./config.js";
 import { registerMcpFormatter } from "./adapters/mcpErrorFormatter.js";
 import type { MetricsExporter } from "./server/transport.js";
+import { installObservability, type ObservabilityFlag } from "./server/observability.js";
+import { createAsyncTaskBridge, type AsyncTaskBridge } from "./server/asyncTaskBridge.js";
 import type {
   RegistryOrExecutor,
   Registry,
@@ -65,7 +67,13 @@ export { ExecutionRouter } from "./server/router.js";
 export type { CallResult, HandleCallExtra, ExecutionRouterOptions } from "./server/router.js";
 export { RegistryListener } from "./server/listener.js";
 export { TransportManager } from "./server/transport.js";
-export type { MetricsExporter } from "./server/transport.js";
+export type { MetricsExporter, UsageExporter } from "./server/transport.js";
+export { AsyncTaskBridge, createAsyncTaskBridge, META_TOOL_NAMES, APCORE_META_TOOL_PREFIX } from "./server/asyncTaskBridge.js";
+export type { AsyncTaskManagerLike, TaskInfoProjection, AsyncMetaTool, AsyncTaskBridgeOptions } from "./server/asyncTaskBridge.js";
+export { installObservability } from "./server/observability.js";
+export type { ObservabilityFlag, ObservabilityStack } from "./server/observability.js";
+export { parseTraceparent, buildTraceparent } from "./server/traceContext.js";
+export type { ParsedTraceParent } from "./server/traceContext.js";
 export { AnnotationMapper } from "./adapters/annotations.js";
 export { SchemaConverter } from "./adapters/schema.js";
 export { ErrorMapper } from "./adapters/errors.js";
@@ -212,8 +220,22 @@ export interface BaseServeOptions {
   prefix?: string | null;
   /** Minimum log level. Suppresses console methods below this level. Default: undefined (no suppression) */
   logLevel?: "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
-  /** Optional MetricsCollector for Prometheus /metrics endpoint. */
-  metricsCollector?: MetricsExporter;
+  /**
+   * Optional MetricsCollector for Prometheus /metrics endpoint.
+   *
+   * - Pass a concrete `MetricsExporter` instance to surface its output on
+   *   the `/metrics` endpoint (existing behaviour).
+   * - Pass `true` to auto-instantiate apcore-js's `MetricsCollector` and
+   *   install `MetricsMiddleware` via `executor.use()`.
+   */
+  metricsCollector?: MetricsExporter | boolean;
+  /**
+   * Enable the full observability stack (metrics + usage middleware). When
+   * `true`, apcore-js's `MetricsCollector` + `MetricsMiddleware` AND
+   * `UsageCollector` + `UsageMiddleware` are auto-instantiated and installed
+   * on the executor. The transport exposes `/metrics` and `/usage` endpoints.
+   */
+  observability?: ObservabilityFlag;
   /** Enable the browser-based Tool Explorer UI (HTTP transports only). Default: false */
   explorer?: boolean;
   /** URL prefix for the explorer. Default: "/explorer" */
@@ -270,6 +292,15 @@ export interface BaseServeOptions {
    * precedence over Config Bus.
    */
   acl?: unknown;
+  /**
+   * Configure the Async Task Bridge (F-043). When `true` (default),
+   * async-hinted modules (`metadata.async === true` OR
+   * `annotations.extra["mcp_async"] === "true"`) route through the
+   * AsyncTaskManager and the four `__apcore_task_*` meta-tools are
+   * advertised. Pass `false` to disable entirely or an object for
+   * fine-grained tuning.
+   */
+  async?: boolean | { enabled?: boolean; maxConcurrent?: number; maxTasks?: number };
 }
 
 /** Options for serve() */
@@ -327,6 +358,8 @@ export async function serve(
     trace,
     middleware: callerMiddleware,
     acl: callerAcl,
+    observability: observabilityFlag,
+    async: asyncFlag,
   } = options;
 
   // Input validation (matching Python's checks)
@@ -421,6 +454,14 @@ export async function serve(
     acl: effectiveAcl,
   });
 
+  // ── F-044: observability auto-wire (metrics + usage middleware) ──────
+  const obsStack = await installObservability(
+    executor,
+    metricsCollector,
+    observabilityFlag,
+  );
+  const resolvedMetricsCollector = obsStack.metricsCollector;
+
   // Register MCP config namespace and error formatter (idempotent)
   registerMcpNamespace();
   await registerMcpFormatter();
@@ -428,11 +469,31 @@ export async function serve(
   // Build output schema map for redaction
   const outputSchemaMap = buildOutputSchemaMap(registry);
 
+  // ── F-043: AsyncTaskBridge ───────────────────────────────────────────
+  const asyncOpt = typeof asyncFlag === "object" ? asyncFlag : null;
+  const asyncEnabled = asyncFlag === undefined ? true : asyncFlag !== false;
+  const asyncBridge: AsyncTaskBridge | null = asyncEnabled
+    ? await createAsyncTaskBridge(executor, {
+        enabled: true,
+        maxConcurrent: asyncOpt?.maxConcurrent,
+        maxTasks: asyncOpt?.maxTasks,
+        outputSchemaMap,
+      })
+    : null;
+
   // Build MCP server components
   const factory = new MCPServerFactory();
   const server = factory.createServer(name, version);
-  const tools = factory.buildTools(registry, { tags, prefix });
-  const router = new ExecutionRouter(executor, { validateInputs, outputFormatter, redactOutput, outputSchemaMap, trace });
+  let tools = factory.buildTools(registry, { tags, prefix });
+  tools = factory.attachAsyncMetaTools(tools, asyncBridge ?? undefined);
+  const router = new ExecutionRouter(executor, {
+    validateInputs,
+    outputFormatter,
+    redactOutput,
+    outputSchemaMap,
+    trace,
+    asyncTaskBridge: asyncBridge ?? undefined,
+  });
   factory.registerHandlers(server, tools, router);
   factory.registerResourceHandlers(server, registry);
 
@@ -453,8 +514,11 @@ export async function serve(
   // Select and run transport
   const transportManager = new TransportManager();
   transportManager.setModuleCount(tools.length);
-  if (metricsCollector) {
-    transportManager.setMetricsCollector(metricsCollector);
+  if (resolvedMetricsCollector) {
+    transportManager.setMetricsCollector(resolvedMetricsCollector);
+  }
+  if (obsStack.usageCollector) {
+    transportManager.setUsageCollector(obsStack.usageCollector);
   }
   if (authenticator) {
     transportManager.setAuthenticator(authenticator);
@@ -507,6 +571,13 @@ export async function serve(
     console.info = origInfo;
     console.warn = origWarn;
     console.error = origError;
+    if (asyncBridge?.manager.shutdown) {
+      try {
+        await asyncBridge.manager.shutdown();
+      } catch (err) {
+        origWarn("[apcore-mcp] AsyncTaskManager shutdown failed:", err);
+      }
+    }
     await onShutdown?.();
   }
 }
@@ -581,6 +652,8 @@ export async function asyncServe(
     trace,
     middleware: callerMiddleware,
     acl: callerAcl,
+    observability: observabilityFlag,
+    async: asyncFlag,
   } = options;
 
   // Input validation (same as serve())
@@ -675,6 +748,14 @@ export async function asyncServe(
     acl: effectiveAcl,
   });
 
+  // ── F-044: observability auto-wire ───────────────────────────────────
+  const obsStack = await installObservability(
+    executor,
+    metricsCollector,
+    observabilityFlag,
+  );
+  const resolvedMetricsCollector = obsStack.metricsCollector;
+
   // Register MCP config namespace and error formatter (idempotent)
   registerMcpNamespace();
   await registerMcpFormatter();
@@ -682,11 +763,31 @@ export async function asyncServe(
   // Build output schema map for redaction
   const outputSchemaMap = buildOutputSchemaMap(registry);
 
+  // ── F-043: AsyncTaskBridge ───────────────────────────────────────────
+  const asyncOpt = typeof asyncFlag === "object" ? asyncFlag : null;
+  const asyncEnabled = asyncFlag === undefined ? true : asyncFlag !== false;
+  const asyncBridge: AsyncTaskBridge | null = asyncEnabled
+    ? await createAsyncTaskBridge(executor, {
+        enabled: true,
+        maxConcurrent: asyncOpt?.maxConcurrent,
+        maxTasks: asyncOpt?.maxTasks,
+        outputSchemaMap,
+      })
+    : null;
+
   // Build MCP server components
   const factory = new MCPServerFactory();
   const server = factory.createServer(name, version);
-  const tools = factory.buildTools(registry, { tags, prefix });
-  const router = new ExecutionRouter(executor, { validateInputs, outputFormatter, redactOutput, outputSchemaMap, trace });
+  let tools = factory.buildTools(registry, { tags, prefix });
+  tools = factory.attachAsyncMetaTools(tools, asyncBridge ?? undefined);
+  const router = new ExecutionRouter(executor, {
+    validateInputs,
+    outputFormatter,
+    redactOutput,
+    outputSchemaMap,
+    trace,
+    asyncTaskBridge: asyncBridge ?? undefined,
+  });
   factory.registerHandlers(server, tools, router);
   factory.registerResourceHandlers(server, registry);
 
@@ -697,8 +798,11 @@ export async function asyncServe(
   // Configure transport manager
   const transportManager = new TransportManager();
   transportManager.setModuleCount(tools.length);
-  if (metricsCollector) {
-    transportManager.setMetricsCollector(metricsCollector);
+  if (resolvedMetricsCollector) {
+    transportManager.setMetricsCollector(resolvedMetricsCollector);
+  }
+  if (obsStack.usageCollector) {
+    transportManager.setUsageCollector(obsStack.usageCollector);
   }
   if (authenticator) {
     transportManager.setAuthenticator(authenticator);
@@ -737,6 +841,13 @@ export async function asyncServe(
   const originalClose = app.close;
   app.close = async () => {
     await originalClose();
+    if (asyncBridge?.manager.shutdown) {
+      try {
+        await asyncBridge.manager.shutdown();
+      } catch (err) {
+        origWarn("[apcore-mcp] AsyncTaskManager shutdown failed:", err);
+      }
+    }
     console.debug = origDebug;
     console.info = origInfo;
     console.warn = origWarn;

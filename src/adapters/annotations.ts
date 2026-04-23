@@ -91,8 +91,18 @@ export class AnnotationMapper {
       parts.push(`streaming=${annotations.streaming}`);
     if ((annotations.cacheable ?? false) !== DEFAULT_ANNOTATIONS.cacheable)
       parts.push(`cacheable=${annotations.cacheable}`);
+    if (annotations.cacheTtl !== undefined && annotations.cacheTtl !== null)
+      parts.push(`cache_ttl=${annotations.cacheTtl}`);
+    if (
+      annotations.cacheKeyFields !== undefined &&
+      annotations.cacheKeyFields !== null &&
+      annotations.cacheKeyFields.length > 0
+    )
+      parts.push(`cache_key_fields=[${annotations.cacheKeyFields.join(",")}]`);
     if ((annotations.paginated ?? false) !== DEFAULT_ANNOTATIONS.paginated)
       parts.push(`paginated=${annotations.paginated}`);
+    if (annotations.paginationStyle !== undefined && annotations.paginationStyle !== null)
+      parts.push(`pagination_style=${annotations.paginationStyle}`);
 
     // Append mcp_-prefixed extra fields
     const extraLines: string[] = [];

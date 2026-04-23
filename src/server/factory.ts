@@ -26,6 +26,8 @@ import { AnnotationMapper } from "../adapters/annotations.js";
 import type { Registry, ModuleDescriptor, JsonSchema } from "../types.js";
 import type { ExecutionRouter } from "./router.js";
 import type { HandleCallExtra } from "./router.js";
+import { buildTraceparent } from "./traceContext.js";
+import { APCORE_META_TOOL_PREFIX, type AsyncTaskBridge } from "./asyncTaskBridge.js";
 
 /** Metadata keys for AI intent annotations appended to tool descriptions. */
 const AI_INTENT_KEYS = ["x-when-to-use", "x-when-not-to-use", "x-common-mistakes", "x-workflow-hints"] as const;
@@ -174,6 +176,9 @@ export class MCPServerFactory {
    *
    * Iterates over registry.list(), gets each definition, and builds tools.
    * Skips modules that return null definitions or throw errors (with console.warn).
+   *
+   * Reserved: module ids starting with `__apcore_` collide with the async
+   * task bridge meta-tool namespace and are rejected with a console.error.
    */
   buildTools(registry: Registry, options?: BuildToolsOptions): Tool[] {
     const tools: Tool[] = [];
@@ -183,6 +188,12 @@ export class MCPServerFactory {
     });
 
     for (const moduleId of moduleIds) {
+      if (moduleId.startsWith(APCORE_META_TOOL_PREFIX)) {
+        throw new Error(
+          `Reserved module id "${moduleId}" — ids prefixed with ` +
+            `"${APCORE_META_TOOL_PREFIX}" are reserved for apcore-mcp meta-tools.`,
+        );
+      }
       try {
         const descriptor = registry.getDefinition(moduleId);
         if (descriptor === null) {
@@ -200,6 +211,27 @@ export class MCPServerFactory {
     }
 
     return tools;
+  }
+
+  /**
+   * Merge the four async-task meta-tools onto an existing tool list. Called
+   * after `buildTools()` when an `AsyncTaskBridge` is active so meta-tools
+   * are advertised via `tools/list`.
+   */
+  attachAsyncMetaTools(tools: Tool[], bridge: AsyncTaskBridge | undefined): Tool[] {
+    if (!bridge || !bridge.enabled) return tools;
+    const metaTools = bridge.buildMetaTools().map((mt) => ({
+      name: mt.name,
+      description: mt.description,
+      inputSchema: mt.inputSchema as Tool["inputSchema"],
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    })) as Tool[];
+    return [...tools, ...metaTools];
   }
 
   /**
@@ -316,7 +348,19 @@ export class MCPServerFactory {
         };
       }
 
-      const [content, isError, _traceId] = await router.handleCall(
+      // F-042: W3C trace_context ↔ MCP `_meta.traceparent` inbound propagation.
+      // Prefer request params `_meta.traceparent`; fall back to transport extra.
+      const rawTraceparent =
+        (reqMeta?.["traceparent"] as string | undefined) ??
+        (extra?._meta as { traceparent?: string } | undefined)?.traceparent;
+      if (typeof rawTraceparent === "string" && rawTraceparent.length > 0) {
+        handleCallExtra._meta = {
+          ...(handleCallExtra._meta ?? {}),
+          traceparent: rawTraceparent,
+        };
+      }
+
+      const [content, isError, traceId] = await router.handleCall(
         name,
         toolArgs,
         handleCallExtra,
@@ -332,9 +376,20 @@ export class MCPServerFactory {
         throw new Error(textContents[0]?.text ?? "Unknown error");
       }
 
-      const result: CallToolResult = {
+      const result: CallToolResult & { _meta?: Record<string, unknown> } = {
         content: textContents,
       };
+
+      // F-042 outbound: attach `_meta.traceparent` so downstream MCP callers
+      // can continue the same W3C trace chain. We emit it whenever we have a
+      // traceId (i.e. a context was created) — the client can then thread it
+      // into any follow-up tool invocations.
+      if (traceId) {
+        result._meta = {
+          ...(result._meta ?? {}),
+          traceparent: buildTraceparent(traceId),
+        };
+      }
 
       return result;
     });
