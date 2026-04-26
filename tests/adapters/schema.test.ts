@@ -32,7 +32,7 @@ describe("SchemaConverter", () => {
       required: ["name", "role"],
     });
 
-    const result = converter.convertInputSchema(descriptor);
+    const result = converter.convertInputSchema(descriptor, { strict: false });
 
     expect(result.type).toBe("object");
     expect(result.required).toEqual(["name", "role"]);
@@ -64,7 +64,7 @@ describe("SchemaConverter", () => {
       },
     });
 
-    const result = converter.convertInputSchema(descriptor);
+    const result = converter.convertInputSchema(descriptor, { strict: false });
 
     expect(result["$defs"]).toBeUndefined();
     expect(result.properties).toBeDefined();
@@ -104,7 +104,7 @@ describe("SchemaConverter", () => {
       },
     });
 
-    const result = converter.convertInputSchema(descriptor);
+    const result = converter.convertInputSchema(descriptor, { strict: false });
 
     expect(result["$defs"]).toBeUndefined();
 
@@ -147,7 +147,7 @@ describe("SchemaConverter", () => {
       },
     });
 
-    expect(() => converter.convertInputSchema(descriptor)).toThrow(
+    expect(() => converter.convertInputSchema(descriptor, { strict: false })).toThrow(
       "Circular $ref detected",
     );
   });
@@ -175,7 +175,7 @@ describe("SchemaConverter", () => {
       },
     });
 
-    expect(() => converter.convertInputSchema(descriptor)).toThrow(
+    expect(() => converter.convertInputSchema(descriptor, { strict: false })).toThrow(
       "Circular $ref detected",
     );
   });
@@ -204,7 +204,7 @@ describe("SchemaConverter", () => {
       },
     });
 
-    const result = converter.convertInputSchema(descriptor);
+    const result = converter.convertInputSchema(descriptor, { strict: false });
 
     const expected = { type: "object", properties: { value: { type: "string" } } };
     const props = result.properties as Record<string, Record<string, unknown>>;
@@ -219,7 +219,7 @@ describe("SchemaConverter", () => {
   it("converts empty inputSchema to {type: 'object', properties: {}}", () => {
     const descriptor = makeDescriptor({});
 
-    const result = converter.convertInputSchema(descriptor);
+    const result = converter.convertInputSchema(descriptor, { strict: false });
 
     expect(result).toEqual({ type: "object", properties: {} });
   });
@@ -239,7 +239,7 @@ describe("SchemaConverter", () => {
       },
     });
 
-    const result = converter.convertInputSchema(descriptor);
+    const result = converter.convertInputSchema(descriptor, { strict: false });
 
     expect(result["$defs"]).toBeUndefined();
     const props = result.properties as Record<string, Record<string, unknown>>;
@@ -268,7 +268,7 @@ describe("SchemaConverter", () => {
       },
     });
 
-    const result = converter.convertInputSchema(descriptor);
+    const result = converter.convertInputSchema(descriptor, { strict: false });
 
     expect(result["$defs"]).toBeUndefined();
     const props = result.properties as Record<string, Record<string, unknown>>;
@@ -311,7 +311,7 @@ describe("SchemaConverter", () => {
       },
     });
 
-    const result = converter.convertInputSchema(descriptor);
+    const result = converter.convertInputSchema(descriptor, { strict: false });
 
     expect(result["$defs"]).toBeUndefined();
     const props = result.properties as Record<string, Record<string, unknown>>;
@@ -337,7 +337,7 @@ describe("SchemaConverter", () => {
       required: ["name"],
     });
 
-    const result = converter.convertInputSchema(descriptor);
+    const result = converter.convertInputSchema(descriptor, { strict: false });
 
     expect(result.type).toBe("object");
     const props = result.properties as Record<string, Record<string, unknown>>;
@@ -367,7 +367,7 @@ describe("SchemaConverter", () => {
     const snapshotBefore = JSON.parse(JSON.stringify(originalSchema));
 
     const descriptor = makeDescriptor(originalSchema);
-    converter.convertInputSchema(descriptor);
+    converter.convertInputSchema(descriptor, { strict: false });
 
     // Original should be untouched
     expect(originalSchema).toEqual(snapshotBefore);
@@ -398,7 +398,7 @@ describe("SchemaConverter", () => {
       },
     );
 
-    const result = converter.convertOutputSchema(descriptor);
+    const result = converter.convertOutputSchema(descriptor, { strict: false });
 
     expect(result["$defs"]).toBeUndefined();
     const props = result.properties as Record<string, Record<string, unknown>>;
@@ -421,7 +421,7 @@ describe("SchemaConverter", () => {
       $defs: {},
     });
 
-    expect(() => converter.convertInputSchema(descriptor)).toThrow(
+    expect(() => converter.convertInputSchema(descriptor, { strict: false })).toThrow(
       "Invalid $ref format",
     );
   });
@@ -438,7 +438,7 @@ describe("SchemaConverter", () => {
       },
     });
 
-    expect(() => converter.convertInputSchema(descriptor)).toThrow(
+    expect(() => converter.convertInputSchema(descriptor, { strict: false })).toThrow(
       "$ref not found",
     );
   });
@@ -453,7 +453,7 @@ describe("SchemaConverter", () => {
       $defs: {},
     });
 
-    expect(() => converter.convertInputSchema(descriptor)).toThrow(
+    expect(() => converter.convertInputSchema(descriptor, { strict: false })).toThrow(
       "Invalid $ref format",
     );
   });
@@ -490,7 +490,7 @@ describe("SchemaConverter", () => {
       },
     });
 
-    const result = converter.convertInputSchema(descriptor);
+    const result = converter.convertInputSchema(descriptor, { strict: false });
 
     expect(result.type).toBe("object");
     const props = result.properties as Record<string, Record<string, unknown>>;

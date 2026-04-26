@@ -11,6 +11,14 @@ export interface ConvertSchemaOptions {
   strict?: boolean;
 }
 
+/**
+ * [SC-1] Maximum recursion depth for $ref inlining and schema descent.
+ * Matches Python's _MAX_REF_DEPTH and Rust's MAX_REF_DEPTH (32 levels).
+ * Prevents stack overflow on pathological-but-legal acyclic schemas
+ * (e.g. a chain of 100,000 distinct $defs each pointing to the next).
+ */
+const MAX_REF_DEPTH = 32;
+
 export class SchemaConverter {
   /**
    * Convert a module descriptor's inputSchema to an MCP-compatible schema.
@@ -44,12 +52,17 @@ export class SchemaConverter {
     delete copied["$defs"];
 
     // Inline all $ref references (with circular ref detection)
-    const inlined = this._inlineRefs(copied, defs, new Set<string>()) as JsonSchema;
+    const inlined = this._inlineRefs(copied, defs, new Set<string>(), 0) as JsonSchema;
 
     // Ensure the top-level schema has type: "object"
     const normalized = this._ensureObjectType(inlined);
 
-    if (options?.strict) {
+    // [SC-11] Default strict=true to match Python and Rust SDKs. Pre-fix
+    // TS defaulted to false (undefined → falsy), silently producing
+    // permissive schemas. Callers that explicitly want non-strict must
+    // now pass `{ strict: false }`.
+    const strict = options?.strict ?? true;
+    if (strict) {
       return this._applyStrict(normalized) as JsonSchema;
     }
     return normalized;
@@ -164,9 +177,18 @@ export class SchemaConverter {
     node: unknown,
     defs: Record<string, JsonSchema>,
     activeRefs: Set<string>,
+    depth: number = 0,
   ): unknown {
+    // [SC-1] Cap recursion at MAX_REF_DEPTH to match Python+Rust.
+    if (depth > MAX_REF_DEPTH) {
+      throw new Error(
+        `Maximum schema recursion depth (${MAX_REF_DEPTH}) exceeded`,
+      );
+    }
     if (Array.isArray(node)) {
-      return node.map((item) => this._inlineRefs(item, defs, activeRefs));
+      return node.map((item) =>
+        this._inlineRefs(item, defs, activeRefs, depth + 1),
+      );
     }
 
     if (node !== null && typeof node === "object") {
@@ -185,10 +207,14 @@ export class SchemaConverter {
 
         // Track this ref as active during recursion
         activeRefs.add(refPath);
-        const result = this._inlineRefs(resolved, defs, activeRefs);
-        activeRefs.delete(refPath);
-
-        return result;
+        try {
+          const result = this._inlineRefs(resolved, defs, activeRefs, depth + 1);
+          return result;
+        } finally {
+          // [SC-2] Use try/finally so an exception mid-recursion doesn't
+          // leave activeRefs poisoned for subsequent sibling branches.
+          activeRefs.delete(refPath);
+        }
       }
 
       // Otherwise, recurse into each key (skip $defs)
@@ -197,7 +223,7 @@ export class SchemaConverter {
         if (key === "$defs") {
           continue;
         }
-        result[key] = this._inlineRefs(value, defs, activeRefs);
+        result[key] = this._inlineRefs(value, defs, activeRefs, depth + 1);
       }
       return result;
     }

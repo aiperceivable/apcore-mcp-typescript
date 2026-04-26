@@ -9,7 +9,7 @@
 import type { ModuleAnnotations, McpAnnotationsDict } from "../types.js";
 
 /** Default annotation values matching apcore's ModuleAnnotations defaults. */
-const DEFAULT_ANNOTATIONS: Record<string, boolean> = {
+const DEFAULT_ANNOTATIONS = {
   readonly: false,
   destructive: false,
   idempotent: false,
@@ -18,7 +18,11 @@ const DEFAULT_ANNOTATIONS: Record<string, boolean> = {
   streaming: false,
   cacheable: false,
   paginated: false,
-};
+  // [AM-2] Numeric/string defaults for cache_ttl and pagination_style.
+  // Spec: default values omitted from suffix.
+  cacheTtl: 0,
+  paginationStyle: "cursor",
+} as const;
 
 export class AnnotationMapper {
   /**
@@ -91,7 +95,14 @@ export class AnnotationMapper {
       parts.push(`streaming=${annotations.streaming}`);
     if ((annotations.cacheable ?? false) !== DEFAULT_ANNOTATIONS.cacheable)
       parts.push(`cacheable=${annotations.cacheable}`);
-    if (annotations.cacheTtl !== undefined && annotations.cacheTtl !== null)
+    // [AM-2] Skip cache_ttl when equal to default (0). Spec: "Default
+    // values omitted from suffix". Pre-fix TS emitted any non-null
+    // value including the default, diverging from Python+Rust.
+    if (
+      annotations.cacheTtl !== undefined &&
+      annotations.cacheTtl !== null &&
+      annotations.cacheTtl !== DEFAULT_ANNOTATIONS.cacheTtl
+    )
       parts.push(`cache_ttl=${annotations.cacheTtl}`);
     if (
       annotations.cacheKeyFields !== undefined &&
@@ -101,7 +112,12 @@ export class AnnotationMapper {
       parts.push(`cache_key_fields=[${annotations.cacheKeyFields.join(",")}]`);
     if ((annotations.paginated ?? false) !== DEFAULT_ANNOTATIONS.paginated)
       parts.push(`paginated=${annotations.paginated}`);
-    if (annotations.paginationStyle !== undefined && annotations.paginationStyle !== null)
+    // [AM-2] Skip pagination_style when equal to default ("cursor").
+    if (
+      annotations.paginationStyle !== undefined &&
+      annotations.paginationStyle !== null &&
+      annotations.paginationStyle !== DEFAULT_ANNOTATIONS.paginationStyle
+    )
       parts.push(`pagination_style=${annotations.paginationStyle}`);
 
     // Append mcp_-prefixed extra fields

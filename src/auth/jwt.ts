@@ -98,6 +98,11 @@ export class JWTAuthenticator implements Authenticator {
     try {
       const verifyOptions: jwt.VerifyOptions = {
         algorithms: this._algorithms,
+        // [JWT-3] Spec mandates ~30s clock-skew leeway. jsonwebtoken's
+        // default clockTolerance is 0; without this, NTP drift between
+        // issuer and server produces spurious 401s on tokens valid
+        // within ±30s of expiry/nbf.
+        clockTolerance: 30,
       };
       if (this._audience) verifyOptions.audience = this._audience;
       if (this._issuer) verifyOptions.issuer = this._issuer;

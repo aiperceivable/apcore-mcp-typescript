@@ -188,7 +188,9 @@ describe("JWTAuthenticator", () => {
 
   it("returns null for expired token", async () => {
     const auth = new JWTAuthenticator({ secret: SECRET });
-    const token = signToken({ sub: "user-1" }, SECRET, { expiresIn: -10 });
+    // [JWT-3] Authenticator now applies 30s clock-skew leeway. Use a
+    // token expired 60s ago so it's past the leeway window.
+    const token = signToken({ sub: "user-1" }, SECRET, { expiresIn: -60 });
     const req = makeReq({ authorization: `Bearer ${token}` });
 
     const identity = await auth.authenticate(req);
