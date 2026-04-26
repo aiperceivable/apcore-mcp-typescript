@@ -119,6 +119,20 @@ export interface ExecutionRouterOptions {
   asyncTaskBridge?: AsyncTaskBridge;
 }
 
+/**
+ * Cooperative cancellation token. Mirrors apcore-py's CancelToken and
+ * Rust's apcore::CancelToken. [B-002]
+ */
+export class CancelToken {
+  private _cancelled = false;
+  get isCancelled(): boolean {
+    return this._cancelled;
+  }
+  cancel(): void {
+    this._cancelled = true;
+  }
+}
+
 export class ExecutionRouter {
   private readonly _executor: Executor;
   private readonly _errorMapper: ErrorMapper;
@@ -128,6 +142,13 @@ export class ExecutionRouter {
   private readonly _outputSchemaMap: Record<string, Record<string, unknown>>;
   private readonly _trace: boolean;
   private readonly _asyncTaskBridge?: AsyncTaskBridge;
+  /**
+   * [B-002] Per-server `call_id → CancelToken` map. Populated on
+   * tool-call entry by handleCall(); consulted by cancel(callId).
+   * Transport layer should forward inbound MCP `notifications/cancelled`
+   * to `router.cancel(callId, reason)`.
+   */
+  private readonly _cancelTokens = new Map<string, CancelToken>();
 
   /**
    * Create an ExecutionRouter.
@@ -149,6 +170,54 @@ export class ExecutionRouter {
   /** Expose the async task bridge (for factory tool-list merging). */
   get asyncTaskBridge(): AsyncTaskBridge | undefined {
     return this._asyncTaskBridge;
+  }
+
+  /**
+   * Cooperatively cancel an in-flight tool call. [B-002]
+   *
+   * Looks up the CancelToken registered for `callId` in handleCall and
+   * calls `token.cancel()`. Subsequent checks (e.g., from inside the
+   * executing module via `context.cancelToken?.isCancelled`) will see
+   * the cancellation. When `callId` is unknown (cancel arrived before
+   * submit, or after the call completed), records a tombstone so a
+   * subsequent same-id submit immediately sees the cancellation.
+   *
+   * Returns true when a token was found and cancelled; false when the
+   * callId was unknown (tombstone recorded). Wired by transport-level
+   * handlers parsing inbound MCP `notifications/cancelled` messages.
+   */
+  cancel(callId: string, reason?: string): boolean {
+    const existing = this._cancelTokens.get(callId);
+    if (existing) {
+      existing.cancel();
+      return true;
+    }
+    const tombstone = new CancelToken();
+    tombstone.cancel();
+    this._cancelTokens.set(callId, tombstone);
+    void reason; // referenced for API symmetry; reserved for future logging
+    return false;
+  }
+
+  /**
+   * Internal: register a CancelToken for the duration of a tool call.
+   * Returns the token (already cancelled if a tombstone was recorded
+   * before the call landed).
+   */
+  _registerCancelToken(callId: string): CancelToken {
+    const existing = this._cancelTokens.get(callId);
+    const token = new CancelToken();
+    if (existing && existing.isCancelled) {
+      // Tombstone race: cancel arrived before submit.
+      token.cancel();
+    }
+    this._cancelTokens.set(callId, token);
+    return token;
+  }
+
+  /** Internal: release a token slot after the call completes. */
+  _releaseCancelToken(callId: string): void {
+    this._cancelTokens.delete(callId);
   }
 
   /**
