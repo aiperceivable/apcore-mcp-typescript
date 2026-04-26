@@ -339,10 +339,20 @@ export class ExecutionRouter {
         }
         if (this._asyncTaskBridge.isAsyncModule(descriptor)) {
           try {
+            // [A-D-018] Forward progressToken so the bridge records it for
+            // terminal-state fan-out via getProgressToken().
+            const submitProgressToken = extra?._meta?.progressToken;
             const envelope = await this._asyncTaskBridge.submit(
               toolName,
               args,
               context,
+              {
+                progressToken:
+                  typeof submitProgressToken === "string" ||
+                  typeof submitProgressToken === "number"
+                    ? submitProgressToken
+                    : undefined,
+              },
             );
             const content: TextContentDict[] = [
               { type: "text", text: this._formatResult(envelope) },

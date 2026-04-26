@@ -382,6 +382,21 @@ export class MCPServerFactory {
         };
       }
 
+      // [A-D-014] Auth-identity propagation: thread the authenticated
+      // identity from the AsyncLocalStorage (set by AuthMiddleware) into
+      // the call extra so the router can attach it to the apcore Context.
+      // Mirrors Python's factory pattern (factory.py:232-234) which reads
+      // auth_identity_var.get() and forwards into extra["identity"].
+      try {
+        const { getCurrentIdentity } = await import("../auth/storage.js");
+        const identity = getCurrentIdentity();
+        if (identity !== null) {
+          (handleCallExtra as HandleCallExtra & { identity?: unknown }).identity = identity;
+        }
+      } catch {
+        // auth module not available — skip silently (auth is optional).
+      }
+
       const [content, isError, traceId] = await router.handleCall(
         name,
         toolArgs,

@@ -110,6 +110,18 @@ export class AsyncTaskBridge {
   private readonly _redactSensitive?: AsyncTaskBridgeOptions["redactSensitive"];
   private readonly _outputSchemaMap: Record<string, Record<string, unknown>>;
   private readonly _descriptorLookup?: AsyncTaskBridgeOptions["descriptorLookup"];
+  /**
+   * Maps task_id → progressToken recorded at submit time so terminal-
+   * state notifications can be fanned out via the original token.
+   * [A-D-018]
+   */
+  private readonly _progressTokens = new Map<string, string | number>();
+  /**
+   * Maps session/connection key → list of task ids launched from that
+   * session so {@link cancelSessionTasks} can cancel them on transport
+   * disconnect. Mirrors Rust's `session_tasks` map. [A-D-018]
+   */
+  private readonly _sessionTasks = new Map<string, string[]>();
 
   constructor(manager: AsyncTaskManagerLike, options?: AsyncTaskBridgeOptions) {
     this._manager = manager;
@@ -157,9 +169,59 @@ export class AsyncTaskBridge {
     moduleId: string,
     inputs: Record<string, unknown>,
     context?: unknown | null,
+    options?: {
+      /** Optional MCP progress token (recorded for fan-out). [A-D-018] */
+      progressToken?: string | number;
+      /** Optional session/connection key (recorded for cancelSessionTasks). [A-D-018] */
+      sessionKey?: string;
+    },
   ): Promise<{ task_id: string; status: "pending" }> {
     const taskId = await this._manager.submit(moduleId, inputs, context ?? null);
+    if (options?.progressToken !== undefined) {
+      this._progressTokens.set(taskId, options.progressToken);
+    }
+    if (options?.sessionKey !== undefined) {
+      const list = this._sessionTasks.get(options.sessionKey) ?? [];
+      list.push(taskId);
+      this._sessionTasks.set(options.sessionKey, list);
+    }
     return { task_id: taskId, status: "pending" };
+  }
+
+  /**
+   * Look up the progress token recorded for a task at submit time.
+   *
+   * Used by transport / terminal-notification dispatch to route
+   * `notifications/progress` to the original caller. Returns undefined
+   * when no token was registered. [A-D-018]
+   */
+  getProgressToken(taskId: string): string | number | undefined {
+    return this._progressTokens.get(taskId);
+  }
+
+  /**
+   * Cancel every async task currently tracked under `sessionKey`.
+   *
+   * Used by the transport layer on client disconnect to ensure
+   * long-running tasks bound to that session don't keep running after
+   * the client has gone. Returns the number of tasks cancelled.
+   * Mirrors Rust's `AsyncTaskBridge::cancel_session_tasks`. [A-D-018]
+   */
+  async cancelSessionTasks(sessionKey: string): Promise<number> {
+    const taskIds = this._sessionTasks.get(sessionKey);
+    if (!taskIds || taskIds.length === 0) return 0;
+    let cancelled = 0;
+    for (const taskId of taskIds) {
+      try {
+        const ok = await this._manager.cancel(taskId);
+        if (ok) cancelled++;
+      } catch {
+        // Cancel may fail if the task has already completed; swallow.
+      }
+      this._progressTokens.delete(taskId);
+    }
+    this._sessionTasks.delete(sessionKey);
+    return cancelled;
   }
 
   /**
