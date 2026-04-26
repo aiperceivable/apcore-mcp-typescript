@@ -430,6 +430,31 @@ export class TransportManager {
       sessionIdGenerator: () => crypto.randomUUID(),
     });
 
+    // [A-D-018] StreamableHTTP wiring: when the transport closes (server
+    // shutdown or SDK-internal session expiry), cancel any session-bound
+    // async tasks via the bridge. Mirrors the SSE-side onclose handler.
+    // Note: the SDK exposes a single onclose for the whole transport,
+    // not per-session — this fires once when the transport tears down,
+    // not on individual client disconnects. For per-client cancellation
+    // we'd need per-session-aware hooks the SDK does not currently
+    // provide. The transport-shutdown path is still a real cleanup
+    // point worth wiring.
+    if (this._asyncTaskBridge) {
+      const existing = transport.onclose;
+      transport.onclose = () => {
+        const sid = transport.sessionId;
+        if (sid && this._asyncTaskBridge) {
+          this._asyncTaskBridge.cancelSessionTasks(sid).catch((err: unknown) => {
+            console.warn(
+              `cancelSessionTasks failed for streamable-http session ${sid}:`,
+              err,
+            );
+          });
+        }
+        if (existing) existing();
+      };
+    }
+
     await server.connect(transport);
 
     const handler = this._createStreamableHandler(
@@ -600,6 +625,31 @@ export class TransportManager {
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => crypto.randomUUID(),
     });
+
+    // [A-D-018] StreamableHTTP wiring: when the transport closes (server
+    // shutdown or SDK-internal session expiry), cancel any session-bound
+    // async tasks via the bridge. Mirrors the SSE-side onclose handler.
+    // Note: the SDK exposes a single onclose for the whole transport,
+    // not per-session — this fires once when the transport tears down,
+    // not on individual client disconnects. For per-client cancellation
+    // we'd need per-session-aware hooks the SDK does not currently
+    // provide. The transport-shutdown path is still a real cleanup
+    // point worth wiring.
+    if (this._asyncTaskBridge) {
+      const existing = transport.onclose;
+      transport.onclose = () => {
+        const sid = transport.sessionId;
+        if (sid && this._asyncTaskBridge) {
+          this._asyncTaskBridge.cancelSessionTasks(sid).catch((err: unknown) => {
+            console.warn(
+              `cancelSessionTasks failed for streamable-http session ${sid}:`,
+              err,
+            );
+          });
+        }
+        if (existing) existing();
+      };
+    }
 
     await server.connect(transport);
 
