@@ -84,6 +84,14 @@ export interface HandleCallExtra {
    * [A-D-018]
    */
   sessionId?: string;
+  /**
+   * Per-call id for cooperative cancellation. When omitted, the router
+   * derives one from `_meta.progressToken` or generates a UUID. Wired
+   * by transport-level handlers parsing inbound MCP
+   * `notifications/cancelled` and forwarding to `router.cancel(callId)`.
+   * [B-002]
+   */
+  callId?: string | number;
 }
 
 /** Options for the ExecutionRouter constructor. */
@@ -132,6 +140,14 @@ export class CancelToken {
     this._cancelled = true;
   }
 }
+
+/**
+ * [B-002] Maximum number of cancel-token entries (active + tombstones)
+ * kept in the per-router map. When exceeded, oldest entries are evicted
+ * in insertion order. Without this cap, tombstones from cancels on
+ * unknown call_ids would accumulate unboundedly.
+ */
+const CANCEL_TOKENS_MAX = 4096;
 
 export class ExecutionRouter {
   private readonly _executor: Executor;
@@ -189,12 +205,17 @@ export class ExecutionRouter {
   cancel(callId: string, reason?: string): boolean {
     const existing = this._cancelTokens.get(callId);
     if (existing) {
+      // Re-insert to refresh insertion order (Map preserves it).
+      this._cancelTokens.delete(callId);
+      this._cancelTokens.set(callId, existing);
       existing.cancel();
+      this._evictCancelTokens();
       return true;
     }
     const tombstone = new CancelToken();
     tombstone.cancel();
     this._cancelTokens.set(callId, tombstone);
+    this._evictCancelTokens();
     void reason; // referenced for API symmetry; reserved for future logging
     return false;
   }
@@ -211,13 +232,28 @@ export class ExecutionRouter {
       // Tombstone race: cancel arrived before submit.
       token.cancel();
     }
+    // Re-insert to refresh ordering (Map preserves insertion order).
+    this._cancelTokens.delete(callId);
     this._cancelTokens.set(callId, token);
+    this._evictCancelTokens();
     return token;
   }
 
   /** Internal: release a token slot after the call completes. */
   _releaseCancelToken(callId: string): void {
     this._cancelTokens.delete(callId);
+  }
+
+  /**
+   * [B-002] Cap the cancel-tokens map at CANCEL_TOKENS_MAX. Map preserves
+   * insertion order, so iterator gives oldest first.
+   */
+  private _evictCancelTokens(): void {
+    while (this._cancelTokens.size > CANCEL_TOKENS_MAX) {
+      const oldest = this._cancelTokens.keys().next().value;
+      if (oldest === undefined) break;
+      this._cancelTokens.delete(oldest);
+    }
   }
 
   /**
@@ -316,6 +352,32 @@ export class ExecutionRouter {
     toolName: string,
     args: Record<string, unknown>,
     extra?: HandleCallExtra,
+  ): Promise<CallResult> {
+    // [B-002] Register a CancelToken for this call so that an inbound
+    // MCP `notifications/cancelled` (forwarded by the transport into
+    // `router.cancel(callId, reason)`) cooperatively cancels in-flight
+    // work. The callId is sourced from `extra.callId`,
+    // `_meta.progressToken`, or generated. Released in `finally`.
+    const rawCallId =
+      (extra as { callId?: string | number } | undefined)?.callId ??
+      extra?._meta?.progressToken;
+    const callId =
+      typeof rawCallId === "string" || typeof rawCallId === "number"
+        ? String(rawCallId)
+        : crypto.randomUUID();
+    const cancelToken = this._registerCancelToken(callId);
+    try {
+      return await this._handleCallInner(toolName, args, extra, cancelToken);
+    } finally {
+      this._releaseCancelToken(callId);
+    }
+  }
+
+  private async _handleCallInner(
+    toolName: string,
+    args: Record<string, unknown>,
+    extra: HandleCallExtra | undefined,
+    _cancelToken: CancelToken,
   ): Promise<CallResult> {
     try {
       // ── Build context with MCP callbacks ──────────────────────────────
