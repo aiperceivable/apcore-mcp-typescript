@@ -127,7 +127,10 @@ describe("Transport auth integration (streamable-http)", () => {
     });
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.error).toContain("Authentication required");
+    // [JWT-2] 401 body shape unified with Python+Rust:
+    // {error: "Unauthorized", detail: "Missing or invalid Bearer token"}
+    expect(body.error).toBe("Unauthorized");
+    expect(body.detail).toContain("Bearer");
   });
 
   it("POST /mcp proceeds with valid token", async () => {

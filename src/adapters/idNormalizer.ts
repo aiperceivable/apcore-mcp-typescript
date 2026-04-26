@@ -1,8 +1,14 @@
 /**
- * ModuleIDNormalizer - Converts between apcore module IDs and MCP tool names.
+ * ModuleIDNormalizer - Converts between apcore module IDs and OpenAI tool names.
  *
- * apcore uses dot-separated module IDs (e.g. "myorg.tools.search")
- * while MCP tool names use hyphens (e.g. "myorg-tools-search").
+ * apcore uses dot-separated module IDs (e.g. "myorg.tools.search").
+ *
+ * [MID-6] MCP tool names accept dots and hyphens (and dot-notation is the
+ * apcore convention), so this normalizer is intended ONLY for the OpenAI
+ * function-calling format, which restricts function names to `[a-zA-Z0-9_-]`.
+ * Pre-fix doc here claimed "MCP tool names use hyphens" — that is incorrect
+ * and contradicts the spec at `docs/features/openai-converter.md`. This
+ * normalizer must NOT be applied on the MCP path.
  */
 
 import { MODULE_ID_PATTERN } from "../types.js";

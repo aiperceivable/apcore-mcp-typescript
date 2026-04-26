@@ -321,8 +321,17 @@ export class TransportManager {
       if (!requireAuth) {
         return { identity: null, blocked: false };
       }
+      // [JWT-2] Unify 401 body shape with Python+Rust:
+      // {error: "Unauthorized", detail: "Missing or invalid Bearer token"}.
+      // Pre-fix TS emitted {error: "Authentication required"} which
+      // diverged from the other two SDKs' shape.
       res.writeHead(401, { "Content-Type": "application/json", "WWW-Authenticate": "Bearer" });
-      res.end(JSON.stringify({ error: "Authentication required" }));
+      res.end(
+        JSON.stringify({
+          error: "Unauthorized",
+          detail: "Missing or invalid Bearer token",
+        }),
+      );
       return { identity: null, blocked: true };
     }
 
