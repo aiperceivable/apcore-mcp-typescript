@@ -76,6 +76,14 @@ export interface HandleCallExtra {
     traceparent?: string;
   };
   versionHint?: string;
+  /**
+   * Transport session id (e.g. SSEServerTransport.sessionId or
+   * StreamableHTTPServerTransport's per-session UUID). When present and
+   * the bridge is wired, it's recorded so transport-disconnect can call
+   * `cancelSessionTasks(sessionKey)` for cooperative cancellation.
+   * [A-D-018]
+   */
+  sessionId?: string;
 }
 
 /** Options for the ExecutionRouter constructor. */
@@ -339,8 +347,10 @@ export class ExecutionRouter {
         }
         if (this._asyncTaskBridge.isAsyncModule(descriptor)) {
           try {
-            // [A-D-018] Forward progressToken so the bridge records it for
-            // terminal-state fan-out via getProgressToken().
+            // [A-D-018] Forward progressToken AND sessionKey so the bridge
+            // records both for terminal-state fan-out (progressToken) and
+            // transport-disconnect cancellation (sessionKey via
+            // cancelSessionTasks).
             const submitProgressToken = extra?._meta?.progressToken;
             const envelope = await this._asyncTaskBridge.submit(
               toolName,
@@ -352,6 +362,7 @@ export class ExecutionRouter {
                   typeof submitProgressToken === "number"
                     ? submitProgressToken
                     : undefined,
+                sessionKey: extra?.sessionId,
               },
             );
             const content: TextContentDict[] = [

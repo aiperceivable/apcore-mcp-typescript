@@ -359,6 +359,9 @@ export class MCPServerFactory {
         _meta: extra?._meta
           ? { progressToken: extra._meta.progressToken }
           : undefined,
+        // [A-D-018] Forward the transport's per-session id so the bridge
+        // can record it for cancelSessionTasks() on transport disconnect.
+        sessionId: (extra as { sessionId?: string } | undefined)?.sessionId,
       };
 
       const reqMeta = (request.params as { _meta?: Record<string, unknown> })._meta;

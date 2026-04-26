@@ -527,6 +527,12 @@ export async function serve(
   if (obsStack.usageCollector) {
     transportManager.setUsageCollector(obsStack.usageCollector);
   }
+  // [A-D-018] Wire the bridge so transport-level disconnect events
+  // trigger cancelSessionTasks(sessionId) for cooperative cancellation.
+  // Defensive call — older mocks/test doubles may lack the setter.
+  if (asyncBridge && typeof transportManager.setAsyncTaskBridge === "function") {
+    transportManager.setAsyncTaskBridge(asyncBridge);
+  }
   if (authenticator) {
     transportManager.setAuthenticator(authenticator);
   }
@@ -816,6 +822,11 @@ export async function asyncServe(
   }
   if (obsStack.usageCollector) {
     transportManager.setUsageCollector(obsStack.usageCollector);
+  }
+  // [A-D-018] Same wiring as serve() — transport-level disconnect
+  // triggers cooperative cancellation of session-bound async tasks.
+  if (asyncBridge && typeof transportManager.setAsyncTaskBridge === "function") {
+    transportManager.setAsyncTaskBridge(asyncBridge);
   }
   if (authenticator) {
     transportManager.setAuthenticator(authenticator);

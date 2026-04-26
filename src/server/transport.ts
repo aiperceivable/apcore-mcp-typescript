@@ -113,6 +113,15 @@ export class TransportManager {
   private _requireAuth?: boolean;
 
   /**
+   * Optional AsyncTaskBridge — used to cancel session-bound async tasks
+   * on transport disconnect via `cancelSessionTasks(sessionId)`.
+   * [A-D-018]
+   */
+  private _asyncTaskBridge?: {
+    cancelSessionTasks(sessionKey: string): Promise<number>;
+  };
+
+  /**
    * Set the number of registered modules/tools.
    *
    * @param count - The number of modules
@@ -181,6 +190,20 @@ export class TransportManager {
   ): void {
     this._explorerNodeHandler = handler;
     this._explorerPrefix = prefix;
+  }
+
+  /**
+   * Wire an AsyncTaskBridge into the transport so client-disconnect events
+   * trigger `cancelSessionTasks(sessionId)` for cooperative cancellation
+   * of long-running async tasks bound to that session. Mirrors Rust's
+   * `TransportManager::set_cancel_handler`. [A-D-018]
+   *
+   * @param bridge - Object with a `cancelSessionTasks(sessionKey)` method
+   */
+  setAsyncTaskBridge(bridge: {
+    cancelSessionTasks(sessionKey: string): Promise<number>;
+  }): void {
+    this._asyncTaskBridge = bridge;
   }
 
   /**
@@ -478,6 +501,18 @@ export class TransportManager {
 
           transport.onclose = () => {
             transports.delete(sessionId);
+            // [A-D-018] Cooperatively cancel any async tasks bound to
+            // this session when the client disconnects.
+            if (this._asyncTaskBridge) {
+              this._asyncTaskBridge
+                .cancelSessionTasks(sessionId)
+                .catch((err: unknown) => {
+                  console.warn(
+                    `cancelSessionTasks failed for session ${sessionId}:`,
+                    err,
+                  );
+                });
+            }
           };
 
           await server.connect(transport);
