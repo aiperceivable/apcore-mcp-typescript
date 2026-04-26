@@ -155,6 +155,10 @@ describe("RegistryListener", () => {
 
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
+    // [A-D-011] _onUnregister now gates on `_active` (Python+Rust parity).
+    // Direct invocation requires start() to set the flag first.
+    listener.start();
+
     // First register the tool
     listener._onRegister("mod.removable");
     expect(listener.tools.has("mod.removable")).toBe(true);

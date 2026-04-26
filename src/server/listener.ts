@@ -107,11 +107,17 @@ export class RegistryListener {
    * Handle a module unregistration event.
    *
    * Removes the tool from the internal tools map.
+   * - [A-D-011]: gates on `_active` (matches Python+Rust idempotence
+   *   contract — direct invocation post-stop() is a no-op).
+   * - [A-D-011]: only logs when the tool was actually present.
    *
    * @param moduleId - The ID of the unregistered module
    */
   _onUnregister(moduleId: string): void {
-    this._tools.delete(moduleId);
-    console.log(`RegistryListener: unregistered tool "${moduleId}"`);
+    if (!this._active) return;
+    const removed = this._tools.delete(moduleId);
+    if (removed) {
+      console.log(`RegistryListener: unregistered tool "${moduleId}"`);
+    }
   }
 }

@@ -136,7 +136,11 @@ export class AsyncTaskBridge {
   isAsyncModule(descriptor: ModuleDescriptor | null | undefined): boolean {
     if (!this._enabled || !descriptor) return false;
     const meta = descriptor.metadata ?? {};
-    if (meta["async"] === true) return true;
+    // Accept both boolean true AND the string "true" — Python and Rust
+    // both accept the string form (registries that store annotations as
+    // YAML produce string booleans). [A-D-021]
+    const asyncFlag = meta["async"];
+    if (asyncFlag === true || asyncFlag === "true") return true;
     const annotations = descriptor.annotations;
     if (annotations?.extra) {
       const flag = annotations.extra["mcp_async"];
@@ -277,8 +281,20 @@ export class AsyncTaskBridge {
             throw err;
           }
         }
-        const inputs =
-          (args["arguments"] as Record<string, unknown> | undefined) ?? {};
+        // [A-D-020] Validate `arguments` is a JSON object (not an array,
+        // string, number, etc.). Python rejects non-objects; pre-fix TS
+        // coerced via `?? {}` and silently passed through arrays/strings.
+        const rawArgs = args["arguments"];
+        if (
+          rawArgs !== undefined &&
+          rawArgs !== null &&
+          (typeof rawArgs !== "object" || Array.isArray(rawArgs))
+        ) {
+          throw new Error(
+            "__apcore_task_submit requires `arguments` to be a JSON object",
+          );
+        }
+        const inputs = (rawArgs as Record<string, unknown> | undefined) ?? {};
         return this.submit(moduleId, inputs, context);
       }
       case META_TOOL_NAMES.STATUS: {
@@ -293,12 +309,25 @@ export class AsyncTaskBridge {
           throw err;
         }
         const projection = this._projectTaskInfo(info);
-        // Inline completed result after redaction.
-        if (info.status === "completed" && info.result) {
+        // [A-D-025] Inline result on terminal completed status — even
+        // when info.result is null/undefined (Python always inlines;
+        // pre-fix TS only inlined when truthy, silently dropping `null`).
+        // [A-D-026] Wrap redactor in try/catch — a buggy redactor must
+        // not bring down handle_status; fall back to original result.
+        if (info.status === "completed") {
           const schema = this._outputSchemaMap[info.moduleId];
-          const redacted = this._redactSensitive && schema
-            ? this._redactSensitive(info.result, schema)
-            : info.result;
+          let redacted: Record<string, unknown> | null = info.result;
+          if (this._redactSensitive && schema && info.result) {
+            try {
+              redacted = this._redactSensitive(info.result, schema);
+            } catch (err) {
+              console.warn(
+                `task-result redactor raised for ${info.moduleId}; returning unredacted result`,
+                err,
+              );
+              redacted = info.result;
+            }
+          }
           projection.result = redacted;
         } else if (info.status === "failed" && info.error) {
           projection.error = info.error;
@@ -314,8 +343,32 @@ export class AsyncTaskBridge {
         return { task_id: taskId, cancelled };
       }
       case META_TOOL_NAMES.LIST: {
+        // [A-D-024] Validate status filter against the spec enum;
+        // Python+Rust both reject unknown values. Pre-fix TS forwarded
+        // any string verbatim to listTasks(filter).
         const status = args["status"];
-        const filter = typeof status === "string" ? status : undefined;
+        let filter: string | undefined;
+        if (status !== undefined && status !== null) {
+          if (typeof status !== "string") {
+            throw new Error(
+              "__apcore_task_list `status` filter must be a string",
+            );
+          }
+          const validStatuses = [
+            "pending",
+            "running",
+            "completed",
+            "failed",
+            "cancelled",
+          ];
+          if (!validStatuses.includes(status)) {
+            throw new Error(
+              `__apcore_task_list invalid status filter: ${JSON.stringify(status)}; ` +
+                `must be one of ${validStatuses.join(", ")}`,
+            );
+          }
+          filter = status;
+        }
         const tasks = this._manager.listTasks(filter);
         return { tasks: tasks.map((t) => this._projectTaskInfo(t)) };
       }
