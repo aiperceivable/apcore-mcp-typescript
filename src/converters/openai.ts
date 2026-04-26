@@ -80,15 +80,33 @@ export class OpenAIConverter {
     });
 
     const tools: OpenAIToolDef[] = [];
+    // [OC-3] Track normalized names so we can detect collisions.
+    // OpenAI function names must be unique post-normalization
+    // (dot→hyphen). E.g. `a.b` and `a-b` both normalize to `a-b`;
+    // without this guard two tools with identical function.name would
+    // be emitted silently, producing undefined OpenAI behavior.
+    const seenNames = new Map<string, string>();
 
     for (const moduleId of moduleIds) {
       const descriptor = registry.getDefinition(moduleId);
       if (descriptor === null) {
         continue;
       }
-      tools.push(
-        this.convertDescriptor(descriptor, { embedAnnotations, strict }),
-      );
+      const tool = this.convertDescriptor(descriptor, {
+        embedAnnotations,
+        strict,
+      });
+      const toolName = tool.function.name;
+      const existing = seenNames.get(toolName);
+      if (existing !== undefined && existing !== moduleId) {
+        throw new Error(
+          `OpenAI function-name collision: module ids "${existing}" and "${moduleId}" both ` +
+            `normalize to "${toolName}". OpenAI requires unique function names; rename ` +
+            `one of the modules to avoid the collision.`,
+        );
+      }
+      seenNames.set(toolName, moduleId);
+      tools.push(tool);
     }
 
     return tools;
