@@ -91,6 +91,13 @@ export interface AsyncTaskBridgeOptions {
   ) => Record<string, unknown>;
   /** Map of module_id → output_schema used by `redactSensitive`. */
   outputSchemaMap?: Record<string, Record<string, unknown>>;
+  /**
+   * Look up a module's descriptor by id. Used by `__apcore_task_submit` to
+   * enforce the spec rule "non-async module → ASYNC_MODULE_NOT_ASYNC".
+   * When omitted, the rule is skipped (preserves backwards-compatible
+   * behavior for tests / direct construction without a registry). [A-D-008]
+   */
+  descriptorLookup?: (moduleId: string) => ModuleDescriptor | null | undefined;
 }
 
 /**
@@ -102,12 +109,14 @@ export class AsyncTaskBridge {
   private readonly _enabled: boolean;
   private readonly _redactSensitive?: AsyncTaskBridgeOptions["redactSensitive"];
   private readonly _outputSchemaMap: Record<string, Record<string, unknown>>;
+  private readonly _descriptorLookup?: AsyncTaskBridgeOptions["descriptorLookup"];
 
   constructor(manager: AsyncTaskManagerLike, options?: AsyncTaskBridgeOptions) {
     this._manager = manager;
     this._enabled = options?.enabled ?? true;
     this._redactSensitive = options?.redactSensitive;
     this._outputSchemaMap = options?.outputSchemaMap ?? {};
+    this._descriptorLookup = options?.descriptorLookup;
   }
 
   /** Whether async routing and meta-tools are enabled. */
@@ -251,6 +260,23 @@ export class AsyncTaskBridge {
               `"${APCORE_META_TOOL_PREFIX}" are reserved for apcore-mcp meta-tools.`,
           );
         }
+        // Spec: __apcore_task_submit on a non-async module returns
+        // ASYNC_MODULE_NOT_ASYNC. Python enforces; TS+Rust were silently
+        // wrapping sync modules as async tasks. The check is only applied
+        // when a descriptor-lookup callback is wired (the normal
+        // production path); direct test construction without a registry
+        // skips this guard to preserve unit-test ergonomics. [A-D-008]
+        if (this._descriptorLookup) {
+          const descriptor = this._descriptorLookup(moduleId);
+          if (!descriptor || !this.isAsyncModule(descriptor)) {
+            const err = new Error(
+              `ASYNC_MODULE_NOT_ASYNC: module "${moduleId}" is not async-hinted; ` +
+                `use regular tools/call instead of __apcore_task_submit`,
+            );
+            (err as Error & { code?: string }).code = "ASYNC_MODULE_NOT_ASYNC";
+            throw err;
+          }
+        }
         const inputs =
           (args["arguments"] as Record<string, unknown> | undefined) ?? {};
         return this.submit(moduleId, inputs, context);
@@ -330,6 +356,12 @@ export async function createAsyncTaskBridge(
     maxConcurrent?: number;
     maxTasks?: number;
     outputSchemaMap?: Record<string, Record<string, unknown>>;
+    /**
+     * Optional descriptor lookup (typically `(id) => registry.getDefinition(id)`).
+     * When provided, `__apcore_task_submit` enforces the spec's
+     * ASYNC_MODULE_NOT_ASYNC rule. [A-D-008]
+     */
+    descriptorLookup?: (moduleId: string) => ModuleDescriptor | null | undefined;
   },
 ): Promise<AsyncTaskBridge | null> {
   if (options?.enabled === false) return null;
@@ -348,6 +380,7 @@ export async function createAsyncTaskBridge(
       enabled: true,
       redactSensitive: typeof redactSensitive === "function" ? redactSensitive : undefined,
       outputSchemaMap: options?.outputSchemaMap,
+      descriptorLookup: options?.descriptorLookup,
     });
   } catch {
     return null;

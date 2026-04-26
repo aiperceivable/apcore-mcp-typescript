@@ -91,6 +91,60 @@ describe("AsyncTaskBridge", () => {
     ).rejects.toThrow(/Reserved module id/);
   });
 
+  // [A-D-008] Regression: __apcore_task_submit on a non-async-hinted
+  // module must return ASYNC_MODULE_NOT_ASYNC when a descriptor lookup
+  // is wired. Pre-fix TS skipped this check, silently wrapping sync-only
+  // modules as async tasks.
+  it("handleMetaTool(__apcore_task_submit) rejects non-async modules with ASYNC_MODULE_NOT_ASYNC", async () => {
+    const syncDescriptor = {
+      moduleId: "sync.module",
+      description: "sync only",
+      inputSchema: { type: "object", properties: {} },
+      outputSchema: { type: "object" },
+      annotations: null,
+      // No metadata.async, no annotations.extra.mcp_async
+    };
+    const bridge = new AsyncTaskBridge(buildManager(), {
+      descriptorLookup: (id: string) => (id === "sync.module" ? syncDescriptor : null),
+    });
+    await expect(
+      bridge.handleMetaTool(META_TOOL_NAMES.SUBMIT, {
+        module_id: "sync.module",
+        arguments: {},
+      }),
+    ).rejects.toThrow(/ASYNC_MODULE_NOT_ASYNC/);
+  });
+
+  it("handleMetaTool(__apcore_task_submit) accepts async-hinted modules when descriptor-lookup is wired", async () => {
+    const asyncDescriptor = {
+      moduleId: "async.module",
+      description: "async-hinted",
+      inputSchema: { type: "object", properties: {} },
+      outputSchema: { type: "object" },
+      annotations: null,
+      metadata: { async: true },
+    };
+    const bridge = new AsyncTaskBridge(buildManager(), {
+      descriptorLookup: (id: string) => (id === "async.module" ? asyncDescriptor : null),
+    });
+    const envelope = await bridge.handleMetaTool(META_TOOL_NAMES.SUBMIT, {
+      module_id: "async.module",
+      arguments: {},
+    });
+    expect(envelope).toEqual({ task_id: expect.any(String), status: "pending" });
+  });
+
+  it("handleMetaTool(__apcore_task_submit) skips ASYNC_MODULE_NOT_ASYNC when no descriptor-lookup is wired (back-compat)", async () => {
+    const bridge = new AsyncTaskBridge(buildManager()); // no descriptorLookup
+    const envelope = await bridge.handleMetaTool(META_TOOL_NAMES.SUBMIT, {
+      module_id: "any.module",
+      arguments: {},
+    });
+    // Without lookup, the bridge can't enforce the rule — accepts the
+    // submit (pre-fix TS behavior, preserved for unit-test ergonomics).
+    expect(envelope).toEqual({ task_id: expect.any(String), status: "pending" });
+  });
+
   it("handleMetaTool(__apcore_task_status) inlines completed result and redacts", async () => {
     const manager = buildManager({
       getStatus: vi.fn().mockReturnValue({

@@ -66,9 +66,20 @@ export class MCPServerFactory {
     name: string = "apcore-mcp",
     version: string = "0.1.0",
   ): Server {
+    // Advertise listChanged: true so MCP clients receive
+    // notifications/tools/list_changed and notifications/resources/list_changed
+    // when the registry mutates at runtime. Python's build_init_options and
+    // Rust's MCPServerFactory::build_init_options both set this to true;
+    // the TS factory previously passed empty objects, breaking dynamic-tool
+    // registration on TS-hosted servers. [A-D-004]
     return new Server(
       { name, version },
-      { capabilities: { tools: {}, resources: {} } },
+      {
+        capabilities: {
+          tools: { listChanged: true },
+          resources: { listChanged: true },
+        },
+      },
     );
   }
 
@@ -84,6 +95,17 @@ export class MCPServerFactory {
   buildTool(descriptor: ModuleDescriptor, options?: BuildToolOptions): Tool {
     if (!descriptor.moduleId || typeof descriptor.moduleId !== "string") {
       throw new Error("ModuleDescriptor.moduleId is required and must be a string");
+    }
+    // Reject reserved __apcore_ prefix at the symbol boundary, not just
+    // the bulk path. Direct callers (extensions, plugins, tests) would
+    // otherwise produce a poisoned Tool that shadows the async-task
+    // meta-tools. Python rejects at this same boundary; TS now does too.
+    // [A-D-009]
+    if (descriptor.moduleId.startsWith(APCORE_META_TOOL_PREFIX)) {
+      throw new Error(
+        `Reserved module id: "${descriptor.moduleId}". Module ids starting with ` +
+          `"${APCORE_META_TOOL_PREFIX}" are reserved for apcore-mcp meta-tools.`,
+      );
     }
     if (descriptor.description !== undefined && descriptor.description !== null && typeof descriptor.description !== "string") {
       throw new Error("ModuleDescriptor.description must be a string");

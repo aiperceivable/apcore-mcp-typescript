@@ -23,6 +23,7 @@ import type {
   RegistryOrExecutor,
   Registry,
   Executor,
+  ModuleDescriptor,
   OpenAIToolDef,
 } from "./types.js";
 import type { Authenticator } from "./auth/types.js";
@@ -478,6 +479,12 @@ export async function serve(
         maxConcurrent: asyncOpt?.maxConcurrent,
         maxTasks: asyncOpt?.maxTasks,
         outputSchemaMap,
+        // [A-D-008]: enable ASYNC_MODULE_NOT_ASYNC enforcement on
+        // __apcore_task_submit by giving the bridge a way to fetch the
+        // descriptor for a module id.
+        descriptorLookup: (moduleId: string) =>
+          (registry as { getDefinition?: (id: string) => ModuleDescriptor | null | undefined })
+            .getDefinition?.(moduleId) ?? null,
       })
     : null;
 
@@ -772,6 +779,12 @@ export async function asyncServe(
         maxConcurrent: asyncOpt?.maxConcurrent,
         maxTasks: asyncOpt?.maxTasks,
         outputSchemaMap,
+        // [A-D-008]: enable ASYNC_MODULE_NOT_ASYNC enforcement on
+        // __apcore_task_submit by giving the bridge a way to fetch the
+        // descriptor for a module id.
+        descriptorLookup: (moduleId: string) =>
+          (registry as { getDefinition?: (id: string) => ModuleDescriptor | null | undefined })
+            .getDefinition?.(moduleId) ?? null,
       })
     : null;
 

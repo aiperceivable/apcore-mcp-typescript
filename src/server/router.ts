@@ -427,13 +427,20 @@ export class ExecutionRouter {
           // Deep-merge each chunk into the accumulated result
           accumulated = deepMerge(accumulated, chunk);
 
-          // Send progress notification for each chunk
+          // Per-chunk redaction MUST happen before the chunk is serialized
+          // into the progress notification — otherwise an x-sensitive
+          // credential emitted mid-stream leaks to the MCP client even
+          // though the final accumulated result is later redacted.
+          // Mirrors Python's _handle_stream invariant. [A-D-003]
+          const safeChunk = await this._maybeRedact(toolName, chunk as Record<string, unknown>);
+
+          // Send progress notification for each chunk (redacted)
           await sendNotification({
             method: "notifications/progress",
             params: {
               progressToken,
               progress: chunkIndex + 1,
-              message: JSON.stringify(chunk),
+              message: JSON.stringify(safeChunk),
             },
           });
 
