@@ -377,7 +377,7 @@ export class ExecutionRouter {
     toolName: string,
     args: Record<string, unknown>,
     extra: HandleCallExtra | undefined,
-    _cancelToken: CancelToken,
+    cancelToken: CancelToken,
   ): Promise<CallResult> {
     try {
       // ── Build context with MCP callbacks ──────────────────────────────
@@ -441,11 +441,26 @@ export class ExecutionRouter {
 
       const identity = getCurrentIdentity();
 
-      // Always create a context when we have an inbound traceparent so the
-      // downstream trace chain is linked even without callbacks/identity.
-      const context = (hasCallbacks || identity || inboundTraceId)
-        ? createBridgeContext(contextData, identity, inboundTraceId)
-        : undefined;
+      // [A-D-001] Always create a context so the cancelToken is threaded
+      // into the executor pipeline. Without this, modules cannot observe
+      // inbound MCP `notifications/cancelled` via `context.cancelToken?.isCancelled`
+      // and cooperative cancellation is silently broken — the router-level
+      // cancel API works but the cancel signal never reaches the running module.
+      // Mirrors Python's `context.cancel_token = cancel_token` (router.py:379).
+      const context = createBridgeContext(
+        contextData,
+        identity,
+        inboundTraceId,
+        cancelToken,
+      );
+
+      // Preserve the pre-fix traceId return contract: return the context's
+      // trace_id only when the call carried "meaningful" trace context
+      // (callbacks, identity, or inbound traceparent). Otherwise the returned
+      // traceId is undefined so vanilla calls don't leak a freshly-generated
+      // UUID. The internal context still has a UUID for child() chains.
+      const effectiveTraceId: string | undefined =
+        hasCallbacks || identity || inboundTraceId ? context.traceId : undefined;
 
       // ── F-043: Async Task Bridge meta-tool dispatch ────────────────────
       if (this._asyncTaskBridge && this._asyncTaskBridge.isMetaTool(toolName)) {
@@ -458,13 +473,13 @@ export class ExecutionRouter {
           const content: TextContentDict[] = [
             { type: "text", text: this._formatResult(metaResult) },
           ];
-          return [content, false, context?.traceId];
+          return [content, false, effectiveTraceId];
         } catch (err: unknown) {
           const errorInfo = this._errorMapper.toMcpError(err);
           const content: TextContentDict[] = [
             { type: "text", text: ExecutionRouter._buildErrorText(errorInfo) },
           ];
-          return [content, true, context?.traceId];
+          return [content, true, effectiveTraceId];
         }
       }
 
@@ -499,13 +514,13 @@ export class ExecutionRouter {
             const content: TextContentDict[] = [
               { type: "text", text: this._formatResult(envelope) },
             ];
-            return [content, false, context?.traceId];
+            return [content, false, effectiveTraceId];
           } catch (err: unknown) {
             const errorInfo = this._errorMapper.toMcpError(err);
             const content: TextContentDict[] = [
               { type: "text", text: ExecutionRouter._buildErrorText(errorInfo) },
             ];
-            return [content, true, context?.traceId];
+            return [content, true, effectiveTraceId];
           }
         }
       }
@@ -608,7 +623,7 @@ export class ExecutionRouter {
           },
         ];
 
-        const traceId = context?.traceId;
+        const traceId = effectiveTraceId;
         return [content, false, traceId];
       }
 
@@ -658,7 +673,7 @@ export class ExecutionRouter {
         } as TextContentDict,
       ];
 
-      const traceId = context?.traceId;
+      const traceId = effectiveTraceId;
       return [content, false, traceId];
     } catch (error: unknown) {
       console.error(`handleCall error for ${toolName}:`, error);

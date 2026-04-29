@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { ExecutionRouter } from "../../src/server/router.js";
+import { CancelToken, ExecutionRouter } from "../../src/server/router.js";
 import type { HandleCallExtra } from "../../src/server/router.js";
 import type { Executor } from "../../src/types.js";
 import { MCP_PROGRESS_KEY, MCP_ELICIT_KEY } from "../../src/helpers.js";
@@ -55,11 +55,11 @@ describe("ExecutionRouter", () => {
     expect(content[0].text).toBe(JSON.stringify(result));
     expect(traceId).toBeUndefined();
 
-    // No extra → no callbacks → context is undefined
+    // [A-D-001] context is now always a BridgeContext (so cancelToken reaches modules)
     expect(executor.call).toHaveBeenCalledWith(
       "text.summarize",
       { text: "Hello world" },
-      undefined,
+      expect.objectContaining({ cancelToken: expect.any(CancelToken) }),
       undefined,
     );
   });
@@ -166,8 +166,13 @@ describe("ExecutionRouter", () => {
 
     expect(isError).toBe(false);
     expect(traceId).toBeUndefined();
-    // No extra → context is undefined
-    expect(executor.call).toHaveBeenCalledWith("test.module", {}, undefined, undefined);
+    // [A-D-001] context is now always a BridgeContext carrying the cancelToken.
+    expect(executor.call).toHaveBeenCalledWith(
+      "test.module",
+      {},
+      expect.objectContaining({ cancelToken: expect.any(CancelToken) }),
+      undefined,
+    );
   });
 
   // TC-ROUTER-008: context has _mcp_progress when progressToken + sendNotification present
@@ -210,13 +215,21 @@ describe("ExecutionRouter", () => {
   });
 
   // TC-ROUTER-010: no context when no extra provided (backward compat)
-  it("passes undefined context when no extra provided", async () => {
+  it("passes BridgeContext with cancelToken even when no extra provided", async () => {
+    // [A-D-001] Pre-fix this test asserted `context === undefined` for vanilla
+    // calls. Post-fix the router always builds a BridgeContext so the cancel
+    // token reaches modules even on calls with no MCP envelope.
     const executor = createMockExecutor({ ok: true });
     const router = new ExecutionRouter(executor);
 
     await router.handleCall("test.module", {});
 
-    expect(executor.call).toHaveBeenCalledWith("test.module", {}, undefined, undefined);
+    expect(executor.call).toHaveBeenCalledWith(
+      "test.module",
+      {},
+      expect.objectContaining({ cancelToken: expect.any(CancelToken) }),
+      undefined,
+    );
   });
 
   // TC-ROUTER-011: elicit callback sends elicitation/create request
@@ -318,6 +331,67 @@ describe("ExecutionRouter", () => {
     expect(params.total).toBe(10);
     expect(params.message).toBe("halfway");
   });
+
+  // [A-D-001] CancelToken must be threaded into the executor's BridgeContext
+  // so modules can react to inbound MCP `notifications/cancelled` via
+  // `context.cancelToken?.isCancelled`. Pre-fix TS registered the token in
+  // _cancelTokens but the BridgeContext.cancelToken was hard-coded to null.
+  it("threads cancelToken into the BridgeContext passed to the executor", async () => {
+    // Use a deferred promise to keep the executor in-flight while we cancel,
+    // so the cancel-token map entry is still live when router.cancel runs.
+    let resolveExec!: (v: Record<string, unknown>) => void;
+    const execPromise = new Promise<Record<string, unknown>>((r) => {
+      resolveExec = r;
+    });
+    let capturedContext: any = null;
+    const executor: Executor = {
+      registry: {} as any,
+      call: vi.fn().mockImplementation(
+        (_moduleId: string, _input: unknown, ctx: unknown) => {
+          capturedContext = ctx;
+          return execPromise;
+        },
+      ),
+    };
+    const router = new ExecutionRouter(executor);
+    const extra: HandleCallExtra = { callId: "call-cancel-1" };
+    const callPromise = router.handleCall("demo.module", {}, extra);
+
+    // Yield to let _handleCallInner run so capturedContext is populated.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(capturedContext).not.toBeNull();
+    expect(capturedContext.cancelToken).toBeInstanceOf(CancelToken);
+    expect(capturedContext.cancelToken.isCancelled).toBe(false);
+
+    // Cancel WHILE the executor is still in-flight; assert the SAME token
+    // in the captured context flips to isCancelled = true.
+    const cancelled = router.cancel("call-cancel-1");
+    expect(cancelled).toBe(true);
+    expect(capturedContext.cancelToken.isCancelled).toBe(true);
+
+    resolveExec({});
+    await callPromise;
+  });
+
+  // [A-D-001] child() preserves the cancelToken so cooperative cancel
+  // propagates to nested module invocations.
+  it("BridgeContext.child() preserves the cancelToken", async () => {
+    let capturedContext: any = null;
+    const executor: Executor = {
+      registry: {} as any,
+      call: vi.fn().mockImplementation(
+        async (_moduleId: string, _input: unknown, ctx: unknown) => {
+          capturedContext = ctx;
+          return {};
+        },
+      ),
+    };
+    const router = new ExecutionRouter(executor);
+    await router.handleCall("demo.module", {}, { callId: "call-child-1" });
+    const child = capturedContext.child("nested.module");
+    expect(child.cancelToken).toBe(capturedContext.cancelToken);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -404,7 +478,7 @@ describe("ExecutionRouter outputFormatter", () => {
     expect(executor.call).toHaveBeenCalledWith(
       "test.module",
       { a: 1 },
-      undefined,
+      expect.objectContaining({ cancelToken: expect.any(CancelToken) }),
       "2.1.0",
     );
   });
@@ -431,7 +505,7 @@ describe("ExecutionRouter outputFormatter", () => {
     expect(executor.call).toHaveBeenCalledWith(
       "test.module",
       {},
-      undefined,
+      expect.objectContaining({ cancelToken: expect.any(CancelToken) }),
       "1.4.0",
     );
   });

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { ExecutionRouter } from "../../src/server/router.js";
+import { CancelToken, ExecutionRouter } from "../../src/server/router.js";
 import type { HandleCallExtra } from "../../src/server/router.js";
 import type { Executor } from "../../src/types.js";
 import { MCP_PROGRESS_KEY } from "../../src/helpers.js";
@@ -192,8 +192,14 @@ describe("ExecutionRouter — streaming", () => {
     // sendNotification should NOT have been called
     expect(extra.sendNotification).not.toHaveBeenCalled();
 
-    // call() should have been invoked — no progressToken means no context callbacks
-    expect(executor.call).toHaveBeenCalledWith("test.noprogress", {}, undefined, undefined);
+    // [A-D-001] call() invoked with BridgeContext carrying cancelToken
+    // (no progressToken means no callbacks but the context still exists for cancel)
+    expect(executor.call).toHaveBeenCalledWith(
+      "test.noprogress",
+      {},
+      expect.objectContaining({ cancelToken: expect.any(CancelToken) }),
+      undefined,
+    );
   });
 
   // TC-STREAM-005: Falls back to call() when no extra provided at all
@@ -211,7 +217,12 @@ describe("ExecutionRouter — streaming", () => {
     expect(isError).toBe(false);
     expect(JSON.parse(content[0].text)).toEqual(callResult);
     expect(traceId).toBeUndefined();
-    expect(executor.call).toHaveBeenCalledWith("test.noextra", {}, undefined, undefined);
+    expect(executor.call).toHaveBeenCalledWith(
+      "test.noextra",
+      {},
+      expect.objectContaining({ cancelToken: expect.any(CancelToken) }),
+      undefined,
+    );
   });
 
   // TC-STREAM-006: Numeric progressToken works
