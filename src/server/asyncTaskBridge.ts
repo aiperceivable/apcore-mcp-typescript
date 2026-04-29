@@ -208,8 +208,14 @@ export class AsyncTaskBridge {
    * Mirrors Rust's `AsyncTaskBridge::cancel_session_tasks`. [A-D-018]
    */
   async cancelSessionTasks(sessionKey: string): Promise<number> {
+    // [A-D-005] Detach the task list from the map BEFORE iterating cancels.
+    // A concurrent submit() between get() and the post-loop delete() would
+    // otherwise append to the same Array reference and the trailing delete
+    // would drop the newly-tracked task. Mirrors Python's `pop()` and Rust's
+    // `remove()` — both detach before yielding to manager.cancel.
     const taskIds = this._sessionTasks.get(sessionKey);
     if (!taskIds || taskIds.length === 0) return 0;
+    this._sessionTasks.delete(sessionKey);
     let cancelled = 0;
     for (const taskId of taskIds) {
       try {
@@ -220,7 +226,6 @@ export class AsyncTaskBridge {
       }
       this._progressTokens.delete(taskId);
     }
-    this._sessionTasks.delete(sessionKey);
     return cancelled;
   }
 
@@ -402,6 +407,12 @@ export class AsyncTaskBridge {
           throw new Error("__apcore_task_cancel requires task_id (string)");
         }
         const cancelled = await this._manager.cancel(taskId);
+        // [A-D-009] Drop the progress-token binding after a single-task cancel
+        // so notifications/progress for cancelled tasks don't fan out to a
+        // token whose caller has already been told the task is gone. Mirrors
+        // Python's `_progress_bindings.pop(task_id, None)` and Rust's
+        // `progress_tokens.remove(task_id)`.
+        this._progressTokens.delete(taskId);
         return { task_id: taskId, cancelled };
       }
       case META_TOOL_NAMES.LIST: {

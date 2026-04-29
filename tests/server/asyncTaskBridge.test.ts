@@ -242,6 +242,54 @@ describe("AsyncTaskBridge", () => {
     expect(bridge.isMetaTool(META_TOOL_NAMES.SUBMIT)).toBe(false);
     expect(bridge.buildMetaTools()).toEqual([]);
   });
+
+  // [A-D-005] cancelSessionTasks must detach the per-session task list
+  // from the map BEFORE iterating cancels. Otherwise a concurrent submit()
+  // appends to the same Array reference and the trailing delete drops the
+  // newly-tracked task.
+  it("cancelSessionTasks: tasks submitted concurrently with cancel are not silently dropped", async () => {
+    let submitCounter = 0;
+    const manager = buildManager({
+      submit: vi.fn().mockImplementation(async () => {
+        submitCounter++;
+        return `task-${submitCounter}`;
+      }),
+      cancel: vi.fn().mockImplementation(async (taskId: string) => {
+        // Simulate a concurrent submit() racing the cancel iteration.
+        // After we cancel task-1, a new submit lands on the same session.
+        if (taskId === "task-1") {
+          await bridge.submit("demo.module", {}, null, { sessionKey: "sess-A" });
+        }
+        return true;
+      }),
+    });
+    const bridge = new AsyncTaskBridge(manager);
+    await bridge.submit("demo.module", {}, null, { sessionKey: "sess-A" });
+    const cancelled = await bridge.cancelSessionTasks("sess-A");
+    expect(cancelled).toBe(1);
+    // The post-fix behavior: the racing submit went into a fresh entry
+    // because the session map was cleared BEFORE the for-of loop ran.
+    // Pre-fix: it would have been pushed onto the still-live array
+    // referenced by `taskIds`, then silently dropped at the post-loop delete.
+    // We assert the new task remains tracked under the session.
+    const cancelled2 = await bridge.cancelSessionTasks("sess-A");
+    expect(cancelled2).toBe(1);
+  });
+
+  // [A-D-009] handleMetaTool CANCEL must drop the progress-token binding
+  // so subsequent terminal-state notifications don't fan out to a token
+  // whose caller has been told the task is gone.
+  it("handleMetaTool(__apcore_task_cancel) drops the progress-token binding", async () => {
+    const manager = buildManager({
+      submit: vi.fn().mockResolvedValue("task-pt-1"),
+      cancel: vi.fn().mockResolvedValue(true),
+    });
+    const bridge = new AsyncTaskBridge(manager);
+    await bridge.submit("demo.module", {}, null, { progressToken: "tok-1" });
+    expect(bridge.getProgressToken("task-pt-1")).toBe("tok-1");
+    await bridge.handleMetaTool(META_TOOL_NAMES.CANCEL, { task_id: "task-pt-1" });
+    expect(bridge.getProgressToken("task-pt-1")).toBeUndefined();
+  });
 });
 
 describe("ExecutionRouter + AsyncTaskBridge routing", () => {
