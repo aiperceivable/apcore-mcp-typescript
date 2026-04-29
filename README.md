@@ -30,7 +30,7 @@ For full documentation, including Quick Start guides for both Python and TypeScr
 ## Requirements
 
 - Node.js >= 18.0.0
-- `apcore-js >= 0.17.1`
+- `apcore-js >= 0.19.0`
 
 ## Installation
 
@@ -96,8 +96,9 @@ npx apcore-mcp --extensions-dir ./extensions --transport sse --port 8000
 | `--jwt-algorithm` | `HS256` | JWT algorithm |
 | `--jwt-audience` | — | Expected JWT audience claim |
 | `--jwt-issuer` | — | Expected JWT issuer claim |
-| `--jwt-require-auth` | `true` | Require auth (use `--no-jwt-require-auth` for permissive mode) |
-| `--exempt-paths` | `/health,/metrics` | Comma-separated paths exempt from auth |
+| `--jwt-require-auth` | `true` | Require auth (use `--jwt-permissive` to override and allow unauthenticated requests) |
+| `--jwt-permissive` | `false` | Permissive mode: allow unauthenticated requests (overrides `--jwt-require-auth`) |
+| `--exempt-paths` | `/health,/metrics,/usage` | Comma-separated paths exempt from auth |
 
 JWT key resolution priority: `--jwt-key-file` > `--jwt-secret` > `APCORE_JWT_SECRET` environment variable.
 
@@ -299,8 +300,9 @@ await serve(executor, {
 | `--jwt-algorithm` | `HS256` | JWT algorithm |
 | `--jwt-audience` | — | Expected audience claim |
 | `--jwt-issuer` | — | Expected issuer claim |
-| `--jwt-require-auth` | `true` | Require auth. Use `--no-jwt-require-auth` for permissive mode |
-| `--exempt-paths` | `/health,/metrics` | Comma-separated paths exempt from auth |
+| `--jwt-require-auth` | `true` | Require auth. Use `--jwt-permissive` to allow unauthenticated requests |
+| `--jwt-permissive` | `false` | Overrides `--jwt-require-auth` and allows unauthenticated requests |
+| `--exempt-paths` | `/health,/metrics,/usage` | Comma-separated paths exempt from auth |
 
 JWT key resolution priority: `--jwt-key-file` > `--jwt-secret` > `APCORE_JWT_SECRET` environment variable.
 
