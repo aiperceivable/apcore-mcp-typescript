@@ -452,3 +452,77 @@ describe("TC-008: Custom prefix", () => {
     expect(res.status).toBe(404);
   });
 });
+
+// ---------------------------------------------------------------------------
+// TC-011: POST /explorer/tools/<name>/validate (mcp-embedded-ui 0.4 F7)
+// ---------------------------------------------------------------------------
+
+describe("TC-011: Validate endpoint", () => {
+  let ts: TestServer;
+  let router: ExecutionRouter;
+
+  beforeAll(async () => {
+    router = createMockRouter();
+    // allowExecute=false on purpose — validate must work regardless.
+    const handler = buildExplorerHandler(router, { allowExecute: false });
+    ts = await createTestServer(handler);
+  });
+
+  afterAll(async () => {
+    await ts.close();
+  });
+
+  it("returns {valid:true} for args matching the schema", async () => {
+    const res = await ts.fetch("/explorer/tools/image.resize/validate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ width: 100, height: 200 }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ valid: true });
+  });
+
+  it("reports missing required fields", async () => {
+    const res = await ts.fetch("/explorer/tools/image.resize/validate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ width: 100 }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.valid).toBe(false);
+    expect(Array.isArray(body.errors)).toBe(true);
+    expect(body.errors.some((e: { message: string }) => e.message.includes("height"))).toBe(true);
+  });
+
+  it("reports type mismatches with a path", async () => {
+    const res = await ts.fetch("/explorer/tools/image.resize/validate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ width: "not-a-number", height: 200 }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.valid).toBe(false);
+    expect(body.errors.some((e: { path: string }) => e.path === "/width")).toBe(true);
+  });
+
+  it("returns 404 for unknown tool", async () => {
+    const res = await ts.fetch("/explorer/tools/nope.tool/validate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("never invokes the router (validate is read-only)", async () => {
+    await ts.fetch("/explorer/tools/image.resize/validate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ width: 100, height: 200 }),
+    });
+    expect(router.handleCall).not.toHaveBeenCalled();
+  });
+});

@@ -5,7 +5,6 @@
 import { describe, it, expect } from "vitest";
 import jwt from "jsonwebtoken";
 import { JWTAuthenticator } from "../../src/auth/jwt.js";
-import type { IncomingMessage } from "node:http";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -13,8 +12,10 @@ import type { IncomingMessage } from "node:http";
 
 const SECRET = "test-secret-key-for-jwt";
 
-function makeReq(headers: Record<string, string> = {}): IncomingMessage {
-  return { headers } as unknown as IncomingMessage;
+// [JWT-1] Authenticator now takes a flat headers map directly; the helper
+// just returns the input unchanged for readability of callsites.
+function makeReq(headers: Record<string, string> = {}): Record<string, string> {
+  return headers;
 }
 
 function signToken(

@@ -84,7 +84,7 @@ console.log(`Total:               ${registry.moduleIds.length}`);
 // 3. Optional JWT auth via APCORE_JWT_SECRET env var
 const jwtSecret = process.env.APCORE_JWT_SECRET;
 const authenticator = jwtSecret
-  ? new JWTAuthenticator({ secret: jwtSecret })
+  ? new JWTAuthenticator({ key: jwtSecret })
   : undefined;
 
 if (authenticator) {

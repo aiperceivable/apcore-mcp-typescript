@@ -162,6 +162,79 @@ Connect any MCP client to `http://your-host:9000/mcp`.
 
 ## API Reference
 
+### Programmatic API – `APCoreMCP` class
+
+The `APCoreMCP` class is the recommended OOP entry point. It bundles a unified configuration object, lazy backend resolution (path / `Registry` / `Executor`), and exposes `serve` / `asyncServe` / `toOpenaiTools` as instance methods so you configure once and use everywhere.
+
+```typescript
+import { APCoreMCP } from "apcore-mcp";
+
+// 1. Point at an extensions directory (lazy discovery on first use)
+const mcp = new APCoreMCP("./extensions", {
+  name: "my-server",
+  tags: ["public"],
+  observability: true,
+});
+
+// 2. Launch as MCP server (blocks until shutdown)
+await mcp.serve({ transport: "streamable-http", port: 8000, explorer: true });
+
+// 3. Or export OpenAI tool definitions
+const tools = mcp.toOpenaiTools({ strict: true });
+
+// 4. Or embed into an existing HTTP server
+const app = await mcp.asyncServe({ explorer: true });
+// app.handler is a Node.js request handler; call app.close() on shutdown
+
+// 5. Or pass an existing Registry / Executor
+import { Registry } from "apcore-js";
+const registry = new Registry({ extensionsDir: "./extensions" });
+await registry.discover();
+const mcp2 = new APCoreMCP(registry, { name: "my-server", tags: ["public"] });
+```
+
+**Constructor**
+
+```typescript
+new APCoreMCP(
+  extensionsDirOrBackend: string | Registry | Executor,
+  options?: APCoreMCPOptions,
+);
+```
+
+The first argument is either a path to an apcore extensions directory (discovery is deferred to first use) or an existing `Registry` / `Executor` instance.
+
+**`APCoreMCPOptions` fields**
+
+- `name` — MCP server name. Default: `"apcore-mcp"`
+- `version` — MCP server version. Default: package version
+- `tags` — Filter modules by tag list
+- `prefix` — Filter modules by ID prefix
+- `logLevel` — Minimum log level (`DEBUG` | `INFO` | `WARNING` | `ERROR` | `CRITICAL`)
+- `validateInputs` — Validate inputs against schemas. Default: `false`
+- `metricsCollector` — `MetricsExporter` or `true` to auto-instantiate
+- `observability` — Enable the full metrics + usage observability stack
+- `async` — `boolean | { enabled?, maxConcurrent?, maxTasks? }` for the Async Task Bridge (F-043)
+- `authenticator` — Optional `Authenticator` (HTTP transports only)
+- `requireAuth` — If `true` (default), reject unauthenticated requests with 401
+- `exemptPaths` — Paths exempt from authentication
+- `approvalHandler` — Optional approval handler passed to the Executor
+- `outputFormatter` — Custom function to format tool execution results
+- `middleware` — Array of apcore `Middleware` installed via `executor.use()`
+- `acl` — Optional apcore `ACL` instance installed via `executor.setAcl()`
+
+**Properties**
+
+- `.registry` — The underlying apcore `Registry` (resolved on first access)
+- `.executor` — The underlying apcore `Executor` (populated after `serve()` / `asyncServe()`)
+- `.tools` — List of discovered module IDs that will be exposed as tools (honours `tags` / `prefix`)
+
+**Methods**
+
+- `.serve(options?)` — Launch an MCP server. Accepts `APCoreMCPServeOptions`: `transport`, `host`, `port`, `onStartup`, `onShutdown`, `explorer`, `explorerPrefix`, `allowExecute`, `explorerTitle`, `explorerProjectName`, `explorerProjectUrl`. Constructor-level options (auth, observability, middleware, acl, async, etc.) are applied automatically.
+- `.asyncServe(options?)` — Build an embeddable Node.js HTTP request handler. Accepts `APCoreMCPAsyncServeOptions`: `explorer`, `explorerPrefix`, `allowExecute`, `explorerTitle`, `explorerProjectName`, `explorerProjectUrl`, `endpoint`. Returns `{ handler, close }`.
+- `.toOpenaiTools(options?)` — Export modules as OpenAI-compatible tool definitions. Accepts `ToOpenaiToolsOptions`: `embedAnnotations`, `strict`. `tags` / `prefix` are inherited from the constructor.
+
 ### `serve(registryOrExecutor, options?)`
 
 Launch an MCP Server that exposes all apcore modules as tools.
@@ -170,41 +243,112 @@ Launch an MCP Server that exposes all apcore modules as tools.
 function serve(
   registryOrExecutor: Registry | Executor,
   options?: {
+    // Transport
     transport?: "stdio" | "streamable-http" | "sse";
     host?: string;
     port?: number;
+    // Identity
     name?: string;
     version?: string;
-    dynamic?: boolean;
-    validateInputs?: boolean;
-    tags?: string[] | null;
-    prefix?: string | null;
-    logLevel?: "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
+    // Lifecycle
     onStartup?: () => void | Promise<void>;
     onShutdown?: () => void | Promise<void>;
-    metricsCollector?: MetricsExporter;
+    // Module filtering / discovery
+    tags?: string[] | null;
+    prefix?: string | null;
+    dynamic?: boolean;
+    validateInputs?: boolean;
+    logLevel?: "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
+    // Async Task Bridge (F-043)
+    async?: boolean | { enabled?: boolean; maxConcurrent?: number; maxTasks?: number };
+    // Executor wiring
+    middleware?: unknown[];
+    acl?: unknown;
+    approvalHandler?: unknown;
+    strategy?: string;
+    // Observability (F-044)
+    metricsCollector?: MetricsExporter | boolean;
+    observability?: ObservabilityFlag;
+    trace?: boolean;
+    // Output handling
+    outputFormatter?: (result: Record<string, unknown>) => string;
+    redactOutput?: boolean;
+    // Auth (HTTP transports only)
+    authenticator?: Authenticator;
+    requireAuth?: boolean;
+    exemptPaths?: string[];
+    // Tool Explorer UI
     explorer?: boolean;
     explorerPrefix?: string;
     allowExecute?: boolean;
-    authenticator?: Authenticator;
-    exemptPaths?: string[];
-    approvalHandler?: unknown;
     explorerTitle?: string;
     explorerProjectName?: string;
     explorerProjectUrl?: string;
-    requireAuth?: boolean;
-    outputFormatter?: (result: Record<string, unknown>) => string;
+    // Adapter overrides (advanced — Extension Bridge)
+    schemaConverter?: SchemaConverter;
+    annotationMapper?: AnnotationMapper;
+    errorMapper?: ErrorMapper;
   }
 ): Promise<void>;
 ```
 
-**Additional options:**
+**Options reference:**
 
+*Transport*
+- `transport` — `"stdio"` (default), `"streamable-http"`, or `"sse"`
+- `host` — Host address for HTTP-based transports. Default: `"127.0.0.1"`
+- `port` — Port for HTTP-based transports. Default: `8000`
+
+*Identity*
+- `name` — MCP server name. Default: `"apcore-mcp"`
+- `version` — MCP server version. Default: package version
+
+*Lifecycle*
+- `onStartup` — Async callback invoked before the server starts
+- `onShutdown` — Async callback invoked after the server stops (or on error)
+
+*Module filtering / discovery*
+- `tags` — Filter modules by tag list. Default: `null` (no filtering)
+- `prefix` — Filter modules by ID prefix. Default: `null` (no filtering)
+- `dynamic` — Enable dynamic tool registration via `RegistryListener`. Default: `false`
+- `validateInputs` — Validate inputs against schemas before dispatch. Default: `false`
+- `logLevel` — Minimum log level. Suppresses console methods below this level
+
+*Async Task Bridge (F-043)*
+- `async` — Enable the AsyncTaskBridge and `__apcore_task_*` meta-tools. Pass `false` to disable, or `{ maxConcurrent, maxTasks }` for fine-grained tuning. Default: `true`
+
+*Executor wiring*
+- `middleware` — Array of apcore `Middleware` instances installed via `executor.use()`. Appended to any middleware declared under Config Bus key `mcp.middleware`
+- `acl` — Optional apcore `ACL` instance installed via `executor.setAcl()`. Caller-supplied ACL takes precedence over `mcp.acl` Config Bus entry
+- `approvalHandler` — Optional approval handler passed to the Executor (e.g. `ElicitationApprovalHandler`)
+- `strategy` — Execution strategy name passed to the Executor (e.g. `"standard"`, `"internal"`)
+
+*Observability (F-044)*
+- `metricsCollector` — `MetricsExporter` instance, or `true` to auto-instantiate apcore-js's `MetricsCollector` and install `MetricsMiddleware`
+- `observability` — Enable the full observability stack (metrics + usage middleware) and expose `/metrics` + `/usage` endpoints
+- `trace` — When `true`, enables pipeline trace via `callWithTrace()`. Adds `_meta.trace` to non-streaming tool responses. Default: `false`
+
+*Output handling*
+- `outputFormatter` — Custom function to format tool execution results. When undefined, results are serialized with `JSON.stringify(result)`
+- `redactOutput` — When `true` (default), redact sensitive fields from tool output via apcore's `redactSensitive()` before formatting
+
+*Auth (HTTP transports only)*
+- `authenticator` — `Authenticator` instance for request authentication
+- `requireAuth` — If `true` (default), unauthenticated requests are rejected with 401. Set to `false` for permissive mode
+- `exemptPaths` — Paths exempt from authentication. Default: `["/health", "/metrics"]`
+
+*Tool Explorer UI*
+- `explorer` — Enable the browser-based Tool Explorer UI (HTTP only). Default: `false`
+- `explorerPrefix` — URL prefix for the explorer. Default: `"/explorer"`
+- `allowExecute` — Allow tool execution from the explorer UI. Default: `false`
 - `explorerTitle` — Custom title for the Tool Explorer UI page
 - `explorerProjectName` — Project name shown in the explorer UI footer
 - `explorerProjectUrl` — Project URL shown in the explorer UI footer
-- `requireAuth` — If `true` (default), unauthenticated requests are rejected with 401. Set to `false` for permissive mode
-- `outputFormatter` — Custom function to format tool execution results. When undefined, results are serialized with `JSON.stringify(result)`
+
+*Adapter overrides (advanced — Extension Bridge, F-042)*
+- `schemaConverter` — Override the default `SchemaConverter` (custom JSON Schema strictness/dialect)
+- `annotationMapper` — Override the default `AnnotationMapper` (custom annotation wire format)
+- `errorMapper` — Override the default `ErrorMapper` consumed by `ExecutionRouter`
 
 ### `asyncServe(registryOrExecutor, options?)`
 
@@ -266,7 +410,7 @@ apcore-mcp supports JWT Bearer token authentication for HTTP-based transports.
 import { serve, JWTAuthenticator } from "apcore-mcp";
 
 const authenticator = new JWTAuthenticator({
-  secret: "your-secret-key",
+  key: "your-secret-key",
   algorithms: ["HS256"],
   audience: "my-app",
   issuer: "auth-service",

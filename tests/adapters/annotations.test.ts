@@ -241,5 +241,29 @@ describe("AnnotationMapper", () => {
 
       expect(suffix).not.toContain("paginated");
     });
+
+    // [AM-L1] mcp_-prefixed extras appear after the [Annotations: ...] block
+    // separated by ONE newline. Cross-SDK parity with Python+Rust.
+    it("appends mcp_-prefixed extras with single-newline separator", () => {
+      const suffix = mapper.toDescriptionSuffix({
+        ...defaultAnnotations,
+        destructive: true,
+        extra: {
+          mcp_category: "image",
+          mcp_cost: "high",
+          internal_flag: "x",
+        },
+      } as Parameters<typeof mapper.toDescriptionSuffix>[0]);
+
+      expect(suffix).toContain(
+        "[Annotations: destructive=true]\ncategory: image\ncost: high",
+      );
+      // No double newline between [Annotations: ...] and the first extra
+      expect(suffix).not.toContain(
+        "[Annotations: destructive=true]\n\ncategory:",
+      );
+      // internal_flag (no mcp_ prefix) is NOT surfaced
+      expect(suffix).not.toContain("internal_flag");
+    });
   });
 });

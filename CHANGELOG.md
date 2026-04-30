@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.14.0] - 2026-04-23
+## [0.14.0] - 2026-04-28
 
 ### Changed
 
@@ -53,6 +53,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Falls back to the duck-typed `error.code` path when apcore-js is unavailable.
 - **8 new error code mappings** in `ErrorCodes` and `ErrorMapper` — `DEPENDENCY_NOT_FOUND`, `DEPENDENCY_VERSION_MISMATCH`, `TASK_LIMIT_EXCEEDED`, `VERSION_CONSTRAINT_INVALID`, `BINDING_SCHEMA_INFERENCE_FAILED`, `BINDING_SCHEMA_MODE_CONFLICT`, `BINDING_STRICT_SCHEMA_INCOMPATIBLE`, `BINDING_POLICY_VIOLATION`. Dependency errors are marked `userFixable: true`; `TASK_LIMIT_EXCEEDED` is marked `retryable: true`; binding/version-constraint errors pass through with `userFixable: true`.
 - **Annotation description suffix** — `AnnotationMapper.toDescriptionSuffix()` now emits `cache_ttl`, `cache_key_fields`, and `pagination_style` when present, alongside the existing `cacheable`/`paginated` fields.
+
+### Cross-language sync (deferred-modules round, 2026-04-28)
+
+- **Dependency bump**: `mcp-embedded-ui >= 0.4.0` (was `>= 0.3.2`). The new release ships `POST /tools/{name}/validate` (F7) — read-only schema validation, ungated by `allowExecute` or `authHook`. The route flows automatically through the existing `createNodeHandler` adapter. **Resolves EUI-1.**
+- **JWT-1 (BREAKING) — `Authenticator.authenticate` takes `Record<string, string>` instead of `IncomingMessage`.** All three SDKs now use `authenticate(headers: HeaderMap) -> Promise<Identity | null>`. Use the new `extractHeaders(req)` helper (re-exported from the package root) to flatten a Node `IncomingMessage`:
+  ```ts
+  // Before:
+  authenticator.authenticate(req);
+  // After:
+  import { extractHeaders } from "apcore-mcp";
+  authenticator.authenticate(extractHeaders(req));
+  ```
+- **OC-1 — TS strict-mode walker parity with Python+Rust.** The TS strict-mode pipeline now mirrors apcore's canonical `to_strict_schema`: promotes `x-llm-description` → `description`, strips all `x-*` extension keys after promotion, recurses into `oneOf` / `anyOf` / `allOf` and `$defs` / `definitions`, sorts property names alphabetically, and removes `default` values. Output now matches Python+Rust (which delegate to apcore directly). 6 regression tests.
+- **EB-2 — adapter-hook kwargs.** `serve()` and `asyncServe()` accept `schemaConverter`, `annotationMapper`, `errorMapper` options that override the factory's built-in adapters. New `MCPServerFactoryOptions` shape. Useful for downstream extensions that customize JSON-Schema strictness, the annotation wire format, or error formatting.
+- **MID-5 — `ModuleIDNormalizer.tryDenormalize`.** New bijection-guarded variant validates the dash→dot-replaced result against `MODULE_ID_PATTERN`, returning `null` for inputs that aren't valid pre-images of `normalize`. Plain `denormalize` stays lenient. 9 regression tests.
+- **AM-L1 — F-041 annotation extras parity test.** Added a regression test that pins TypeScript's wire format for `mcp_*` extras (single-newline separator between `[Annotations: …]` and the first extra line). Python and Rust were aligned to this format in 0.14.0; TS already emitted it. 1 regression test.
+- TC-011 integration tests added in `tests/explorer/explorer.test.ts` pinning the `/validate` wire-up.
 
 ---
 

@@ -55,4 +55,36 @@ describe("ModuleIDNormalizer", () => {
       }
     });
   });
+
+  // [MID-5] tryDenormalize is the bijection-guarded variant of denormalize.
+  // Plain denormalize is lenient and only round-trips on the image of
+  // normalize. tryDenormalize returns null for inputs that are not valid
+  // pre-images, useful for sanitizing untrusted tool-call responses.
+  describe("MID-5: tryDenormalize bijection guard", () => {
+    it("round-trips a normalized id back to the original", () => {
+      const normalized = normalizer.normalize("image.resize");
+      expect(normalizer.tryDenormalize(normalized)).toBe("image.resize");
+    });
+
+    it.each([
+      "Image-Resize",
+      "--bad",
+      "foo--bar",
+      "-foo",
+      "foo-",
+      "1foo",
+      "",
+    ])("returns null for invalid pre-image %s", (toolName) => {
+      expect(normalizer.tryDenormalize(toolName)).toBeNull();
+    });
+
+    it("accepts inputs with no dashes", () => {
+      expect(normalizer.tryDenormalize("ping")).toBe("ping");
+    });
+
+    it("plain denormalize remains lenient on invalid inputs", () => {
+      expect(normalizer.denormalize("Image-Resize")).toBe("Image.Resize");
+      expect(normalizer.denormalize("foo--bar")).toBe("foo..bar");
+    });
+  });
 });
