@@ -120,10 +120,11 @@ export class AnnotationMapper {
     )
       parts.push(`pagination_style=${annotations.paginationStyle}`);
 
-    // Append mcp_-prefixed extra fields
+    // Append mcp_-prefixed extra fields (sorted alphabetically for deterministic output,
+    // matching Python+Rust sort behavior). [D11-022]
     const extraLines: string[] = [];
     if (annotations.extra && typeof annotations.extra === "object") {
-      for (const [key, value] of Object.entries(annotations.extra)) {
+      for (const [key, value] of Object.entries(annotations.extra).sort(([a], [b]) => a.localeCompare(b))) {
         if (key.startsWith("mcp_") && typeof value === "string") {
           const strippedKey = key.slice(4); // remove "mcp_" prefix
           extraLines.push(`${strippedKey}: ${value}`);

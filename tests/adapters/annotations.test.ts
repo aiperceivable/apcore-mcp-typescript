@@ -265,5 +265,33 @@ describe("AnnotationMapper", () => {
       // internal_flag (no mcp_ prefix) is NOT surfaced
       expect(suffix).not.toContain("internal_flag");
     });
+
+    // D11-022: mcp_extras must appear in alphabetical key order
+    it("D11-022: mcp_* extras are emitted in alphabetical order", () => {
+      const mapper = new AnnotationMapper();
+      const suffix = mapper.toDescriptionSuffix({
+        readonly: false,
+        destructive: false,
+        idempotent: false,
+        requiresApproval: false,
+        openWorld: true,
+        streaming: false,
+        extra: {
+          mcp_z: "last",
+          mcp_a: "first",
+          mcp_m: "middle",
+        },
+      } as Parameters<typeof mapper.toDescriptionSuffix>[0]);
+
+      // "a" should come before "m" which should come before "z"
+      const aIdx = suffix.indexOf("a: first");
+      const mIdx = suffix.indexOf("m: middle");
+      const zIdx = suffix.indexOf("z: last");
+      expect(aIdx).toBeGreaterThanOrEqual(0);
+      expect(mIdx).toBeGreaterThanOrEqual(0);
+      expect(zIdx).toBeGreaterThanOrEqual(0);
+      expect(aIdx).toBeLessThan(mIdx);
+      expect(mIdx).toBeLessThan(zIdx);
+    });
   });
 });
