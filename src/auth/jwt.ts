@@ -88,11 +88,12 @@ export class JWTAuthenticator implements Authenticator {
     const authHeader = headers["authorization"] ?? headers["Authorization"];
     if (!authHeader) return null;
 
-    // Must be "Bearer <token>"
-    const parts = authHeader.split(" ");
-    if (parts.length !== 2 || parts[0].toLowerCase() !== "bearer") return null;
-
-    const token = parts[1];
+    // Case-insensitive "Bearer " prefix; tolerate extra whitespace between the
+    // prefix and the token (real-world reverse proxies and auth headers can
+    // emit double spaces). Matches apcore-mcp-python (auth_header[7:].strip())
+    // and apcore-mcp-rust (auth_header[7..].trim()) behaviour. See D10-004.
+    if (!authHeader.toLowerCase().startsWith("bearer ")) return null;
+    const token = authHeader.slice(7).trim();
     if (!token) return null;
 
     try {

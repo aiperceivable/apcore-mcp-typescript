@@ -187,6 +187,19 @@ describe("JWTAuthenticator", () => {
     expect(identity).toBeNull();
   });
 
+  it("tolerates extra whitespace between Bearer prefix and token (D10-004)", async () => {
+    // Real-world reverse proxies sometimes emit double-spaces; Python
+    // auth_header[7:].strip() and Rust auth_header[7..].trim() both
+    // tolerate this. TS now matches.
+    const auth = new JWTAuthenticator({ secret: SECRET });
+    const token = signToken({ sub: "user-1" }, SECRET);
+    const req = makeReq({ authorization: `Bearer  ${token}` });
+
+    const identity = await auth.authenticate(req);
+    expect(identity).not.toBeNull();
+    expect(identity?.id).toBe("user-1");
+  });
+
   it("returns null for expired token", async () => {
     const auth = new JWTAuthenticator({ secret: SECRET });
     // [JWT-3] Authenticator now applies 30s clock-skew leeway. Use a
