@@ -330,15 +330,24 @@ export class MCPServerFactory {
    * @param server - The MCP Server to register handlers on
    * @param tools - Array of MCP Tool objects to serve
    * @param router - ExecutionRouter to handle tool call execution
+   * @param options - Optional extra options; `asyncTaskBridge` adds meta-tools
+   *                  and routes meta-tool calls to the bridge (mirrors Python's
+   *                  `register_handlers(server, tools, router, async_bridge)`).
+   *                  [D11-014]
    */
   registerHandlers(
     server: Server,
     tools: Tool[],
     router: ExecutionRouter,
+    options?: { asyncTaskBridge?: AsyncTaskBridge },
   ): void {
+    // [D11-014] If asyncTaskBridge is provided, extend tools list with meta-tools.
+    const bridge = options?.asyncTaskBridge;
+    const allTools: Tool[] = bridge ? this.attachAsyncMetaTools(tools, bridge) : tools;
+
     // Handle tools/list requests
     server.setRequestHandler(ListToolsRequestSchema, async () => {
-      return { tools };
+      return { tools: allTools };
     });
 
     // Handle tools/call requests

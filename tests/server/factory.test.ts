@@ -623,3 +623,59 @@ describe("MCPServerFactory", () => {
     });
   });
 });
+
+// D11-014: registerHandlers should accept optional asyncTaskBridge parameter
+describe("D11-014: registerHandlers asyncTaskBridge parameter", () => {
+  it("adds meta-tools to the tools list when asyncTaskBridge is provided", async () => {
+    const factory = new MCPServerFactory();
+
+    const handlers = new Map<unknown, Function>();
+    const mockServer = {
+      setRequestHandler: (schema: unknown, handler: Function) => {
+        handlers.set(schema, handler);
+      },
+    };
+
+    const mockBridge = {
+      enabled: true,
+      buildMetaTools: vi.fn().mockReturnValue([
+        {
+          name: "__apcore_task_submit",
+          description: "Submit async task",
+          inputSchema: { type: "object" },
+        },
+      ]),
+      handleMetaTool: vi.fn().mockResolvedValue({ task_id: "t1", status: "pending" }),
+    };
+
+    const tools: any[] = [];
+    factory.registerHandlers(mockServer as any, tools, {} as any, {
+      asyncTaskBridge: mockBridge as any,
+    });
+
+    const listHandler = handlers.get(ListToolsRequestSchema)!;
+    const result = await listHandler({});
+    // Meta-tools should be appended
+    expect(result.tools.some((t: any) => t.name === "__apcore_task_submit")).toBe(true);
+    expect(mockBridge.buildMetaTools).toHaveBeenCalled();
+  });
+
+  it("works without asyncTaskBridge (backward compat)", async () => {
+    const factory = new MCPServerFactory();
+
+    const handlers = new Map<unknown, Function>();
+    const mockServer = {
+      setRequestHandler: (schema: unknown, handler: Function) => {
+        handlers.set(schema, handler);
+      },
+    };
+
+    const tools: any[] = [{ name: "my.tool", description: "d", inputSchema: {} }];
+    factory.registerHandlers(mockServer as any, tools, {} as any);
+
+    const listHandler = handlers.get(ListToolsRequestSchema)!;
+    const result = await listHandler({});
+    expect(result.tools).toHaveLength(1);
+    expect(result.tools[0].name).toBe("my.tool");
+  });
+});
