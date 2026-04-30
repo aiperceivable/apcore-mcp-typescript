@@ -37,4 +37,26 @@ export class ModuleIDNormalizer {
   denormalize(toolName: string): string {
     return toolName.replaceAll("-", ".");
   }
+
+  /**
+   * Bijection-guarded variant of denormalize. [MID-5]
+   *
+   * Returns the denormalized module ID if `toolName` is a valid pre-image of
+   * `normalize()` (i.e. it passes the normalized-name pattern validation).
+   * Returns `null` for inputs that could not have been produced by `normalize()`.
+   *
+   * Valid normalized names must match: `[a-z0-9]+(-[a-z0-9]+)*`
+   * - Lowercase alphanumeric segments separated by single hyphens.
+   * - No uppercase, no leading/trailing/consecutive hyphens, no empty string.
+   */
+  tryDenormalize(toolName: string): string | null {
+    // Must be non-empty, all-lowercase, no consecutive/leading/trailing hyphens,
+    // only [a-z0-9-] characters.
+    if (!toolName || toolName.length === 0) return null;
+    // Pattern: segments of [a-z][a-z0-9]* joined by single hyphens.
+    // Mirrors MODULE_ID_PATTERN where each segment starts with a lowercase letter.
+    const NORMALIZED_PATTERN = /^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$/;
+    if (!NORMALIZED_PATTERN.test(toolName)) return null;
+    return this.denormalize(toolName);
+  }
 }
