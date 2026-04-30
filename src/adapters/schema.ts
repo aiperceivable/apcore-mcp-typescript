@@ -144,6 +144,18 @@ export class SchemaConverter {
         result[key] = this._applyStrict(result[key]);
       }
     }
+    // [D11-002] Mirror Python's _SCHEMA_CHILD_SCHEMA_KEYS: also recurse into
+    // `propertyNames` (single schema) and `contains` (single schema).
+    for (const key of ["propertyNames", "contains"] as const) {
+      if (key in result && result[key] !== null && typeof result[key] === "object") {
+        result[key] = this._applyStrict(result[key]);
+      }
+    }
+    // [D11-002] Mirror Python's _SCHEMA_CHILD_LIST_KEYS: also recurse into
+    // `prefixItems` (array of schemas).
+    if ("prefixItems" in result && Array.isArray(result["prefixItems"])) {
+      result["prefixItems"] = (result["prefixItems"] as unknown[]).map((v) => this._applyStrict(v));
+    }
 
     // Decide whether this node is object-shaped
     const type = result["type"];

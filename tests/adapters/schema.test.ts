@@ -564,4 +564,51 @@ describe("SchemaConverter", () => {
     const props = result.properties as Record<string, Record<string, unknown>>;
     expect(props.bag.additionalProperties).toBe(true);
   });
+
+  // D11-002: strict injection must recurse into propertyNames, contains, prefixItems
+  it("D11-002: strict mode recurses into propertyNames sub-schema", () => {
+    // propertyNames here is an object schema (has no type but has properties)
+    const descriptor = makeDescriptor({
+      type: "object",
+      propertyNames: {
+        properties: { pattern: { type: "string" } },
+      } as Record<string, unknown>,
+      properties: {},
+    });
+    const result = converter.convertInputSchema(descriptor, { strict: true });
+    const propertyNames = result["propertyNames"] as Record<string, unknown>;
+    expect(propertyNames).toBeDefined();
+    // The propertyNames sub-schema has properties with no type — treated as object-shaped
+    expect(propertyNames["additionalProperties"]).toBe(false);
+  });
+
+  it("D11-002: strict mode recurses into prefixItems array", () => {
+    const descriptor = makeDescriptor({
+      type: "array",
+      prefixItems: [
+        { type: "object", properties: { x: { type: "number" } } },
+        { type: "string" },
+      ] as Record<string, unknown>[],
+    });
+    const result = converter.convertInputSchema(descriptor, { strict: true });
+    const prefixItems = result["prefixItems"] as Record<string, unknown>[];
+    expect(prefixItems).toBeDefined();
+    expect(prefixItems[0]["additionalProperties"]).toBe(false);
+    // string type — not object-shaped, so no additionalProperties
+    expect(prefixItems[1]["additionalProperties"]).toBeUndefined();
+  });
+
+  it("D11-002: strict mode recurses into contains sub-schema", () => {
+    const descriptor = makeDescriptor({
+      type: "array",
+      contains: {
+        type: "object",
+        properties: { id: { type: "string" } },
+      } as Record<string, unknown>,
+    });
+    const result = converter.convertInputSchema(descriptor, { strict: true });
+    const contains = result["contains"] as Record<string, unknown>;
+    expect(contains).toBeDefined();
+    expect(contains["additionalProperties"]).toBe(false);
+  });
 });
