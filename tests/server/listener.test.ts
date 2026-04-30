@@ -107,6 +107,7 @@ describe("RegistryListener", () => {
     );
     const factory = new MCPServerFactory();
     const listener = new RegistryListener(registry, factory);
+    listener.start(); // [D11-001] _onRegister requires _active = true
 
     // Suppress console.log for the registration message
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -127,6 +128,7 @@ describe("RegistryListener", () => {
     // getDefinition already mocked to return null by default
     const factory = new MCPServerFactory();
     const listener = new RegistryListener(registry, factory);
+    listener.start(); // [D11-001] _onRegister requires _active = true
 
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -226,6 +228,7 @@ describe("RegistryListener", () => {
     );
     const factory = new MCPServerFactory();
     const listener = new RegistryListener(registry, factory);
+    listener.start(); // [D11-001] _onRegister requires _active = true
 
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
@@ -242,5 +245,47 @@ describe("RegistryListener", () => {
     expect(freshSnapshot.has("mod.injected")).toBe(false);
 
     logSpy.mockRestore();
+  });
+});
+
+// D11-001: _onRegister must respect the _active guard after stop()
+describe("D11-001: _onRegister _active guard", () => {
+  it("_onRegister does NOT register tool after stop() is called", () => {
+    const { registry, callbacks } = createMockRegistryWithCallbacks();
+    const factory = new MCPServerFactory();
+    const listener = new RegistryListener(registry, factory);
+
+    // Give registry a module to define
+    (registry.getDefinition as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeDescriptor({ moduleId: "test.module" }),
+    );
+
+    listener.start();
+    listener.stop();
+
+    // Directly invoke _onRegister after stop() — should be a no-op
+    listener._onRegister("test.module");
+
+    // The tool should NOT have been registered
+    expect(listener.tools.size).toBe(0);
+  });
+
+  it("_onRegister registers tool when _active (before stop)", () => {
+    const { registry } = createMockRegistryWithCallbacks();
+    const factory = new MCPServerFactory();
+    const listener = new RegistryListener(registry, factory);
+
+    (registry.getDefinition as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeDescriptor({ moduleId: "test.module" }),
+    );
+
+    listener.start();
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    listener._onRegister("test.module");
+    logSpy.mockRestore();
+
+    expect(listener.tools.size).toBe(1);
+    expect(listener.tools.has("test.module")).toBe(true);
   });
 });

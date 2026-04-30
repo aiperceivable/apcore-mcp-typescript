@@ -82,6 +82,9 @@ export class RegistryListener {
    * @param moduleId - The ID of the newly registered module
    */
   _onRegister(moduleId: string): void {
+    // [D11-001] Mirror Python listener.py:75 and Rust listener.rs:66:
+    // guard with _active check so post-stop() invocations are no-ops.
+    if (!this._active) return;
     try {
       const descriptor = this._registry.getDefinition(moduleId);
       if (descriptor === null) {
