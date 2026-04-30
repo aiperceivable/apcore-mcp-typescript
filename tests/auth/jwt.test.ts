@@ -337,4 +337,28 @@ describe("JWTAuthenticator", () => {
     const auth = new JWTAuthenticator({ secret: SECRET, requireAuth: false });
     expect(auth.requireAuth).toBe(false);
   });
+
+  // ── D10-008: key validation at construction time removed ────────────
+
+  it("D10-008: constructs without throwing when no key provided", () => {
+    // Previously threw: "JWTAuthenticator requires a 'key' (or deprecated 'secret') option"
+    // Now: construction succeeds; authenticate() returns null for missing/invalid tokens.
+    expect(() => new JWTAuthenticator({})).not.toThrow();
+  });
+
+  it("D10-008: authenticate() returns null when constructed with no key", async () => {
+    const auth = new JWTAuthenticator({});
+    const req = makeReq({ authorization: `Bearer sometoken` });
+    const identity = await auth.authenticate(req);
+    expect(identity).toBeNull();
+  });
+
+  it("D10-008: authenticate() works normally when constructed with a valid key", async () => {
+    const auth = new JWTAuthenticator({ key: SECRET });
+    const token = signToken({ sub: "user-123" });
+    const req = makeReq({ authorization: `Bearer ${token}` });
+    const identity = await auth.authenticate(req);
+    expect(identity).not.toBeNull();
+    expect(identity!.id).toBe("user-123");
+  });
 });

@@ -61,10 +61,11 @@ export class JWTAuthenticator implements Authenticator {
 
   constructor(options: JWTAuthenticatorOptions) {
     const keyValue = options.key ?? options.secret;
-    if (!keyValue) {
-      throw new Error("JWTAuthenticator requires a 'key' (or deprecated 'secret') option");
-    }
-    this._secret = keyValue;
+    // [D10-008] Do NOT throw at construction time for missing key.
+    // Python + Rust don't validate the key at construction; they fail
+    // gracefully (return null) when authenticate() is called without a valid key.
+    // requireAuth belongs on AuthMiddleware, not on the authenticator itself.
+    this._secret = keyValue ?? "";
     this._algorithms = options.algorithms ?? ["HS256"];
     this._audience = options.audience;
     this._issuer = options.issuer;
