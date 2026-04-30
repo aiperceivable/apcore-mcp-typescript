@@ -443,5 +443,80 @@ describe("OpenAIConverter", () => {
       const props = params.properties as Record<string, Record<string, unknown>>;
       expect(props.count.default).toBeUndefined();
     });
+
+    // D11-003: _applyStrictMode pipeline steps
+    it("D11-003: promotes x-llm-description to description", () => {
+      const descriptor = makeDescriptor({
+        moduleId: "test.module",
+        inputSchema: {
+          type: "object",
+          properties: {
+            name: { type: "string", "x-llm-description": "custom desc" } as Record<string, unknown>,
+          },
+          required: ["name"],
+        },
+      });
+      const tool = converter.convertDescriptor(descriptor, { strict: true });
+      const params = tool.function.parameters as Record<string, unknown>;
+      const props = params.properties as Record<string, Record<string, unknown>>;
+      expect(props.name.description).toBe("custom desc");
+    });
+
+    it("D11-003: strips x-* extension keys", () => {
+      const descriptor = makeDescriptor({
+        moduleId: "test.module",
+        inputSchema: {
+          type: "object",
+          properties: {
+            name: { type: "string", "x-internal": "strip me", "x-llm-description": "custom" } as Record<string, unknown>,
+          },
+          required: ["name"],
+        },
+      });
+      const tool = converter.convertDescriptor(descriptor, { strict: true });
+      const params = tool.function.parameters as Record<string, unknown>;
+      const props = params.properties as Record<string, Record<string, unknown>>;
+      expect(props.name["x-internal"]).toBeUndefined();
+      expect(props.name["x-llm-description"]).toBeUndefined();
+    });
+
+    it("D11-003: sorts required alphabetically and strips default", () => {
+      const descriptor = makeDescriptor({
+        moduleId: "test.module",
+        inputSchema: {
+          type: "object",
+          properties: {
+            z: { type: "string", default: "last" } as Record<string, unknown>,
+            a: { type: "number" },
+            m: { type: "boolean" },
+          },
+          required: ["z", "a", "m"],
+        },
+      });
+      const tool = converter.convertDescriptor(descriptor, { strict: true });
+      const params = tool.function.parameters as Record<string, unknown>;
+      expect(params.required).toEqual(["a", "m", "z"]);
+      const props = params.properties as Record<string, Record<string, unknown>>;
+      expect(props.z.default).toBeUndefined();
+    });
+
+    // D11-012: Missing oneOf nullable wrap for $ref properties
+    it("D11-012: wraps optional $ref property in oneOf nullable", () => {
+      // Call _applyStrictMode directly because SchemaConverter inlines $refs
+      // before the converter sees the schema. The raw schema here simulates
+      // what a caller might pass directly to _applyStrictMode.
+      const schema = {
+        type: "object",
+        properties: {
+          id: { "$ref": "#/$defs/ID" },
+        },
+        required: [],  // id is optional
+      };
+      const result = converter._applyStrictMode(schema) as Record<string, unknown>;
+      const props = result.properties as Record<string, unknown>;
+      expect(props.id).toEqual({
+        oneOf: [{ "$ref": "#/$defs/ID" }, { type: "null" }],
+      });
+    });
   });
 });

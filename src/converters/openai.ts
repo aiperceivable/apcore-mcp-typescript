@@ -182,7 +182,63 @@ export class OpenAIConverter {
    */
   _applyStrictMode(schema: JsonSchema): JsonSchema {
     const copy = structuredClone(schema);
+    // [D11-003] Step 1: promote x-llm-description → description recursively
+    this._applyLlmDescriptions(copy);
+    // [D11-003] Step 2: strip all x-* extension keys recursively
+    this._stripExtensions(copy);
+    // [D11-003] Steps 3 & 4 happen inside _applyStrictRecursive:
+    //   - delete `default` from every sub-schema
+    //   - sort `required` array alphabetically
+    // [D11-012] Step 5: wrap optional $ref properties in oneOf nullable
     return this._applyStrictRecursive(copy);
+  }
+
+  /**
+   * Recursively promote `x-llm-description` → `description` when present.
+   * Mirrors Rust's `apply_strict_mode` step 1. [D11-003]
+   */
+  private _applyLlmDescriptions(schema: JsonSchema): void {
+    if (typeof schema !== "object" || schema === null) return;
+    const obj = schema as Record<string, unknown>;
+    if (typeof obj["x-llm-description"] === "string") {
+      obj["description"] = obj["x-llm-description"];
+    }
+    for (const value of Object.values(obj)) {
+      if (typeof value === "object" && value !== null) {
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            this._applyLlmDescriptions(item as JsonSchema);
+          }
+        } else {
+          this._applyLlmDescriptions(value as JsonSchema);
+        }
+      }
+    }
+  }
+
+  /**
+   * Recursively strip all keys starting with `x-` from every schema node.
+   * Mirrors Rust's `apply_strict_mode` step 2. [D11-003]
+   */
+  private _stripExtensions(schema: JsonSchema): void {
+    if (typeof schema !== "object" || schema === null) return;
+    const obj = schema as Record<string, unknown>;
+    for (const key of Object.keys(obj)) {
+      if (key.startsWith("x-")) {
+        delete obj[key];
+      } else {
+        const value = obj[key];
+        if (typeof value === "object" && value !== null) {
+          if (Array.isArray(value)) {
+            for (const item of value) {
+              this._stripExtensions(item as JsonSchema);
+            }
+          } else {
+            this._stripExtensions(value as JsonSchema);
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -204,13 +260,14 @@ export class OpenAIConverter {
       const existingRequired = new Set<string>(
         (schema["required"] as string[] | undefined) ?? [],
       );
-      const allPropertyNames = Object.keys(properties);
+      // [D11-005] Sort property names alphabetically to match Python+Rust output.
+      const allPropertyNames = Object.keys(properties).sort();
 
       // Make optional properties nullable and add them to required
       for (const propName of allPropertyNames) {
         const propSchema = properties[propName];
 
-        // Remove default values
+        // [D11-003] Remove default values from all sub-schemas
         delete propSchema["default"];
 
         // If not already required, make it nullable
@@ -227,6 +284,11 @@ export class OpenAIConverter {
             } else {
               propSchema["type"] = [currentType, "null"];
             }
+          } else if (currentType === undefined) {
+            // [D11-012] Optional $ref property (no `type`) — wrap in oneOf nullable
+            // to match Python+Rust's handling of pure $ref or composition schemas.
+            properties[propName] = { oneOf: [structuredClone(propSchema), { type: "null" }] } as JsonSchema;
+            continue;
           }
         }
 
@@ -234,7 +296,7 @@ export class OpenAIConverter {
         properties[propName] = this._applyStrictRecursive(propSchema);
       }
 
-      // All properties become required
+      // [D11-003] All properties become required; [D11-005] sort alphabetically
       schema["required"] = allPropertyNames;
     }
 
@@ -243,6 +305,14 @@ export class OpenAIConverter {
       schema["items"] = this._applyStrictRecursive(
         schema["items"] as JsonSchema,
       );
+    }
+
+    // Recurse into $defs (caller-provided schemas that still have definitions)
+    if (schema["$defs"] && typeof schema["$defs"] === "object" && !Array.isArray(schema["$defs"])) {
+      const defs = schema["$defs"] as Record<string, JsonSchema>;
+      for (const [k, v] of Object.entries(defs)) {
+        defs[k] = this._applyStrictRecursive(v);
+      }
     }
 
     return schema;
