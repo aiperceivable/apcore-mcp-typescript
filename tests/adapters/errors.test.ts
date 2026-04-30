@@ -384,3 +384,63 @@ describe("ErrorMapper", () => {
     expect(result.suggestion).toBe("Add the name field");
   });
 });
+
+// D10-011: approvalId/approval_id dual-key handling (TS behavior is CORRECT)
+describe("D10-011: approvalId camelCase + approval_id snake_case dual handling", () => {
+  it("handles camelCase approvalId (apcore-js convention)", () => {
+    const mapper = new ErrorMapper();
+    const error = createModuleError("APPROVAL_PENDING", "Approval needed", {
+      approvalId: "abc-123",
+    });
+    const result = mapper.toMcpError(error);
+    expect(result.errorType).toBe("APPROVAL_PENDING");
+    // Handles both camelCase (apcore-js) and snake_case (apcore-py/rs) field names
+    expect((result.details as Record<string, unknown>)?.approvalId).toBe("abc-123");
+  });
+
+  it("handles snake_case approval_id (apcore-py/rs convention)", () => {
+    const mapper = new ErrorMapper();
+    const error = createModuleError("APPROVAL_PENDING", "Approval needed", {
+      approval_id: "xyz-456",
+    });
+    const result = mapper.toMcpError(error);
+    expect(result.errorType).toBe("APPROVAL_PENDING");
+    expect((result.details as Record<string, unknown>)?.approvalId).toBe("xyz-456");
+  });
+});
+
+// D11-016: userFixable tagging for DEPENDENCY_NOT_FOUND (TS behavior is CORRECT)
+describe("D11-016: userFixable: true for DEPENDENCY_NOT_FOUND and DEPENDENCY_VERSION_MISMATCH", () => {
+  it("sets userFixable: true for DEPENDENCY_NOT_FOUND", () => {
+    const mapper = new ErrorMapper();
+    const error = createModuleError("DEPENDENCY_NOT_FOUND", "dep not found", null);
+    const result = mapper.toMcpError(error);
+    // TypeScript intentionally adds userFixable: true — behavior Python+Rust should adopt.
+    expect(result.userFixable).toBe(true);
+  });
+
+  it("sets userFixable: true for DEPENDENCY_VERSION_MISMATCH", () => {
+    const mapper = new ErrorMapper();
+    const error = createModuleError("DEPENDENCY_VERSION_MISMATCH", "version mismatch", null);
+    const result = mapper.toMcpError(error);
+    expect(result.userFixable).toBe(true);
+  });
+});
+
+// D11-017: userFixable tagging for VERSION_CONSTRAINT_INVALID/BINDING_* (TS behavior is CORRECT)
+describe("D11-017: userFixable: true for VERSION_CONSTRAINT_INVALID and BINDING_* errors", () => {
+  it("sets userFixable: true for VERSION_CONSTRAINT_INVALID", () => {
+    const mapper = new ErrorMapper();
+    const error = createModuleError("VERSION_CONSTRAINT_INVALID", "bad constraint", null);
+    const result = mapper.toMcpError(error);
+    // TypeScript intentionally adds userFixable: true for these binding/constraint errors.
+    expect(result.userFixable).toBe(true);
+  });
+
+  it("sets userFixable: true for BINDING_SCHEMA_INFERENCE_FAILED", () => {
+    const mapper = new ErrorMapper();
+    const error = createModuleError("BINDING_SCHEMA_INFERENCE_FAILED", "inference failed", null);
+    const result = mapper.toMcpError(error);
+    expect(result.userFixable).toBe(true);
+  });
+});

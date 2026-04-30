@@ -130,8 +130,9 @@ export class ErrorMapper {
       }
 
       // Approval pending -> narrow details to approvalId only
-      // NOTE: apcore-js may use camelCase (approvalId) or snake_case (approval_id).
-      // Check both to stay compatible with either convention.
+      // Handles both camelCase (apcore-js) and snake_case (apcore-py/rs) field names.
+      // [D10-011] TypeScript intentionally handles both conventions; Python+Rust only
+      // handle snake_case and would silently emit `details: null` for camelCase errors.
       if (code === ErrorCodes.APPROVAL_PENDING) {
         const idKey = details && "approvalId" in details
           ? "approvalId"
