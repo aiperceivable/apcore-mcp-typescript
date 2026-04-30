@@ -209,12 +209,35 @@ function buildOutputSchemaMap(registry: Registry): Record<string, Record<string,
 }
 
 /**
- * Load Config Bus overrides for strategy, middleware, and ACL.
+ * Scalar Config Bus keys consumed by serve()/asyncServe(). Snake-case names
+ * match `MCP_DEFAULTS` in src/config.ts; serve() converts to camelCase and
+ * applies a caller-wins precedence chain on top of these. [D9-002]
+ */
+interface ConfigBusDefaults {
+  transport?: string;
+  host?: string;
+  port?: number;
+  name?: string;
+  logLevel?: string;
+  validateInputs?: boolean;
+  explorer?: boolean;
+  explorerPrefix?: string;
+  requireAuth?: boolean;
+}
+
+/**
+ * Load Config Bus overrides for strategy, middleware, ACL, and the scalar
+ * `mcp.*` keys consumed by serve()/asyncServe().
  *
  * F-040: YAML Pipeline Config via Config Bus. Extracted to eliminate the
  * byte-for-byte duplicate block that previously appeared in both serve() and
  * asyncServe(). Both functions call this helper and merge the results with
  * their caller-supplied values.
+ *
+ * D9-002: Also reads the 9 scalar `mcp.*` keys (transport, host, port, name,
+ * log_level, validate_inputs, explorer, explorer_prefix, require_auth) so
+ * users setting `APCORE_MCP_PORT=9000` (or `mcp.port: 9000` in YAML) actually
+ * see the change take effect. Caller options still win over Config Bus.
  */
 async function loadConfigBusOverrides(
   strategy: string | undefined,
@@ -224,10 +247,12 @@ async function loadConfigBusOverrides(
   resolvedStrategy: string | undefined;
   combinedMiddleware: unknown[];
   effectiveAcl: unknown | null;
+  configBusDefaults: ConfigBusDefaults;
 }> {
   let resolvedStrategy = strategy;
   let configMiddleware: unknown[] = [];
   let configAcl: unknown | null = null;
+  const configBusDefaults: ConfigBusDefaults = {};
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const apcoreConfig = await import("apcore-js") as any;
@@ -258,6 +283,38 @@ async function loadConfigBusOverrides(
         const { buildAclFromConfig } = await import("./acl-builder.js");
         configAcl = await buildAclFromConfig(aclCfg);
       }
+      // [D9-002] Load 9 scalar mcp.* keys. Snake-case → camelCase.
+      const readStr = (k: string): string | undefined => {
+        const v = config.get?.(k);
+        return typeof v === "string" ? v : undefined;
+      };
+      const readNum = (k: string): number | undefined => {
+        const v = config.get?.(k);
+        if (typeof v === "number") return v;
+        if (typeof v === "string" && v !== "") {
+          const n = Number(v);
+          if (!Number.isNaN(n)) return n;
+        }
+        return undefined;
+      };
+      const readBool = (k: string): boolean | undefined => {
+        const v = config.get?.(k);
+        if (typeof v === "boolean") return v;
+        if (typeof v === "string") {
+          if (v === "true") return true;
+          if (v === "false") return false;
+        }
+        return undefined;
+      };
+      configBusDefaults.transport = readStr("mcp.transport");
+      configBusDefaults.host = readStr("mcp.host");
+      configBusDefaults.port = readNum("mcp.port");
+      configBusDefaults.name = readStr("mcp.name");
+      configBusDefaults.logLevel = readStr("mcp.log_level");
+      configBusDefaults.validateInputs = readBool("mcp.validate_inputs");
+      configBusDefaults.explorer = readBool("mcp.explorer");
+      configBusDefaults.explorerPrefix = readStr("mcp.explorer_prefix");
+      configBusDefaults.requireAuth = readBool("mcp.require_auth");
     }
   } catch {
     // apcore-js not installed or Config Bus not available — use strategy param as-is
@@ -271,7 +328,7 @@ async function loadConfigBusOverrides(
   // Caller-supplied ACL wins over Config Bus.
   const effectiveAcl = callerAcl !== undefined ? callerAcl : configAcl;
 
-  return { resolvedStrategy, combinedMiddleware, effectiveAcl };
+  return { resolvedStrategy, combinedMiddleware, effectiveAcl, configBusDefaults };
 }
 
 /**
@@ -429,27 +486,31 @@ export async function serve(
   registryOrExecutor: RegistryOrExecutor,
   options: ServeOptions = {},
 ): Promise<void> {
+  // [D9-002] Apply caller-wins precedence: caller option → Config Bus → hardcoded
+  // default. We can't tell at the destructure step whether a value came from the
+  // caller or from a hardcoded default, so for the 9 scalar keys we destructure
+  // raw (no inline default) and resolve below, after loadConfigBusOverrides runs.
   const {
-    transport = "stdio",
-    host = "127.0.0.1",
-    port = 8000,
-    name = "apcore-mcp",
+    transport: optTransport,
+    host: optHost,
+    port: optPort,
+    name: optName,
     version = VERSION,
-    validateInputs,
+    validateInputs: optValidateInputs,
     tags,
     prefix,
-    logLevel,
+    logLevel: optLogLevel,
     onStartup,
     onShutdown,
     metricsCollector,
-    explorer = false,
-    explorerPrefix = "/explorer",
+    explorer: optExplorer,
+    explorerPrefix: optExplorerPrefix,
     allowExecute = false,
     explorerTitle = "APCore MCP Explorer",
     explorerProjectName = "apcore-mcp",
     explorerProjectUrl = "https://github.com/aiperceivable/apcore-mcp-typescript",
     authenticator,
-    requireAuth,
+    requireAuth: optRequireAuth,
     exemptPaths,
     approvalHandler,
     outputFormatter,
@@ -462,16 +523,34 @@ export async function serve(
     async: asyncFlag,
   } = options;
 
-  // Input validation (matching Python's checks)
-  validateServeOptions({ name, tags, prefix, explorer, explorerPrefix });
-
-  // Save original console methods before suppression
+  // Save original console methods before suppression. Suppression itself
+  // happens AFTER Config Bus resolution so that `mcp.log_level` from YAML or
+  // `APCORE_MCP_LOG_LEVEL` from env can drive it. [D9-002]
   const origDebug = console.debug;
   const origInfo = console.info;
   const origWarn = console.warn;
   const origError = console.error;
 
-  // Apply log-level suppression
+  // ── F-040: YAML Pipeline Config via Config Bus ─────────────────────
+  const { resolvedStrategy, combinedMiddleware, effectiveAcl, configBusDefaults } =
+    await loadConfigBusOverrides(strategy, callerMiddleware, callerAcl);
+
+  // [D9-002] Resolve scalar config values: caller → Config Bus → hardcoded default.
+  const transport = optTransport ?? configBusDefaults.transport ?? "stdio";
+  const host = optHost ?? configBusDefaults.host ?? "127.0.0.1";
+  const port = optPort ?? configBusDefaults.port ?? 8000;
+  const name = optName ?? configBusDefaults.name ?? "apcore-mcp";
+  const validateInputs = optValidateInputs ?? configBusDefaults.validateInputs;
+  const logLevel = optLogLevel ?? configBusDefaults.logLevel;
+  const explorer = optExplorer ?? configBusDefaults.explorer ?? false;
+  const explorerPrefix = optExplorerPrefix ?? configBusDefaults.explorerPrefix ?? "/explorer";
+  const requireAuth = optRequireAuth ?? configBusDefaults.requireAuth;
+
+  // Input validation (matching Python's checks) — moved here so it sees
+  // Config-Bus-resolved values.
+  validateServeOptions({ name, tags, prefix, explorer, explorerPrefix });
+
+  // Apply log-level suppression (post-resolution so Config Bus values apply).
   if (logLevel) {
     const levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
     const minLevel = levels.indexOf(logLevel);
@@ -480,10 +559,6 @@ export async function serve(
     if (minLevel > 2) console.warn = () => { };
     if (minLevel > 3) console.error = () => { };
   }
-
-  // ── F-040: YAML Pipeline Config via Config Bus ─────────────────────
-  const { resolvedStrategy, combinedMiddleware, effectiveAcl } =
-    await loadConfigBusOverrides(strategy, callerMiddleware, callerAcl);
 
   const registry = resolveRegistry(registryOrExecutor);
   const executor = await resolveExecutor(registryOrExecutor, {
@@ -678,22 +753,23 @@ export async function asyncServe(
   registryOrExecutor: RegistryOrExecutor,
   options: AsyncServeOptions = {},
 ): Promise<AsyncServeApp> {
+  // [D9-002] See serve() for the rationale on the optX naming and post-load resolution.
   const {
-    name = "apcore-mcp",
+    name: optName,
     version = VERSION,
-    validateInputs,
+    validateInputs: optValidateInputs,
     tags,
     prefix,
-    logLevel,
+    logLevel: optLogLevel,
     metricsCollector,
-    explorer = false,
-    explorerPrefix = "/explorer",
+    explorer: optExplorer,
+    explorerPrefix: optExplorerPrefix,
     allowExecute = false,
     explorerTitle = "APCore MCP Explorer",
     explorerProjectName = "apcore-mcp",
     explorerProjectUrl = "https://github.com/aiperceivable/apcore-mcp-typescript",
     authenticator,
-    requireAuth,
+    requireAuth: optRequireAuth,
     exemptPaths,
     approvalHandler,
     endpoint,
@@ -707,16 +783,33 @@ export async function asyncServe(
     async: asyncFlag,
   } = options;
 
-  // Input validation (same as serve())
-  validateServeOptions({ name, tags, prefix, explorer, explorerPrefix });
-
-  // Save original console methods before suppression
+  // Save original console methods before suppression. Suppression itself
+  // happens AFTER Config Bus resolution so that `mcp.log_level` from YAML or
+  // `APCORE_MCP_LOG_LEVEL` from env can drive it. [D9-002]
   const origDebug = console.debug;
   const origInfo = console.info;
   const origWarn = console.warn;
   const origError = console.error;
 
-  // Apply log-level suppression
+  // ── F-040: YAML Pipeline Config via Config Bus ─────────────────────
+  const { resolvedStrategy, combinedMiddleware, effectiveAcl, configBusDefaults } =
+    await loadConfigBusOverrides(strategy, callerMiddleware, callerAcl);
+
+  // [D9-002] Resolve scalar config values: caller → Config Bus → hardcoded default.
+  // asyncServe does not bind a transport (returns an ASGI-style app); transport,
+  // host, and port are not part of AsyncServeOptions.
+  const name = optName ?? configBusDefaults.name ?? "apcore-mcp";
+  const validateInputs = optValidateInputs ?? configBusDefaults.validateInputs;
+  const logLevel = optLogLevel ?? configBusDefaults.logLevel;
+  const explorer = optExplorer ?? configBusDefaults.explorer ?? false;
+  const explorerPrefix = optExplorerPrefix ?? configBusDefaults.explorerPrefix ?? "/explorer";
+  const requireAuth = optRequireAuth ?? configBusDefaults.requireAuth;
+
+  // Input validation (matching Python's checks) — moved here so it sees
+  // Config-Bus-resolved values.
+  validateServeOptions({ name, tags, prefix, explorer, explorerPrefix });
+
+  // Apply log-level suppression (post-resolution so Config Bus values apply).
   if (logLevel) {
     const levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
     const minLevel = levels.indexOf(logLevel);
@@ -725,10 +818,6 @@ export async function asyncServe(
     if (minLevel > 2) console.warn = () => { };
     if (minLevel > 3) console.error = () => { };
   }
-
-  // ── F-040: YAML Pipeline Config via Config Bus ─────────────────────
-  const { resolvedStrategy, combinedMiddleware, effectiveAcl } =
-    await loadConfigBusOverrides(strategy, callerMiddleware, callerAcl);
 
   const registry = resolveRegistry(registryOrExecutor);
   const executor = await resolveExecutor(registryOrExecutor, {
