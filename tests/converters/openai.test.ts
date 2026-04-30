@@ -500,6 +500,29 @@ describe("OpenAIConverter", () => {
       expect(props.z.default).toBeUndefined();
     });
 
+    // TS-C1: _applyStrictRecursive must recurse into prefixItems
+    it("_applyStrictRecursive recurses into prefixItems", () => {
+      // Call _applyStrictMode directly (bypassing SchemaConverter) so we test
+      // _applyStrictRecursive in isolation — the same pattern used by the $defs test.
+      const schema = {
+        type: "object",
+        properties: {
+          args: {
+            type: "array",
+            prefixItems: [
+              { type: "object", properties: { x: { type: "string" } } },
+            ],
+          },
+        },
+        required: ["args"],
+      };
+
+      const result = converter._applyStrictMode(schema) as Record<string, unknown>;
+      const props = result.properties as Record<string, Record<string, unknown>>;
+      const tupleItem = (props.args.prefixItems as Array<Record<string, unknown>>)[0];
+      expect(tupleItem.additionalProperties).toBe(false);
+    });
+
     // D11-012: Missing oneOf nullable wrap for $ref properties
     it("D11-012: wraps optional $ref property in oneOf nullable", () => {
       // Call _applyStrictMode directly because SchemaConverter inlines $refs

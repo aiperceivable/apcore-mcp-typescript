@@ -307,6 +307,13 @@ export class OpenAIConverter {
       );
     }
 
+    // Recurse into prefixItems (JSON Schema 2020-12 tuple validation)
+    if (schema["prefixItems"] !== undefined && Array.isArray(schema["prefixItems"])) {
+      schema["prefixItems"] = (schema["prefixItems"] as JsonSchema[]).map(
+        (item) => this._applyStrictRecursive(item)
+      );
+    }
+
     // Recurse into $defs (caller-provided schemas that still have definitions)
     if (schema["$defs"] && typeof schema["$defs"] === "object" && !Array.isArray(schema["$defs"])) {
       const defs = schema["$defs"] as Record<string, JsonSchema>;
