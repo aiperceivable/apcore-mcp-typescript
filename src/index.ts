@@ -64,6 +64,8 @@ export type { APCoreMCPOptions, APCoreMCPServeOptions, APCoreMCPAsyncServeOption
 
 // ─── Building Block Exports ──────────────────────────────────────────────────
 export { MCPServerFactory } from "./server/factory.js";
+// MCPServer is an alias for MCPServerFactory, matching Python/Rust top-level export parity.
+export { MCPServerFactory as MCPServer } from "./server/factory.js";
 export { ExecutionRouter } from "./server/router.js";
 export type { CallResult, HandleCallExtra, ExecutionRouterOptions } from "./server/router.js";
 export { RegistryListener } from "./server/listener.js";

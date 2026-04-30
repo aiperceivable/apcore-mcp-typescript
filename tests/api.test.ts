@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { toOpenaiTools, asyncServe } from "../src/index.js";
+import { toOpenaiTools, asyncServe, MCPServer } from "../src/index.js";
 import type { Registry, Executor, ModuleDescriptor } from "../src/types.js";
 import { ErrorCodes } from "../src/types.js";
 
@@ -233,5 +233,18 @@ describe("asyncServe()", () => {
     expect(JSON.parse(body)).toHaveProperty("status", "ok");
 
     await app.close();
+  });
+});
+
+// D1-003: MCPServer must be exported as a constructor/class from index.ts
+describe("MCPServer export (D1-003)", () => {
+  it("MCPServer is exported as a constructor function", () => {
+    expect(typeof MCPServer).toBe("function");
+    expect(MCPServer.prototype).toBeDefined();
+  });
+
+  it("MCPServer can be instantiated (alias for MCPServerFactory)", () => {
+    const server = new MCPServer();
+    expect(server).toBeInstanceOf(MCPServer);
   });
 });
