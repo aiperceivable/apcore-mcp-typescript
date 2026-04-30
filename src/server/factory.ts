@@ -26,8 +26,8 @@ import { AnnotationMapper } from "../adapters/annotations.js";
 import type { Registry, ModuleDescriptor, JsonSchema } from "../types.js";
 import type { ExecutionRouter } from "./router.js";
 import type { HandleCallExtra } from "./router.js";
-import { buildTraceparent } from "./traceContext.js";
-import { APCORE_META_TOOL_PREFIX, type AsyncTaskBridge } from "./asyncTaskBridge.js";
+import { buildTraceparent } from "./trace-context.js";
+import { APCORE_META_TOOL_PREFIX, type AsyncTaskBridge } from "./async-task-bridge.js";
 
 /** Metadata keys for AI intent annotations appended to tool descriptions. */
 const AI_INTENT_KEYS = ["x-when-to-use", "x-when-not-to-use", "x-common-mistakes", "x-workflow-hints"] as const;

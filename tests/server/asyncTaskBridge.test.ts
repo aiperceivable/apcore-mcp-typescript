@@ -4,7 +4,7 @@ import {
   META_TOOL_NAMES,
   APCORE_META_TOOL_PREFIX,
   type AsyncTaskManagerLike,
-} from "../../src/server/asyncTaskBridge.js";
+} from "../../src/server/async-task-bridge.js";
 import { ExecutionRouter } from "../../src/server/router.js";
 import { MCPServerFactory } from "../../src/server/factory.js";
 import type { Executor, Registry, ModuleDescriptor } from "../../src/types.js";

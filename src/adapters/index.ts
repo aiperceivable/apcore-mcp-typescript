@@ -5,7 +5,7 @@
 export { SchemaConverter } from "./schema.js";
 export { AnnotationMapper } from "./annotations.js";
 export { ErrorMapper } from "./errors.js";
-export { ModuleIDNormalizer } from "./idNormalizer.js";
+export { ModuleIDNormalizer } from "./id-normalizer.js";
 export { ElicitationApprovalHandler } from "./approval.js";
 export type { ApprovalRequest, ApprovalResult } from "./approval.js";
-export { McpErrorFormatter, registerMcpFormatter } from "./mcpErrorFormatter.js";
+export { McpErrorFormatter, registerMcpFormatter } from "./mcp-error-formatter.js";

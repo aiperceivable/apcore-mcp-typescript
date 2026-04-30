@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ModuleIDNormalizer } from "../../src/adapters/idNormalizer.js";
+import { ModuleIDNormalizer } from "../../src/adapters/id-normalizer.js";
 
 const normalizer = new ModuleIDNormalizer();
 

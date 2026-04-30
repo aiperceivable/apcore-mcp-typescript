@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { parseTraceparent, buildTraceparent } from "../../src/server/traceContext.js";
+import { parseTraceparent, buildTraceparent } from "../../src/server/trace-context.js";
 import { ExecutionRouter } from "../../src/server/router.js";
 import { MCPServerFactory } from "../../src/server/factory.js";
 import {

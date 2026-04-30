@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { McpErrorFormatter } from "../../src/adapters/mcpErrorFormatter.js";
+import { McpErrorFormatter } from "../../src/adapters/mcp-error-formatter.js";
 
 describe("McpErrorFormatter", () => {
   it("should return an object from format()", () => {

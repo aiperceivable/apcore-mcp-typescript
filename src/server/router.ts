@@ -15,8 +15,8 @@ import { createBridgeContext } from "./context.js";
 import { MCP_PROGRESS_KEY, MCP_ELICIT_KEY } from "../helpers.js";
 import type { ElicitResult } from "../helpers.js";
 import { getCurrentIdentity } from "../auth/storage.js";
-import { parseTraceparent } from "./traceContext.js";
-import type { AsyncTaskBridge } from "./asyncTaskBridge.js";
+import { parseTraceparent } from "./trace-context.js";
+import type { AsyncTaskBridge } from "./async-task-bridge.js";
 
 /** Maximum recursion depth for deep merge to prevent stack overflow. */
 const DEEP_MERGE_MAX_DEPTH = 32;

@@ -8,7 +8,7 @@
 
 import { SchemaConverter } from "../adapters/schema.js";
 import { AnnotationMapper } from "../adapters/annotations.js";
-import { ModuleIDNormalizer } from "../adapters/idNormalizer.js";
+import { ModuleIDNormalizer } from "../adapters/id-normalizer.js";
 import type { Registry, ModuleDescriptor, OpenAIToolDef, JsonSchema } from "../types.js";
 
 /** Options shared by convertRegistry and convertDescriptor. */

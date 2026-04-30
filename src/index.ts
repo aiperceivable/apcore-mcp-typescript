@@ -15,10 +15,10 @@ import { ExecutionRouter } from "./server/router.js";
 import { RegistryListener } from "./server/listener.js";
 import { TransportManager } from "./server/transport.js";
 import { registerMcpNamespace } from "./config.js";
-import { registerMcpFormatter } from "./adapters/mcpErrorFormatter.js";
+import { registerMcpFormatter } from "./adapters/mcp-error-formatter.js";
 import type { MetricsExporter } from "./server/transport.js";
 import { installObservability, type ObservabilityFlag } from "./server/observability.js";
-import { createAsyncTaskBridge, type AsyncTaskBridge } from "./server/asyncTaskBridge.js";
+import { createAsyncTaskBridge, type AsyncTaskBridge } from "./server/async-task-bridge.js";
 import type {
   RegistryOrExecutor,
   Registry,
@@ -69,19 +69,19 @@ export type { CallResult, HandleCallExtra, ExecutionRouterOptions } from "./serv
 export { RegistryListener } from "./server/listener.js";
 export { TransportManager } from "./server/transport.js";
 export type { MetricsExporter, UsageExporter } from "./server/transport.js";
-export { AsyncTaskBridge, createAsyncTaskBridge, META_TOOL_NAMES, APCORE_META_TOOL_PREFIX } from "./server/asyncTaskBridge.js";
-export type { AsyncTaskManagerLike, TaskInfoProjection, AsyncMetaTool, AsyncTaskBridgeOptions } from "./server/asyncTaskBridge.js";
+export { AsyncTaskBridge, createAsyncTaskBridge, META_TOOL_NAMES, APCORE_META_TOOL_PREFIX } from "./server/async-task-bridge.js";
+export type { AsyncTaskManagerLike, TaskInfoProjection, AsyncMetaTool, AsyncTaskBridgeOptions } from "./server/async-task-bridge.js";
 export { installObservability } from "./server/observability.js";
 export type { ObservabilityFlag, ObservabilityStack } from "./server/observability.js";
-export { parseTraceparent, buildTraceparent } from "./server/traceContext.js";
-export type { ParsedTraceParent } from "./server/traceContext.js";
+export { parseTraceparent, buildTraceparent } from "./server/trace-context.js";
+export type { ParsedTraceParent } from "./server/trace-context.js";
 export { AnnotationMapper } from "./adapters/annotations.js";
 export { SchemaConverter } from "./adapters/schema.js";
 export { ErrorMapper } from "./adapters/errors.js";
-export { ModuleIDNormalizer } from "./adapters/idNormalizer.js";
+export { ModuleIDNormalizer } from "./adapters/id-normalizer.js";
 export { ElicitationApprovalHandler } from "./adapters/approval.js";
 export type { ApprovalRequest, ApprovalResult } from "./adapters/approval.js";
-export { McpErrorFormatter, registerMcpFormatter } from "./adapters/mcpErrorFormatter.js";
+export { McpErrorFormatter, registerMcpFormatter } from "./adapters/mcp-error-formatter.js";
 export { registerMcpNamespace, MCP_NAMESPACE, MCP_ENV_PREFIX, MCP_DEFAULTS } from "./config.js";
 export { OpenAIConverter } from "./converters/openai.js";
 export type { ConvertOptions, ConvertRegistryOptions } from "./converters/openai.js";
