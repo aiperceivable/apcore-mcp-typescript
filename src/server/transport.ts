@@ -302,20 +302,25 @@ export class TransportManager {
       return { identity: null, blocked: false };
     }
 
+    // Extract flat headers map from IncomingMessage for the Authenticator interface.
+    // The Authenticator now takes Record<string,string> (matching Python dict / Rust HashMap),
+    // so the transport layer is responsible for the IncomingMessage → headers adaptation.
+    const headersMap = this._extractHeaders(req);
+
     if (this._isAuthExempt(url.pathname, req.method ?? "GET")) {
       // Best-effort identity extraction: exempt paths don't *require* auth,
       // but if a valid token is present we still return the identity so that
       // downstream handlers (e.g. require_user_id) can use it.
       let identity: import("../auth/types.js").Identity | null = null;
       try {
-        identity = await this._authenticator.authenticate(req);
+        identity = await this._authenticator.authenticate(headersMap);
       } catch {
         // Exempt path — auth failure is fine
       }
       return { identity, blocked: false };
     }
 
-    const identity = await this._authenticator.authenticate(req);
+    const identity = await this._authenticator.authenticate(headersMap);
     if (!identity) {
       const requireAuth = this._requireAuth ?? this._authenticator.requireAuth ?? true;
       if (!requireAuth) {
@@ -336,6 +341,23 @@ export class TransportManager {
     }
 
     return { identity, blocked: false };
+  }
+
+  /**
+   * Extract a flat headers map from an IncomingMessage.
+   *
+   * Converts Node.js's `IncomingHttpHeaders` (which allows string | string[] | undefined)
+   * to Record<string, string> so Authenticators receive the same flat dict that
+   * Python (`headers: dict`) and Rust (`&HashMap<String, String>`) expose.
+   * Multi-value headers are joined with ", " (the HTTP/1.1 header folding convention).
+   */
+  private _extractHeaders(req: IncomingMessage): Record<string, string> {
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (value === undefined) continue;
+      result[key.toLowerCase()] = Array.isArray(value) ? value.join(", ") : value;
+    }
+    return result;
   }
 
   /**

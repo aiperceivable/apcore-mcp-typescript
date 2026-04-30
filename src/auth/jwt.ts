@@ -4,7 +4,6 @@
  * Mirrors the Python `JWTAuthenticator` from apcore-mcp-python.
  */
 
-import type { IncomingMessage } from "node:http";
 import jwt from "jsonwebtoken";
 import { createIdentity, type Identity } from "apcore-js";
 import type { Authenticator } from "./types.js";
@@ -84,8 +83,8 @@ export class JWTAuthenticator implements Authenticator {
     return this._requireAuth;
   }
 
-  async authenticate(req: IncomingMessage): Promise<Identity | null> {
-    const authHeader = req.headers.authorization;
+  async authenticate(headers: Record<string, string>): Promise<Identity | null> {
+    const authHeader = headers["authorization"] ?? headers["Authorization"];
     if (!authHeader) return null;
 
     // Must be "Bearer <token>"
