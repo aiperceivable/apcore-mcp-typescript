@@ -207,6 +207,104 @@ function buildOutputSchemaMap(registry: Registry): Record<string, Record<string,
   return map;
 }
 
+/**
+ * Load Config Bus overrides for strategy, middleware, and ACL.
+ *
+ * F-040: YAML Pipeline Config via Config Bus. Extracted to eliminate the
+ * byte-for-byte duplicate block that previously appeared in both serve() and
+ * asyncServe(). Both functions call this helper and merge the results with
+ * their caller-supplied values.
+ */
+async function loadConfigBusOverrides(
+  strategy: string | undefined,
+  callerMiddleware: unknown[] | undefined,
+  callerAcl: unknown | undefined,
+): Promise<{
+  resolvedStrategy: string | undefined;
+  combinedMiddleware: unknown[];
+  effectiveAcl: unknown | null;
+}> {
+  let resolvedStrategy = strategy;
+  let configMiddleware: unknown[] = [];
+  let configAcl: unknown | null = null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const apcoreConfig = await import("apcore-js") as any;
+    const Config = apcoreConfig.Config ?? apcoreConfig.default?.Config;
+    const buildStrategyFromConfig = apcoreConfig.buildStrategyFromConfig ?? apcoreConfig.default?.buildStrategyFromConfig;
+    if (Config && buildStrategyFromConfig) {
+      const config = typeof Config.getInstance === 'function' ? Config.getInstance() : new Config();
+      const pipelineCfg = config.get?.("mcp.pipeline");
+      if (pipelineCfg && typeof pipelineCfg === 'object' && Object.keys(pipelineCfg).length > 0) {
+        if (resolvedStrategy) {
+          console.warn(
+            `YAML pipeline config found in Config Bus — overriding strategy='${resolvedStrategy}' with config-driven strategy.`,
+          );
+        }
+        resolvedStrategy = buildStrategyFromConfig(pipelineCfg);
+      }
+      // Load declarative middleware from Config Bus (`mcp.middleware`).
+      const mwCfg = config.get?.("mcp.middleware");
+      if (Array.isArray(mwCfg) && mwCfg.length > 0) {
+        const { buildMiddlewareFromConfig } = await import(
+          "./middleware-builder.js"
+        );
+        configMiddleware = await buildMiddlewareFromConfig(mwCfg);
+      }
+      // Load declarative ACL from Config Bus (`mcp.acl`).
+      const aclCfg = config.get?.("mcp.acl");
+      if (aclCfg) {
+        const { buildAclFromConfig } = await import("./acl-builder.js");
+        configAcl = await buildAclFromConfig(aclCfg);
+      }
+    }
+  } catch {
+    // apcore-js not installed or Config Bus not available — use strategy param as-is
+  }
+
+  const combinedMiddleware: unknown[] = [...configMiddleware];
+  if (callerMiddleware && callerMiddleware.length > 0) {
+    combinedMiddleware.push(...callerMiddleware);
+  }
+
+  // Caller-supplied ACL wins over Config Bus.
+  const effectiveAcl = callerAcl !== undefined ? callerAcl : configAcl;
+
+  return { resolvedStrategy, combinedMiddleware, effectiveAcl };
+}
+
+/**
+ * Validate common serve/asyncServe options. Throws on invalid input.
+ */
+function validateServeOptions(options: {
+  name?: string;
+  tags?: string[] | null;
+  prefix?: string | null;
+  explorer?: boolean;
+  explorerPrefix?: string;
+}): void {
+  const name = options.name ?? "apcore-mcp";
+  if (!name || name.length === 0) {
+    throw new Error("name must not be empty");
+  }
+  if (name.length > 255) {
+    throw new Error("name must not exceed 255 characters");
+  }
+  if (options.tags) {
+    for (const tag of options.tags) {
+      if (!tag || tag.length === 0) {
+        throw new Error("tags must not contain empty strings");
+      }
+    }
+  }
+  if (options.prefix !== undefined && options.prefix !== null && options.prefix.length === 0) {
+    throw new Error("prefix must not be empty if provided");
+  }
+  if (options.explorer && !(options.explorerPrefix ?? "/explorer").startsWith("/")) {
+    throw new Error("explorerPrefix must start with '/'");
+  }
+}
+
 /** Common options shared by serve() and asyncServe(). */
 export interface BaseServeOptions {
   /** MCP server name. Default: "apcore-mcp" */
@@ -364,25 +462,7 @@ export async function serve(
   } = options;
 
   // Input validation (matching Python's checks)
-  if (!name || name.length === 0) {
-    throw new Error("name must not be empty");
-  }
-  if (name.length > 255) {
-    throw new Error("name must not exceed 255 characters");
-  }
-  if (tags) {
-    for (const tag of tags) {
-      if (!tag || tag.length === 0) {
-        throw new Error("tags must not contain empty strings");
-      }
-    }
-  }
-  if (prefix !== undefined && prefix !== null && prefix.length === 0) {
-    throw new Error("prefix must not be empty if provided");
-  }
-  if (explorer && !explorerPrefix.startsWith("/")) {
-    throw new Error("explorerPrefix must start with '/'");
-  }
+  validateServeOptions({ name, tags, prefix, explorer, explorerPrefix });
 
   // Save original console methods before suppression
   const origDebug = console.debug;
@@ -401,51 +481,8 @@ export async function serve(
   }
 
   // ── F-040: YAML Pipeline Config via Config Bus ─────────────────────
-  let resolvedStrategy = strategy;
-  let configMiddleware: unknown[] = [];
-  let configAcl: unknown | null = null;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const apcoreConfig = await import("apcore-js") as any;
-    const Config = apcoreConfig.Config ?? apcoreConfig.default?.Config;
-    const buildStrategyFromConfig = apcoreConfig.buildStrategyFromConfig ?? apcoreConfig.default?.buildStrategyFromConfig;
-    if (Config && buildStrategyFromConfig) {
-      const config = typeof Config.getInstance === 'function' ? Config.getInstance() : new Config();
-      const pipelineCfg = config.get?.("mcp.pipeline");
-      if (pipelineCfg && typeof pipelineCfg === 'object' && Object.keys(pipelineCfg).length > 0) {
-        if (resolvedStrategy) {
-          console.warn(
-            `YAML pipeline config found in Config Bus — overriding strategy='${resolvedStrategy}' with config-driven strategy.`,
-          );
-        }
-        resolvedStrategy = buildStrategyFromConfig(pipelineCfg);
-      }
-      // Load declarative middleware from Config Bus (`mcp.middleware`).
-      const mwCfg = config.get?.("mcp.middleware");
-      if (Array.isArray(mwCfg) && mwCfg.length > 0) {
-        const { buildMiddlewareFromConfig } = await import(
-          "./middleware-builder.js"
-        );
-        configMiddleware = await buildMiddlewareFromConfig(mwCfg);
-      }
-      // Load declarative ACL from Config Bus (`mcp.acl`).
-      const aclCfg = config.get?.("mcp.acl");
-      if (aclCfg) {
-        const { buildAclFromConfig } = await import("./acl-builder.js");
-        configAcl = await buildAclFromConfig(aclCfg);
-      }
-    }
-  } catch {
-    // apcore-js not installed or Config Bus not available — use strategy param as-is
-  }
-
-  const combinedMiddleware: unknown[] = [...configMiddleware];
-  if (callerMiddleware && callerMiddleware.length > 0) {
-    combinedMiddleware.push(...callerMiddleware);
-  }
-
-  // Caller-supplied ACL wins over Config Bus.
-  const effectiveAcl = callerAcl !== undefined ? callerAcl : configAcl;
+  const { resolvedStrategy, combinedMiddleware, effectiveAcl } =
+    await loadConfigBusOverrides(strategy, callerMiddleware, callerAcl);
 
   const registry = resolveRegistry(registryOrExecutor);
   const executor = await resolveExecutor(registryOrExecutor, {
@@ -670,25 +707,7 @@ export async function asyncServe(
   } = options;
 
   // Input validation (same as serve())
-  if (!name || name.length === 0) {
-    throw new Error("name must not be empty");
-  }
-  if (name.length > 255) {
-    throw new Error("name must not exceed 255 characters");
-  }
-  if (tags) {
-    for (const tag of tags) {
-      if (!tag || tag.length === 0) {
-        throw new Error("tags must not contain empty strings");
-      }
-    }
-  }
-  if (prefix !== undefined && prefix !== null && prefix.length === 0) {
-    throw new Error("prefix must not be empty if provided");
-  }
-  if (explorer && !explorerPrefix.startsWith("/")) {
-    throw new Error("explorerPrefix must start with '/'");
-  }
+  validateServeOptions({ name, tags, prefix, explorer, explorerPrefix });
 
   // Save original console methods before suppression
   const origDebug = console.debug;
@@ -707,51 +726,8 @@ export async function asyncServe(
   }
 
   // ── F-040: YAML Pipeline Config via Config Bus ─────────────────────
-  let resolvedStrategy = strategy;
-  let configMiddleware: unknown[] = [];
-  let configAcl: unknown | null = null;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const apcoreConfig = await import("apcore-js") as any;
-    const Config = apcoreConfig.Config ?? apcoreConfig.default?.Config;
-    const buildStrategyFromConfig = apcoreConfig.buildStrategyFromConfig ?? apcoreConfig.default?.buildStrategyFromConfig;
-    if (Config && buildStrategyFromConfig) {
-      const config = typeof Config.getInstance === 'function' ? Config.getInstance() : new Config();
-      const pipelineCfg = config.get?.("mcp.pipeline");
-      if (pipelineCfg && typeof pipelineCfg === 'object' && Object.keys(pipelineCfg).length > 0) {
-        if (resolvedStrategy) {
-          console.warn(
-            `YAML pipeline config found in Config Bus — overriding strategy='${resolvedStrategy}' with config-driven strategy.`,
-          );
-        }
-        resolvedStrategy = buildStrategyFromConfig(pipelineCfg);
-      }
-      // Load declarative middleware from Config Bus (`mcp.middleware`).
-      const mwCfg = config.get?.("mcp.middleware");
-      if (Array.isArray(mwCfg) && mwCfg.length > 0) {
-        const { buildMiddlewareFromConfig } = await import(
-          "./middleware-builder.js"
-        );
-        configMiddleware = await buildMiddlewareFromConfig(mwCfg);
-      }
-      // Load declarative ACL from Config Bus (`mcp.acl`).
-      const aclCfg = config.get?.("mcp.acl");
-      if (aclCfg) {
-        const { buildAclFromConfig } = await import("./acl-builder.js");
-        configAcl = await buildAclFromConfig(aclCfg);
-      }
-    }
-  } catch {
-    // apcore-js not installed or Config Bus not available — use strategy param as-is
-  }
-
-  const combinedMiddleware: unknown[] = [...configMiddleware];
-  if (callerMiddleware && callerMiddleware.length > 0) {
-    combinedMiddleware.push(...callerMiddleware);
-  }
-
-  // Caller-supplied ACL wins over Config Bus.
-  const effectiveAcl = callerAcl !== undefined ? callerAcl : configAcl;
+  const { resolvedStrategy, combinedMiddleware, effectiveAcl } =
+    await loadConfigBusOverrides(strategy, callerMiddleware, callerAcl);
 
   const registry = resolveRegistry(registryOrExecutor);
   const executor = await resolveExecutor(registryOrExecutor, {
