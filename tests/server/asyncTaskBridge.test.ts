@@ -387,3 +387,55 @@ describe("MCPServerFactory + AsyncTaskBridge", () => {
     );
   });
 });
+
+// D11-015: Progress sink installation
+describe("D11-015: Progress sink installation in submit()", () => {
+  it("installs progress sink on context.data when progressToken + sendNotification provided", async () => {
+    const manager: AsyncTaskManagerLike = {
+      submit: vi.fn().mockResolvedValue("task-123"),
+      getStatus: vi.fn(),
+      getResult: vi.fn(),
+      cancel: vi.fn(),
+      listTasks: vi.fn().mockReturnValue([]),
+    };
+    const bridge = new AsyncTaskBridge(manager);
+
+    const context = { data: {} as Record<string, unknown> };
+    const mockSend = vi.fn().mockResolvedValue(undefined);
+
+    await bridge.submit("my.module", {}, context, {
+      progressToken: "tok-abc",
+      sendNotification: mockSend,
+    });
+
+    // The progress sink should now be installed
+    expect(typeof context.data["_mcp_progress"]).toBe("function");
+
+    // Invoke the sink and verify it calls sendNotification with correct shape
+    const sink = context.data["_mcp_progress"] as (p: number, t: number) => Promise<void>;
+    await sink(50, 100);
+    expect(mockSend).toHaveBeenCalledWith({
+      method: "notifications/progress",
+      params: { progressToken: "tok-abc", progress: 50, total: 100 },
+    });
+  });
+
+  it("does NOT install progress sink when sendNotification is absent", async () => {
+    const manager: AsyncTaskManagerLike = {
+      submit: vi.fn().mockResolvedValue("task-456"),
+      getStatus: vi.fn(),
+      getResult: vi.fn(),
+      cancel: vi.fn(),
+      listTasks: vi.fn().mockReturnValue([]),
+    };
+    const bridge = new AsyncTaskBridge(manager);
+    const context = { data: {} as Record<string, unknown> };
+
+    await bridge.submit("my.module", {}, context, {
+      progressToken: "tok-xyz",
+      // sendNotification NOT provided
+    });
+
+    expect(context.data["_mcp_progress"]).toBeUndefined();
+  });
+});

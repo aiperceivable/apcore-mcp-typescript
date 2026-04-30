@@ -174,8 +174,41 @@ export class AsyncTaskBridge {
       progressToken?: string | number;
       /** Optional session/connection key (recorded for cancelSessionTasks). [A-D-018] */
       sessionKey?: string;
+      /**
+       * Optional notification sender. When provided together with `progressToken`,
+       * a progress sink is installed on the apcore Context so mid-execution progress
+       * events from modules are forwarded as `notifications/progress` MCP messages.
+       * Mirrors Python's `_install_progress_sink` pattern. [D11-015]
+       */
+      sendNotification?: (notification: Record<string, unknown>) => Promise<void> | void;
     },
   ): Promise<{ task_id: string; status: "pending" }> {
+    // [D11-015] Install progress sink on the context BEFORE submitting, so the
+    // module can emit mid-execution progress via context.data[MCP_PROGRESS_KEY].
+    // Mirrors Python's async_task_bridge.py _install_progress_sink() pattern.
+    if (
+      options?.progressToken !== undefined &&
+      options?.sendNotification !== undefined &&
+      context !== null &&
+      context !== undefined &&
+      typeof context === "object"
+    ) {
+      const progressToken = options.progressToken;
+      const sendNotification = options.sendNotification;
+      const contextData = (context as Record<string, unknown>).data;
+      if (contextData && typeof contextData === "object") {
+        (contextData as Record<string, unknown>)["_mcp_progress"] = async (
+          progress: number,
+          total: number,
+        ) => {
+          await sendNotification({
+            method: "notifications/progress",
+            params: { progressToken, progress, total },
+          });
+        };
+      }
+    }
+
     const taskId = await this._manager.submit(moduleId, inputs, context ?? null);
     if (options?.progressToken !== undefined) {
       this._progressTokens.set(taskId, options.progressToken);
