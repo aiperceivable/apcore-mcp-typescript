@@ -72,7 +72,7 @@ export { RegistryListener } from "./server/listener.js";
 export { TransportManager } from "./server/transport.js";
 export type { MetricsExporter, UsageExporter } from "./server/transport.js";
 export { AsyncTaskBridge, createAsyncTaskBridge, META_TOOL_NAMES, APCORE_META_TOOL_PREFIX } from "./server/async-task-bridge.js";
-export type { AsyncTaskManagerLike, TaskInfoProjection, AsyncMetaTool, AsyncTaskBridgeOptions } from "./server/async-task-bridge.js";
+export type { AsyncTaskManagerLike, AsyncTaskBridgeOptions } from "./server/async-task-bridge.js";
 export { installObservability } from "./server/observability.js";
 export type { ObservabilityFlag, ObservabilityStack } from "./server/observability.js";
 export { parseTraceparent, buildTraceparent } from "./server/trace-context.js";

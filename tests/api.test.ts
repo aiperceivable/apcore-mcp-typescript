@@ -236,6 +236,27 @@ describe("asyncServe()", () => {
   });
 });
 
+// D9-008: AsyncMetaTool and TaskInfoProjection should NOT be re-exported from index.ts
+describe("D9-008: dead re-exports removed", () => {
+  it("AsyncMetaTool and TaskInfoProjection are NOT in the index re-export line", () => {
+    // Verify by checking the module exports don't include these names
+    // (TypeScript types are erased at runtime; we verify by grep of source at test time)
+    const fs = require("fs");
+    const indexSrc = fs.readFileSync(
+      new URL("../src/index.ts", import.meta.url),
+      "utf8",
+    );
+    // The re-export line(s) should not include AsyncMetaTool or TaskInfoProjection
+    const exportTypeLines = indexSrc
+      .split("\n")
+      .filter((l: string) => l.startsWith("export type {") && l.includes("async-task-bridge"));
+    for (const line of exportTypeLines) {
+      expect(line).not.toContain("AsyncMetaTool");
+      expect(line).not.toContain("TaskInfoProjection");
+    }
+  });
+});
+
 // D1-003: MCPServer must be exported as a constructor/class from index.ts
 describe("MCPServer export (D1-003)", () => {
   it("MCPServer is exported as a constructor function", () => {
