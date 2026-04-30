@@ -3,3 +3,7 @@ dist/
 coverage/
 *.tsbuildinfo
 .DS_Store
+
+# This project uses pnpm — npm-style lockfiles are not authoritative
+package-lock.json
+yarn.lock

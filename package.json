@@ -20,10 +20,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "lint": "tsc --noEmit",
+    "lint": "eslint src tests",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "pnpm run build"
   },
   "keywords": [
     "apcore",
@@ -50,17 +50,22 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
     "apcore-js": ">=0.19.0",
-    "apcore-toolkit": ">=0.5.0",
     "jsonwebtoken": "^9.0.3",
     "mcp-embedded-ui": ">=0.4.0"
   },
+  "optionalDependencies": {
+    "apcore-toolkit": ">=0.5.0"
+  },
   "devDependencies": {
+    "@eslint/js": "^9.0.0",
     "@sinclair/typebox": "^0.34.48",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.0.0",
     "@vitest/coverage-v8": "^3.0.0",
     "apdev-js": ">=0.2.4",
+    "eslint": "^9.0.0",
     "typescript": "^5.5.0",
+    "typescript-eslint": "^8.0.0",
     "vitest": "^3.0.0"
   },
   "apdev": {
