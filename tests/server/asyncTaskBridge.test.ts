@@ -439,3 +439,88 @@ describe("D11-015: Progress sink installation in submit()", () => {
     expect(context.data["_mcp_progress"]).toBeUndefined();
   });
 });
+
+// D11-016: _projectTaskInfo only returns the 6 allowed keys + conditional result/error
+describe("D11-016: _projectTaskInfo curated projection (no extra field leakage)", () => {
+  it("returns only task_id, module_id, status, submitted_at, started_at, completed_at", async () => {
+    const manager: AsyncTaskManagerLike = {
+      submit: vi.fn(),
+      getStatus: vi.fn().mockReturnValue({
+        taskId: "t1",
+        moduleId: "my.module",
+        status: "running",
+        submittedAt: 1000,
+        startedAt: 1001,
+        completedAt: null,
+        result: null,
+        error: null,
+        // Extra fields that should NOT appear in the projection
+        extraField: "should not leak",
+        internalState: { foo: "bar" },
+      }),
+      getResult: vi.fn(),
+      cancel: vi.fn(),
+      listTasks: vi.fn().mockReturnValue([]),
+    };
+    const bridge = new AsyncTaskBridge(manager);
+
+    const result = await bridge.handleMetaTool(META_TOOL_NAMES.STATUS, { task_id: "t1" }) as Record<string, unknown>;
+
+    // Only the 6 allowed fields should be present
+    const allowedKeys = new Set(["task_id", "module_id", "status", "submitted_at", "started_at", "completed_at"]);
+    for (const key of Object.keys(result)) {
+      expect(allowedKeys.has(key)).toBe(true);
+    }
+    expect(result.task_id).toBe("t1");
+    expect(result.module_id).toBe("my.module");
+    expect(result.status).toBe("running");
+    expect(result["extraField"]).toBeUndefined();
+    expect(result["internalState"]).toBeUndefined();
+  });
+
+  it("adds result field for completed status", async () => {
+    const manager: AsyncTaskManagerLike = {
+      submit: vi.fn(),
+      getStatus: vi.fn().mockReturnValue({
+        taskId: "t2",
+        moduleId: "my.module",
+        status: "completed",
+        submittedAt: 1000,
+        startedAt: 1001,
+        completedAt: 1002,
+        result: { output: 42 },
+        error: null,
+      }),
+      getResult: vi.fn(),
+      cancel: vi.fn(),
+      listTasks: vi.fn().mockReturnValue([]),
+    };
+    const bridge = new AsyncTaskBridge(manager);
+    const result = await bridge.handleMetaTool(META_TOOL_NAMES.STATUS, { task_id: "t2" }) as Record<string, unknown>;
+    expect(result.result).toEqual({ output: 42 });
+    expect(result.error).toBeUndefined();
+  });
+
+  it("adds error field for failed status", async () => {
+    const manager: AsyncTaskManagerLike = {
+      submit: vi.fn(),
+      getStatus: vi.fn().mockReturnValue({
+        taskId: "t3",
+        moduleId: "my.module",
+        status: "failed",
+        submittedAt: 1000,
+        startedAt: 1001,
+        completedAt: 1002,
+        result: null,
+        error: "Something went wrong",
+      }),
+      getResult: vi.fn(),
+      cancel: vi.fn(),
+      listTasks: vi.fn().mockReturnValue([]),
+    };
+    const bridge = new AsyncTaskBridge(manager);
+    const result = await bridge.handleMetaTool(META_TOOL_NAMES.STATUS, { task_id: "t3" }) as Record<string, unknown>;
+    expect(result.error).toBe("Something went wrong");
+    expect(result.result).toBeUndefined();
+  });
+});
