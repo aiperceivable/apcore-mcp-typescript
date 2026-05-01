@@ -9,6 +9,7 @@
  * accumulated result.
  */
 
+import * as crypto from "node:crypto";
 import { ErrorMapper } from "../adapters/errors.js";
 import type { Executor, TextContentDict, McpErrorResponse } from "../types.js";
 import { createBridgeContext } from "./context.js";
