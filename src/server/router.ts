@@ -16,6 +16,7 @@ import { createBridgeContext } from "./context.js";
 import { MCP_PROGRESS_KEY, MCP_ELICIT_KEY } from "../helpers.js";
 import type { ElicitResult } from "../helpers.js";
 import { getCurrentIdentity } from "../auth/storage.js";
+import type { Identity } from "../auth/types.js";
 import { parseTraceparent } from "./trace-context.js";
 import type { AsyncTaskBridge } from "./async-task-bridge.js";
 
@@ -93,6 +94,13 @@ export interface HandleCallExtra {
    * [B-002]
    */
   callId?: string | number;
+  /**
+   * Authenticated identity forwarded by the transport. When present, this
+   * takes precedence over `getCurrentIdentity()` (AsyncLocalStorage) so
+   * stateless transports that don't enter an `identityStorage.run()` scope
+   * can still propagate the caller's identity to executor.call(). [A-D-211]
+   */
+  identity?: Identity | null;
 }
 
 /** Options for the ExecutionRouter constructor. */
@@ -440,7 +448,13 @@ export class ExecutionRouter {
         };
       }
 
-      const identity = getCurrentIdentity();
+      // [A-D-211] Identity source resolution: prefer an `extra.identity`
+      // forwarded explicitly by the transport (mirrors Rust which checks
+      // both, and Python which only reads extra.identity), and fall back
+      // to AsyncLocalStorage-scoped getCurrentIdentity() for legacy paths.
+      const identity =
+        (extra as { identity?: Identity | null } | undefined)?.identity ??
+        getCurrentIdentity();
 
       // [A-D-001] Always create a context so the cancelToken is threaded
       // into the executor pipeline. Without this, modules cannot observe

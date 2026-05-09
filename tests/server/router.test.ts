@@ -483,6 +483,36 @@ describe("ExecutionRouter outputFormatter", () => {
     );
   });
 
+  // TC-ROUTER-IDENTITY-001 [A-D-211]: extra.identity wins over
+  // getCurrentIdentity(), and reaches executor.call() in the BridgeContext.
+  // Pre-fix TS read identity only from AsyncLocalStorage and silently
+  // dropped a transport-forwarded identity, breaking the cross-language
+  // contract (Python reads extra.identity, Rust reads both).
+  it("[A-D-211] forwards extra.identity to executor.call() context", async () => {
+    const executor = createMockExecutor({ ok: true });
+    const router = new ExecutionRouter(executor);
+
+    const fakeIdentity = {
+      principalId: "user-42",
+      principalType: "user" as const,
+      attributes: { email: "alice@example.com" },
+      authMethod: "jwt" as const,
+    };
+
+    await router.handleCall(
+      "test.module",
+      {},
+      { identity: fakeIdentity } as unknown as HandleCallExtra,
+    );
+
+    expect(executor.call).toHaveBeenCalledWith(
+      "test.module",
+      {},
+      expect.objectContaining({ identity: fakeIdentity }),
+      undefined,
+    );
+  });
+
   // TC-ROUTER-VERSIONHINT-002: falls back to descriptor.metadata.versionHint
   it("uses descriptor.metadata.versionHint when extra does not provide one", async () => {
     const executor: Executor = {
