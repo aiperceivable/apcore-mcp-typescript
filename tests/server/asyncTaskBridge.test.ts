@@ -291,6 +291,60 @@ describe("AsyncTaskBridge", () => {
     await bridge.handleMetaTool(META_TOOL_NAMES.CANCEL, { task_id: "task-pt-1" });
     expect(bridge.getProgressToken("task-pt-1")).toBeUndefined();
   });
+
+  // [A-D-222] handleMetaTool(SUBMIT) must catch TaskLimitExceededError from
+  // the underlying manager and surface it as a structured envelope
+  // {errorType: "TASK_LIMIT_EXCEEDED", retryable: true} so direct callers
+  // (toolkits/libraries that bypass the router) get the same wire shape
+  // Python emits. Pre-fix TS let the raw Error propagate.
+  it("[A-D-222] handleMetaTool(SUBMIT) maps TaskLimitExceededError to retryable envelope", async () => {
+    // Construct a duck-typed TaskLimitExceededError without depending on
+    // the live apcore-js class — the bridge tolerates either path via
+    // _isTaskLimitExceeded() (instanceof or duck-typed code).
+    const limitErr = new Error("Task limit reached (0)") as Error & {
+      code: string;
+      details: Record<string, unknown> | null;
+      name: string;
+    };
+    limitErr.code = "TASK_LIMIT_EXCEEDED";
+    limitErr.name = "TaskLimitExceededError";
+    limitErr.details = { maxTasks: 0 };
+
+    const manager = buildManager({
+      submit: vi.fn().mockRejectedValue(limitErr),
+    });
+    const bridge = new AsyncTaskBridge(manager);
+
+    const result = await bridge.handleMetaTool(META_TOOL_NAMES.SUBMIT, {
+      module_id: "demo.async",
+      arguments: {},
+    });
+
+    expect(result).toMatchObject({
+      isError: true,
+      errorType: "TASK_LIMIT_EXCEEDED",
+      retryable: true,
+    });
+    expect(result["message"]).toBe("Task limit reached (0)");
+    expect(result["details"]).toEqual({ maxTasks: 0 });
+  });
+
+  // [A-D-222] Non-capacity errors must still propagate (re-thrown), so the
+  // router-level ErrorMapper can produce a normal MCP error envelope.
+  it("[A-D-222] handleMetaTool(SUBMIT) re-throws non-TaskLimit errors", async () => {
+    const otherErr = new Error("boom") as Error & { code: string };
+    otherErr.code = "MODULE_EXECUTE_ERROR";
+    const manager = buildManager({
+      submit: vi.fn().mockRejectedValue(otherErr),
+    });
+    const bridge = new AsyncTaskBridge(manager);
+    await expect(
+      bridge.handleMetaTool(META_TOOL_NAMES.SUBMIT, {
+        module_id: "demo.async",
+        arguments: {},
+      }),
+    ).rejects.toThrow(/boom/);
+  });
 });
 
 describe("ExecutionRouter + AsyncTaskBridge routing", () => {

@@ -13,6 +13,51 @@
  */
 
 import type { ModuleDescriptor } from "../types.js";
+import { ErrorCodes } from "../types.js";
+
+/**
+ * Lazy snapshot of apcore-js's TaskLimitExceededError class for `instanceof`
+ * dispatch in handleMetaTool. Mirrors the lazy-load pattern used by
+ * adapters/errors.ts so callers don't pay an import-time tax.
+ */
+let _taskLimitExceededClass: (new (...args: unknown[]) => Error) | null | undefined;
+
+async function _loadTaskLimitExceededClass(): Promise<
+  (new (...args: unknown[]) => Error) | null
+> {
+  if (_taskLimitExceededClass !== undefined) {
+    return _taskLimitExceededClass ?? null;
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const apcore = (await import("apcore-js")) as any;
+    _taskLimitExceededClass = apcore.TaskLimitExceededError ?? null;
+  } catch {
+    _taskLimitExceededClass = null;
+  }
+  return _taskLimitExceededClass ?? null;
+}
+
+// Eager fire-and-forget load so the cache is warm by the time handleMetaTool
+// fires under typical flows. The synchronous code path below tolerates a cold
+// cache by also duck-typing on `error.code`.
+void _loadTaskLimitExceededClass();
+
+/**
+ * Detect a task-capacity-exceeded error from apcore-js. Prefers `instanceof`
+ * dispatch when the class has been resolved; falls back to duck-typing on
+ * `error.code === "TASK_LIMIT_EXCEEDED"` so cold-cache or
+ * apcore-js-unavailable scenarios still classify correctly.
+ */
+function _isTaskLimitExceeded(err: unknown): boolean {
+  if (err === null || typeof err !== "object") return false;
+  const cls = _taskLimitExceededClass;
+  if (cls && err instanceof cls) return true;
+  const obj = err as { code?: unknown; name?: unknown };
+  if (obj.code === ErrorCodes.TASK_LIMIT_EXCEEDED) return true;
+  if (obj.name === "TaskLimitExceededError") return true;
+  return false;
+}
 
 /** Reserved meta-tool prefix. Module ids starting with this are forbidden. */
 export const APCORE_META_TOOL_PREFIX = "__apcore_";
@@ -459,7 +504,29 @@ export class AsyncTaskBridge {
           );
         }
         const inputs = (rawArgs as Record<string, unknown> | undefined) ?? {};
-        return this.submit(moduleId, inputs, context);
+        // [A-D-222] Catch TaskLimitExceededError from manager.submit() and
+        // surface it as a structured TASK_LIMIT_EXCEEDED envelope with
+        // retryable=true. Mirrors Python's
+        // `apcore_mcp/server/async_task_bridge.py:375-376` which explicitly
+        // catches TaskLimitExceededError. Pre-fix TS let the bare error
+        // bubble — it would still get mapped by the router's ErrorMapper,
+        // but bridges that call handleMetaTool directly (toolkit/library
+        // use) saw a raw Error without errorType or retryable hints.
+        try {
+          return (await this.submit(moduleId, inputs, context)) as unknown as Record<string, unknown>;
+        } catch (err: unknown) {
+          if (_isTaskLimitExceeded(err)) {
+            const e = err as Error & { details?: Record<string, unknown> | null };
+            return {
+              isError: true,
+              errorType: ErrorCodes.TASK_LIMIT_EXCEEDED,
+              message: e.message,
+              details: e.details ?? null,
+              retryable: true,
+            };
+          }
+          throw err;
+        }
       }
       case META_TOOL_NAMES.STATUS: {
         const taskId = args["task_id"];
