@@ -444,3 +444,32 @@ describe("D11-017: userFixable: true for VERSION_CONSTRAINT_INVALID and BINDING_
     expect(result.userFixable).toBe(true);
   });
 });
+
+// apcore 0.20.0 sync alignment A-001: CIRCUIT_BREAKER_OPEN
+describe("CIRCUIT_BREAKER_OPEN error mapping (apcore 0.20)", () => {
+  it("maps CIRCUIT_BREAKER_OPEN to retryable=true with aiGuidance", () => {
+    const mapper = new ErrorMapper();
+    const error = createModuleError(
+      "CIRCUIT_BREAKER_OPEN",
+      "Circuit open for module 'demo.module' — call rejected",
+      { module_id: "demo.module" },
+    );
+    const result = mapper.toMcpError(error);
+    expect(result.errorType).toBe("CIRCUIT_BREAKER_OPEN");
+    expect(result.retryable).toBe(true);
+    expect(typeof result.aiGuidance).toBe("string");
+    expect(result.aiGuidance!.toLowerCase()).toContain("circuit");
+  });
+
+  it("preserves apcore-supplied aiGuidance verbatim when present", () => {
+    const mapper = new ErrorMapper();
+    const error = createModuleError(
+      "CIRCUIT_BREAKER_OPEN",
+      "Circuit open",
+      null,
+      { aiGuidance: "Custom recovery hint from apcore-js" },
+    );
+    const result = mapper.toMcpError(error);
+    expect(result.aiGuidance).toBe("Custom recovery hint from apcore-js");
+  });
+});

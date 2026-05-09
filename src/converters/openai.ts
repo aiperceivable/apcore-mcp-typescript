@@ -10,6 +10,7 @@ import { SchemaConverter } from "../adapters/schema.js";
 import { AnnotationMapper } from "../adapters/annotations.js";
 import { ModuleIDNormalizer } from "../adapters/id-normalizer.js";
 import type { Registry, ModuleDescriptor, OpenAIToolDef, JsonSchema } from "../types.js";
+import { isMarkdownAvailable, renderModuleMarkdownSync } from "../markdown.js";
 
 /** Options shared by convertRegistry and convertDescriptor. */
 export interface ConvertOptions {
@@ -17,6 +18,17 @@ export interface ConvertOptions {
   embedAnnotations?: boolean;
   /** If true, apply OpenAI strict-mode transformations to the schema. */
   strict?: boolean;
+  /**
+   * If true, replace the plain `description` with apcore-toolkit
+   * Markdown rendering (`formatModule({ style: "markdown" })`). LLMs
+   * select tools primarily from this field — Markdown packs more
+   * decision-relevant signal per token. Requires apcore-toolkit;
+   * the caller must `await primeMarkdownToolkit()` (or
+   * `MCPServerFactory.prepare()`) before this synchronous path can
+   * find the toolkit. Falls back to plain description when toolkit
+   * is unavailable.
+   */
+  richDescription?: boolean;
 }
 
 /** Extended options accepted by convertRegistry (adds filtering). */
@@ -47,6 +59,9 @@ export class OpenAIConverter {
   private readonly _schemaConverter: SchemaConverter;
   private readonly _annotationMapper: AnnotationMapper;
   private readonly _idNormalizer: ModuleIDNormalizer;
+  // One-shot flag: warn about missing apcore-toolkit at most once per
+  // converter instance (mirrors MCPServerFactory._warnedToolkitMissing).
+  private _warnedToolkitMissing = false;
 
   constructor() {
     this._schemaConverter = new SchemaConverter();
@@ -73,6 +88,7 @@ export class OpenAIConverter {
     const prefix = options?.prefix;
     const embedAnnotations = options?.embedAnnotations;
     const strict = options?.strict;
+    const richDescription = options?.richDescription;
 
     const moduleIds = registry.list({
       tags: tags ?? null,
@@ -95,6 +111,7 @@ export class OpenAIConverter {
       const tool = this.convertDescriptor(descriptor, {
         embedAnnotations,
         strict,
+        richDescription,
       });
       const toolName = tool.function.name;
       const existing = seenNames.get(toolName);
@@ -131,12 +148,30 @@ export class OpenAIConverter {
   ): OpenAIToolDef {
     const embedAnnotations = options?.embedAnnotations ?? false;
     const strict = options?.strict ?? false;
+    const richDescription = options?.richDescription ?? false;
 
     const name = this._idNormalizer.normalize(descriptor.moduleId);
     let parameters = this._schemaConverter.convertInputSchema(descriptor);
 
-    // Build description with optional annotation suffix
+    // Resolve the LLM-facing description. Markdown rendering takes
+    // precedence over the plain `descriptor.description`; the
+    // annotation suffix is appended last as a strict superset.
     let description = descriptor.description;
+    if (richDescription) {
+      if (isMarkdownAvailable()) {
+        const md = renderModuleMarkdownSync(descriptor);
+        if (md !== null) {
+          description = md;
+        }
+      } else if (!this._warnedToolkitMissing) {
+        this._warnedToolkitMissing = true;
+        console.warn(
+          "OpenAIConverter: richDescription=true but apcore-toolkit is not " +
+            "available. Call `await primeMarkdownToolkit()` during startup, " +
+            "or install `apcore-toolkit`. Falling back to plain descriptions.",
+        );
+      }
+    }
     if (embedAnnotations) {
       const suffix = this._annotationMapper.toDescriptionSuffix(
         descriptor.annotations,

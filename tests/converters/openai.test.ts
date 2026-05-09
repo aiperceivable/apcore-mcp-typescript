@@ -542,4 +542,51 @@ describe("OpenAIConverter", () => {
       });
     });
   });
+
+  // apcore-toolkit 0.6+: rich Markdown tool descriptions
+  describe("richDescription", () => {
+    it("renders Markdown via apcore-toolkit when primed", async () => {
+      const { primeMarkdownToolkit } = await import("../../src/markdown.js");
+      const primed = await primeMarkdownToolkit();
+      // apcore-toolkit ships in node_modules in this repo (optional dep
+      // installed). If for some reason it isn't available, skip the
+      // assertion rather than fail.
+      if (!primed) return;
+      const descriptor = makeDescriptor({
+        moduleId: "image.resize",
+        description: "Resize an image",
+        tags: ["image"],
+      });
+      const tool = converter.convertDescriptor(descriptor, { richDescription: true });
+      expect(tool.function.description).toMatch(/^# /);
+      expect(tool.function.description).toContain("Resize an image");
+      expect(tool.function.description).toContain("## Parameters");
+    });
+
+    it("returns plain description when richDescription is disabled", () => {
+      // The actual "toolkit unavailable" fallback path is hard to test
+      // in isolation because the toolkit loader caches the import
+      // result module-wide. This test verifies the orthogonal path:
+      // with richDescription=false, the plain `descriptor.description`
+      // is always returned regardless of toolkit availability.
+      const descriptor = makeDescriptor({ description: "Plain description" });
+      const tool = converter.convertDescriptor(descriptor, { richDescription: false });
+      expect(tool.function.description).toBe("Plain description");
+    });
+
+    it("convertRegistry propagates richDescription to every tool", async () => {
+      const { primeMarkdownToolkit } = await import("../../src/markdown.js");
+      const primed = await primeMarkdownToolkit();
+      if (!primed) return;
+      const registry = createMockRegistry({
+        "demo.one": makeDescriptor({
+          moduleId: "demo.one",
+          description: "First demo",
+        }),
+      });
+      const tools = converter.convertRegistry(registry, { richDescription: true });
+      expect(tools).toHaveLength(1);
+      expect(tools[0].function.description).toMatch(/^# /);
+    });
+  });
 });

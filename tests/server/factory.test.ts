@@ -679,3 +679,43 @@ describe("D11-014: registerHandlers asyncTaskBridge parameter", () => {
     expect(result.tools[0].name).toBe("my.tool");
   });
 });
+
+// apcore-toolkit 0.6+: rich Markdown tool descriptions
+describe("MCPServerFactory richDescription", () => {
+  it("renders Markdown via apcore-toolkit when prepared", async () => {
+    const primed = await MCPServerFactory.prepare();
+    if (!primed) return; // toolkit not installed — skip
+    const factory = new MCPServerFactory({ richDescription: true });
+    const tool = factory.buildTool(
+      makeDescriptor({
+        moduleId: "image.resize",
+        description: "Resize an image",
+      }),
+    );
+    expect(tool.description).toMatch(/^# /);
+    expect(tool.description).toContain("Resize an image");
+    expect(tool.description).toContain("## Parameters");
+  });
+
+  it("display.mcp.description override wins over richDescription", async () => {
+    const primed = await MCPServerFactory.prepare();
+    if (!primed) return;
+    const factory = new MCPServerFactory({ richDescription: true });
+    const descriptor = makeDescriptor({
+      moduleId: "image.resize",
+      description: "Resize an image",
+      metadata: {
+        display: { mcp: { description: "Operator override — keep verbatim" } },
+      },
+    });
+    const tool = factory.buildTool(descriptor);
+    expect(tool.description).toBe("Operator override — keep verbatim");
+  });
+
+  it("falls back to plain description when richDescription is off", () => {
+    const factory = new MCPServerFactory();
+    const descriptor = makeDescriptor({ description: "Plain text" });
+    const tool = factory.buildTool(descriptor);
+    expect(tool.description).toBe("Plain text");
+  });
+});

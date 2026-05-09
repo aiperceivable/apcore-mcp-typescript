@@ -55,6 +55,9 @@ export const ErrorCodes = Object.freeze({
   BINDING_SCHEMA_MODE_CONFLICT: "BINDING_SCHEMA_MODE_CONFLICT",
   BINDING_STRICT_SCHEMA_INCOMPATIBLE: "BINDING_STRICT_SCHEMA_INCOMPATIBLE",
   BINDING_POLICY_VIOLATION: "BINDING_POLICY_VIOLATION",
+  // apcore 0.20.0 sync alignment A-001: CircuitBreakerMiddleware emits
+  // CIRCUIT_BREAKER_OPEN when the breaker is in the OPEN state.
+  CIRCUIT_BREAKER_OPEN: "CIRCUIT_BREAKER_OPEN",
 } as const);
 
 /** Dot-namespaced event types introduced in apcore 0.15.0 (§9.16). */

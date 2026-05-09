@@ -70,12 +70,13 @@ describe("AsyncTaskBridge", () => {
     expect(manager.submit).toHaveBeenCalledWith("demo.module", { a: 1 }, null);
   });
 
-  it("buildMetaTools returns 4 reserved tools", () => {
+  it("buildMetaTools returns 5 reserved tools (apcore 0.21 adds preview)", () => {
     const bridge = new AsyncTaskBridge(buildManager());
     const tools = bridge.buildMetaTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       META_TOOL_NAMES.CANCEL,
       META_TOOL_NAMES.LIST,
+      META_TOOL_NAMES.PREVIEW,
       META_TOOL_NAMES.STATUS,
       META_TOOL_NAMES.SUBMIT,
     ].sort());
@@ -372,17 +373,18 @@ describe("MCPServerFactory + AsyncTaskBridge", () => {
     expect(() => factory.buildTools(registry)).toThrow(/Reserved module id/);
   });
 
-  it("attachAsyncMetaTools appends 4 meta-tools when bridge is enabled", () => {
+  it("attachAsyncMetaTools appends 5 meta-tools when bridge is enabled (apcore 0.21 adds preview)", () => {
     const factory = new MCPServerFactory();
     const bridge = new AsyncTaskBridge(buildManager());
     const tools = factory.attachAsyncMetaTools([], bridge);
-    expect(tools).toHaveLength(4);
+    expect(tools).toHaveLength(5);
     expect(new Set(tools.map((t) => t.name))).toEqual(
       new Set([
         META_TOOL_NAMES.SUBMIT,
         META_TOOL_NAMES.STATUS,
         META_TOOL_NAMES.CANCEL,
         META_TOOL_NAMES.LIST,
+        META_TOOL_NAMES.PREVIEW,
       ]),
     );
   });
@@ -522,5 +524,115 @@ describe("D11-016: _projectTaskInfo curated projection (no extra field leakage)"
     const result = await bridge.handleMetaTool(META_TOOL_NAMES.STATUS, { task_id: "t3" }) as Record<string, unknown>;
     expect(result.error).toBe("Something went wrong");
     expect(result.result).toBeUndefined();
+  });
+});
+
+// apcore 0.21 PROTOCOL_SPEC §5.6: __apcore_module_preview meta-tool
+describe("__apcore_module_preview meta-tool", () => {
+  it("surfaces predicted_changes from executor.validate()", async () => {
+    const validate = vi.fn().mockResolvedValue({
+      valid: true,
+      requires_approval: false,
+      predicted_changes: [
+        { action: "create", target: "row:42", summary: "insert row" },
+      ],
+      checks: [
+        { check: "module_id", passed: true },
+        { check: "module_preview", passed: true },
+      ],
+    });
+    const bridge = new AsyncTaskBridge(buildManager(), {
+      executor: { validate },
+    });
+    const result = (await bridge.handleMetaTool(META_TOOL_NAMES.PREVIEW, {
+      module_id: "demo.preview",
+      arguments: { foo: 1 },
+    })) as Record<string, unknown>;
+    expect(validate).toHaveBeenCalledWith("demo.preview", { foo: 1 }, null);
+    expect(result.valid).toBe(true);
+    expect(result.requires_approval).toBe(false);
+    const changes = result.predicted_changes as Array<Record<string, unknown>>;
+    expect(changes).toHaveLength(1);
+    expect(changes[0].action).toBe("create");
+  });
+
+  it("normalizes camelCase preflight fields to snake_case", async () => {
+    const validate = vi.fn().mockResolvedValue({
+      valid: false,
+      requiresApproval: true, // camelCase from older apcore-js
+      predictedChanges: [{ action: "delete", target: "row:7", summary: "drop row" }],
+      checks: [],
+    });
+    const bridge = new AsyncTaskBridge(buildManager(), {
+      executor: { validate },
+    });
+    const result = (await bridge.handleMetaTool(META_TOOL_NAMES.PREVIEW, {
+      module_id: "demo.delete",
+    })) as Record<string, unknown>;
+    expect(result.requires_approval).toBe(true);
+    expect(result.predicted_changes).toEqual([
+      { action: "delete", target: "row:7", summary: "drop row" },
+    ]);
+  });
+
+  it("returns PREVIEW_UNAVAILABLE envelope when no executor is wired", async () => {
+    const bridge = new AsyncTaskBridge(buildManager()); // no executor option
+    const result = (await bridge.handleMetaTool(META_TOOL_NAMES.PREVIEW, {
+      module_id: "demo.x",
+    })) as Record<string, unknown>;
+    expect(result.error).toBe("PREVIEW_UNAVAILABLE");
+  });
+
+  it("rejects missing module_id", async () => {
+    const bridge = new AsyncTaskBridge(buildManager(), {
+      executor: { validate: vi.fn() },
+    });
+    await expect(
+      bridge.handleMetaTool(META_TOOL_NAMES.PREVIEW, {}),
+    ).rejects.toThrow(/module_id/);
+  });
+
+  it("isMetaTool recognizes the preview name", () => {
+    const bridge = new AsyncTaskBridge(buildManager());
+    expect(bridge.isMetaTool(META_TOOL_NAMES.PREVIEW)).toBe(true);
+  });
+
+  it("preserves `arguments: null` verbatim — calling business decides", async () => {
+    // Pre-fix code coerced null/undefined to `{}` via `?? {}`. The
+    // contract is now: forward null as null (and undefined as null —
+    // missing means "no inputs supplied"). The downstream module is
+    // responsible for accepting or rejecting null.
+    const validate = vi.fn().mockResolvedValue({
+      valid: true,
+      requires_approval: false,
+      predicted_changes: [],
+      checks: [],
+    });
+    const bridge = new AsyncTaskBridge(buildManager(), {
+      executor: { validate },
+    });
+    await bridge.handleMetaTool(META_TOOL_NAMES.PREVIEW, {
+      module_id: "demo.x",
+      arguments: null,
+    });
+    expect(validate).toHaveBeenCalledWith("demo.x", null, null);
+    // missing arguments → also null (no caller intent)
+    validate.mockClear();
+    await bridge.handleMetaTool(META_TOOL_NAMES.PREVIEW, {
+      module_id: "demo.x",
+    });
+    expect(validate).toHaveBeenCalledWith("demo.x", null, null);
+  });
+
+  it("rejects non-object/non-null arguments", async () => {
+    const bridge = new AsyncTaskBridge(buildManager(), {
+      executor: { validate: vi.fn() },
+    });
+    await expect(
+      bridge.handleMetaTool(META_TOOL_NAMES.PREVIEW, {
+        module_id: "demo.x",
+        arguments: [1, 2, 3],
+      }),
+    ).rejects.toThrow(/JSON object or null/);
   });
 });

@@ -12,6 +12,8 @@ Converts apcore module registries into [Model Context Protocol (MCP)](https://mo
 
 - **MCP Server** — Expose apcore modules as MCP tools over stdio, Streamable HTTP, or SSE
 - **OpenAI Tools** — Convert modules to OpenAI function calling format with strict mode support
+- **Markdown tool descriptions** (`richDescription: true`, v0.15+) — render `Tool.description` and OpenAI `function.description` as canonical apcore-toolkit Markdown so LLMs get more decision-relevant signal per token. Requires `apcore-toolkit` (declared as `optionalDependencies`) and `await MCPServerFactory.prepare()` at startup.
+- **Module preview meta-tool** (`__apcore_module_preview`, v0.15+) — drives `executor.validate()` to predict state changes WITHOUT executing the module (apcore PROTOCOL_SPEC §5.6). Returns `{valid, requires_approval, predicted_changes, checks}` so AI orchestrators can ask "what would change?" before invoking.
 - **Schema Conversion** — Inline `$defs`/`$ref` from Pydantic-generated JSON Schema
 - **Annotation Mapping** — Map module annotations to MCP hints and OpenAI description suffixes
 - **Approval Mechanism** — Built-in elicitation-based approval flow for sensitive tool executions
@@ -30,7 +32,8 @@ For full documentation, including Quick Start guides for both Python and TypeScr
 ## Requirements
 
 - Node.js >= 18.0.0
-- `apcore-js >= 0.19.0`
+- `apcore-js >= 0.21.1`
+- Optional: `apcore-toolkit >= 0.6.1` for Markdown-rendered tool descriptions (declared under `optionalDependencies`).
 
 ## Installation
 

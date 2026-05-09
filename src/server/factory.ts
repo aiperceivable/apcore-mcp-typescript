@@ -28,6 +28,11 @@ import type { ExecutionRouter } from "./router.js";
 import type { HandleCallExtra } from "./router.js";
 import { buildTraceparent } from "./trace-context.js";
 import { APCORE_META_TOOL_PREFIX, type AsyncTaskBridge } from "./async-task-bridge.js";
+import {
+  isMarkdownAvailable,
+  primeMarkdownToolkit,
+  renderModuleMarkdownSync,
+} from "../markdown.js";
 
 /** Metadata keys for AI intent annotations appended to tool descriptions. */
 const AI_INTENT_KEYS = ["x-when-to-use", "x-when-not-to-use", "x-common-mistakes", "x-workflow-hints"] as const;
@@ -46,13 +51,52 @@ export interface BuildToolOptions {
   registry?: Registry;
 }
 
+/** Constructor options for {@link MCPServerFactory}. */
+export interface MCPServerFactoryOptions {
+  /**
+   * When `true`, MCP `Tool.description` is rendered as canonical
+   * apcore-toolkit Markdown (title, description, parameters, returns,
+   * behavior table, tags, examples) instead of the plain one-line
+   * description. LLMs select tools primarily from this string —
+   * Markdown packs more decision-relevant signal per token.
+   *
+   * Requires apcore-toolkit (declared as an optional peer dep).
+   * Callers MUST `await MCPServerFactory.prepare()` before invoking
+   * `buildTool`/`buildTools` so the toolkit module is primed; without
+   * priming, the factory falls back to the plain description with a
+   * one-time warning.
+   */
+  richDescription?: boolean;
+}
+
 export class MCPServerFactory {
   private readonly _schemaConverter: SchemaConverter;
   private readonly _annotationMapper: AnnotationMapper;
+  private readonly _richDescription: boolean;
+  private _warnedToolkitMissing = false;
 
-  constructor() {
+  constructor(options: MCPServerFactoryOptions = {}) {
     this._schemaConverter = new SchemaConverter();
     this._annotationMapper = new AnnotationMapper();
+    this._richDescription = options.richDescription ?? false;
+  }
+
+  /**
+   * Asynchronously prime the apcore-toolkit module so subsequent
+   * synchronous `buildTool`/`buildTools` calls can render Markdown
+   * descriptions. Safe (and cheap) to call when `richDescription` is
+   * disabled — just a no-op probe.
+   *
+   * Returns `true` when toolkit was loaded successfully, `false` when
+   * it isn't installed (apcore-toolkit is an optional peer dep).
+   */
+  static async prepare(): Promise<boolean> {
+    return primeMarkdownToolkit();
+  }
+
+  /** Whether this factory renders `Tool.description` as Markdown. */
+  get richDescription(): boolean {
+    return this._richDescription;
   }
 
   /**
@@ -144,7 +188,31 @@ export class MCPServerFactory {
     const mcpDisplay = (display.mcp as Record<string, unknown>) ?? {};
 
     const toolName: string = (mcpDisplay.alias as string) || descriptor.moduleId;
-    let description: string = (mcpDisplay.description as string) || descriptor.description;
+    // Description resolution chain:
+    //   1. Operator-typed `display.mcp.description` (hard override).
+    //   2. apcore-toolkit `formatModule({ style: "markdown" })` when
+    //      `richDescription` is on AND the toolkit is primed — packs
+    //      structured tool metadata (parameters, returns, behavior
+    //      table, examples) into the description string the LLM reads.
+    //   3. Plain `descriptor.description`.
+    let description: string;
+    if (mcpDisplay.description) {
+      description = mcpDisplay.description as string;
+    } else if (this._richDescription && isMarkdownAvailable()) {
+      const md = renderModuleMarkdownSync(descriptor);
+      description = md ?? descriptor.description;
+    } else {
+      if (this._richDescription && !isMarkdownAvailable() && !this._warnedToolkitMissing) {
+        this._warnedToolkitMissing = true;
+        console.warn(
+          "MCPServerFactory: richDescription=true but apcore-toolkit is not " +
+            "available. Call `await MCPServerFactory.prepare()` during startup, " +
+            "or install `apcore-toolkit` as an optional peer dependency. " +
+            "Falling back to plain descriptions.",
+        );
+      }
+      description = descriptor.description;
+    }
 
     // Append guidance if present (AI usage hints)
     const guidance = mcpDisplay.guidance as string | undefined;

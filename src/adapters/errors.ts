@@ -257,6 +257,27 @@ export class ErrorMapper {
         return result;
       }
 
+      // apcore 0.20.0 sync alignment A-001: CircuitBreakerOpenError ->
+      // retryable=true with the per-module recovery hint already attached
+      // by apcore-js's error class (mirrored via _attachAiGuidance).
+      if (code === ErrorCodes.CIRCUIT_BREAKER_OPEN) {
+        const result: McpErrorResponse = {
+          isError: true,
+          errorType: code,
+          message: error.message,
+          details,
+          retryable: true,
+        };
+        this._attachAiGuidance(error, result);
+        if (!result.aiGuidance) {
+          result.aiGuidance =
+            "Module's circuit breaker is OPEN — repeated failures have tripped " +
+            "the breaker. Wait until the recovery window elapses, then retry; " +
+            "the breaker will move to HALF_OPEN and accept a trial call.";
+        }
+        return result;
+      }
+
       // Binding / version-constraint validation errors (apcore 0.19) -> pass through
       if (
         code === ErrorCodes.VERSION_CONSTRAINT_INVALID ||

@@ -17,12 +17,18 @@ import type { ModuleDescriptor } from "../types.js";
 /** Reserved meta-tool prefix. Module ids starting with this are forbidden. */
 export const APCORE_META_TOOL_PREFIX = "__apcore_";
 
-/** The four reserved meta-tool names. */
+/**
+ * Reserved meta-tool names.
+ *
+ * Four task-management tools (submit/status/cancel/list) plus one
+ * preflight tool (`__apcore_module_preview`, apcore 0.21 PROTOCOL_SPEC §5.6).
+ */
 export const META_TOOL_NAMES = Object.freeze({
   SUBMIT: "__apcore_task_submit",
   STATUS: "__apcore_task_status",
   CANCEL: "__apcore_task_cancel",
   LIST: "__apcore_task_list",
+  PREVIEW: "__apcore_module_preview",
 } as const);
 
 /** Duck-typed TaskInfo projection matching apcore-js `TaskInfo`. */
@@ -69,6 +75,35 @@ export interface AsyncTaskManagerLike {
   shutdown?(): Promise<void>;
 }
 
+/**
+ * Minimal duck-typed `Executor` contract used by `__apcore_module_preview`.
+ *
+ * `validate(moduleId, inputs, context)` is the dry-run preflight entry
+ * point in apcore 0.20+; it never throws on input-shape errors —
+ * malformed inputs are surfaced as a failed `PreflightCheckResult` in
+ * the returned `PreflightResult`. apcore 0.21 added
+ * `predicted_changes` populated from `Module.preview()`.
+ */
+export interface ExecutorLike {
+  validate(
+    moduleId: string,
+    inputs?: Record<string, unknown> | null,
+    context?: unknown | null,
+  ): Promise<{
+    valid: boolean;
+    requiresApproval?: boolean;
+    requires_approval?: boolean;
+    predictedChanges?: unknown[];
+    predicted_changes?: unknown[];
+    checks?: Array<{
+      check: string;
+      passed: boolean;
+      error?: unknown;
+      warnings?: string[];
+    }>;
+  }>;
+}
+
 /** MCP-facing Tool shape used to advertise meta-tools. */
 export interface AsyncMetaTool {
   name: string;
@@ -98,6 +133,13 @@ export interface AsyncTaskBridgeOptions {
    * behavior for tests / direct construction without a registry). [A-D-008]
    */
   descriptorLookup?: (moduleId: string) => ModuleDescriptor | null | undefined;
+  /**
+   * Optional executor reference used by `__apcore_module_preview` to drive
+   * the cross-language `executor.validate()` preflight (apcore PROTOCOL_SPEC
+   * §5.6). When omitted, the preview meta-tool returns
+   * `PREVIEW_UNAVAILABLE`.
+   */
+  executor?: ExecutorLike;
 }
 
 /**
@@ -110,6 +152,7 @@ export class AsyncTaskBridge {
   private readonly _redactSensitive?: AsyncTaskBridgeOptions["redactSensitive"];
   private readonly _outputSchemaMap: Record<string, Record<string, unknown>>;
   private readonly _descriptorLookup?: AsyncTaskBridgeOptions["descriptorLookup"];
+  private readonly _executor?: ExecutorLike;
   /**
    * Maps task_id → progressToken recorded at submit time so terminal-
    * state notifications can be fanned out via the original token.
@@ -129,6 +172,7 @@ export class AsyncTaskBridge {
     this._redactSensitive = options?.redactSensitive;
     this._outputSchemaMap = options?.outputSchemaMap ?? {};
     this._descriptorLookup = options?.descriptorLookup;
+    this._executor = options?.executor;
   }
 
   /** Whether async routing and meta-tools are enabled. */
@@ -326,6 +370,25 @@ export class AsyncTaskBridge {
           },
         },
       },
+      {
+        name: META_TOOL_NAMES.PREVIEW,
+        description:
+          "Preview a module call: predict state changes, validate inputs, " +
+          "and check approval requirements WITHOUT executing the module. " +
+          "Returns `{valid, requires_approval, predicted_changes, checks}`. " +
+          "Use this before invoking destructive or stateful modules to let " +
+          "the AI orchestrator answer 'what would change in the world if I " +
+          "called this?' (apcore PROTOCOL_SPEC §5.6).",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            module_id: { type: "string" },
+            arguments: { type: "object", additionalProperties: true, default: {} },
+          },
+          required: ["module_id"],
+        },
+      },
     ];
   }
 
@@ -339,7 +402,8 @@ export class AsyncTaskBridge {
       (toolName === META_TOOL_NAMES.SUBMIT ||
         toolName === META_TOOL_NAMES.STATUS ||
         toolName === META_TOOL_NAMES.CANCEL ||
-        toolName === META_TOOL_NAMES.LIST)
+        toolName === META_TOOL_NAMES.LIST ||
+        toolName === META_TOOL_NAMES.PREVIEW)
     );
   }
 
@@ -448,6 +512,75 @@ export class AsyncTaskBridge {
         this._progressTokens.delete(taskId);
         return { task_id: taskId, cancelled };
       }
+      case META_TOOL_NAMES.PREVIEW: {
+        const moduleId = args["module_id"];
+        if (typeof moduleId !== "string" || moduleId.length === 0) {
+          throw new Error(
+            "__apcore_module_preview requires module_id (string)",
+          );
+        }
+        if (!this._executor) {
+          // Bridge was constructed without an executor reference — preview
+          // is a runtime no-op rather than an error so the meta-tool stays
+          // discoverable across heterogenous deployments.
+          return {
+            error: "PREVIEW_UNAVAILABLE",
+            message:
+              "Module preview requires an Executor reference; bridge was built without one.",
+          };
+        }
+        // Preserve `arguments: null` verbatim (forwarded as null to
+        // executor.validate). The calling business decides whether
+        // null is acceptable for the target module. Reject only
+        // structurally-impossible shapes — arrays and scalars can
+        // never represent a JSON object.
+        const rawArgs = args["arguments"];
+        if (
+          rawArgs !== undefined &&
+          rawArgs !== null &&
+          (typeof rawArgs !== "object" || Array.isArray(rawArgs))
+        ) {
+          throw new Error(
+            "__apcore_module_preview requires `arguments` to be a JSON object or null",
+          );
+        }
+        // null → null, undefined → null (no caller intent to pass inputs),
+        // {x:1} → {x:1}. Distinguishing missing from explicit null is not
+        // observable downstream — both represent "no inputs supplied".
+        const inputs =
+          rawArgs === undefined
+            ? null
+            : (rawArgs as Record<string, unknown> | null);
+        const preflight = await this._executor.validate(
+          moduleId,
+          inputs,
+          context ?? null,
+        );
+        // PreflightResult fields land in either snake_case or camelCase
+        // depending on the apcore-js minor; normalize to the canonical
+        // wire shape (snake_case) Python and Rust emit.
+        const requiresApproval =
+          preflight.requires_approval ??
+          preflight.requiresApproval ??
+          false;
+        const predictedChanges =
+          preflight.predicted_changes ?? preflight.predictedChanges ?? [];
+        const checks = (preflight.checks ?? []).map((c) => {
+          const out: Record<string, unknown> = {
+            check: c.check,
+            passed: c.passed,
+          };
+          if (c.error !== undefined && c.error !== null) out["error"] = c.error;
+          if (c.warnings && c.warnings.length > 0) out["warnings"] = c.warnings;
+          return out;
+        });
+        return {
+          valid: preflight.valid,
+          requires_approval: requiresApproval,
+          predicted_changes: predictedChanges,
+          checks,
+        };
+      }
       case META_TOOL_NAMES.LIST: {
         // [A-D-024] Validate status filter against the spec enum;
         // Python+Rust both reject unknown values. Pre-fix TS forwarded
@@ -535,11 +668,18 @@ export async function createAsyncTaskBridge(
       options?.maxTasks ?? 1000,
     ) as AsyncTaskManagerLike;
     const redactSensitive = apcore.redactSensitive ?? apcore.default?.redactSensitive;
+    // Pass the executor through so `__apcore_module_preview` can drive
+    // `executor.validate()` (apcore PROTOCOL_SPEC §5.6).
+    const executorLike =
+      typeof (executor as { validate?: unknown })?.validate === "function"
+        ? (executor as ExecutorLike)
+        : undefined;
     return new AsyncTaskBridge(manager, {
       enabled: true,
       redactSensitive: typeof redactSensitive === "function" ? redactSensitive : undefined,
       outputSchemaMap: options?.outputSchemaMap,
       descriptorLookup: options?.descriptorLookup,
+      executor: executorLike,
     });
   } catch {
     return null;
