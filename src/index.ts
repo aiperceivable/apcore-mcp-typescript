@@ -43,6 +43,8 @@ export type {
   McpErrorResponse,
   TextContentDict,
 } from "./types.js";
+// APCORE_EVENTS: re-exported for cross-SDK parity with Python `apcore_mcp.APCORE_EVENTS`
+// and Rust `apcore_mcp::apcore_events`. Has no internal callers in this package; do not delete.
 export { REGISTRY_EVENTS, ErrorCodes, MODULE_ID_PATTERN, APCORE_EVENTS } from "./types.js";
 
 // ─── Extension Helpers ───────────────────────────────────────────────────────
@@ -90,7 +92,7 @@ export type { ObservabilityFlag, ObservabilityStack } from "./server/observabili
 export { parseTraceparent, buildTraceparent } from "./server/trace-context.js";
 export { AnnotationMapper } from "./adapters/annotations.js";
 export { SchemaConverter } from "./adapters/schema.js";
-export { ErrorMapper } from "./adapters/errors.js";
+export { ErrorMapper, internalErrorResponse } from "./adapters/errors.js";
 export { ModuleIDNormalizer } from "./adapters/id-normalizer.js";
 export { ElicitationApprovalHandler } from "./adapters/approval.js";
 export type { ApprovalRequest, ApprovalResult } from "./adapters/approval.js";

@@ -17,6 +17,22 @@ import { ErrorCodes } from "../types.js";
 import type { McpErrorResponse } from "../types.js";
 
 /**
+ * Canonical GENERAL_INTERNAL_ERROR envelope for non-ModuleError fallback.
+ *
+ * All three SDKs (Python, TypeScript, Rust) emit byte-identical envelopes so
+ * MCP clients can branch on `errorType === "GENERAL_INTERNAL_ERROR"` portably.
+ * See `apcore-mcp/docs/features/error-mapper.md` (EM-6).
+ */
+export function internalErrorResponse(): McpErrorResponse {
+  return {
+    isError: true,
+    errorType: ErrorCodes.GENERAL_INTERNAL_ERROR,
+    message: "Internal error occurred",
+    details: null,
+  };
+}
+
+/**
  * Lazy snapshot of apcore-js error classes used for `instanceof` dispatch.
  * Populated on first use; falls back to duck-typing when apcore-js is
  * unavailable. Cached across calls for perf.
@@ -308,13 +324,18 @@ export class ErrorMapper {
       return result;
     }
 
-    // Unknown/unexpected exceptions -> generic error
-    return {
-      isError: true,
-      errorType: ErrorCodes.INTERNAL_ERROR,
-      message: "Internal error occurred",
-      details: null,
-    };
+    // Unknown/unexpected exceptions -> canonical GENERAL_INTERNAL_ERROR envelope (EM-6).
+    // Mirrors Python `internal_error_response()` and Rust `to_mcp_error_any()`.
+    return internalErrorResponse();
+  }
+
+  /**
+   * Generic-error fallback for arbitrary inputs. The original error's class,
+   * message, traceback, and details are deliberately ignored (security: avoid
+   * leaking server-side state). Returns the canonical envelope unchanged.
+   */
+  toMcpErrorAny(_error: unknown): McpErrorResponse {
+    return internalErrorResponse();
   }
 
   /**

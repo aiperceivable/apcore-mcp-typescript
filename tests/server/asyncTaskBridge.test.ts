@@ -198,19 +198,57 @@ describe("AsyncTaskBridge", () => {
     expect(projection.status).toBe("failed");
   });
 
-  it("handleMetaTool(__apcore_task_status) throws when task not found", async () => {
+  // [D10-003] STATUS returns ASYNC_TASK_NOT_FOUND envelope (matching Python+Rust),
+  // does NOT throw — callers branch on response.error rather than try/catch.
+  it("handleMetaTool(__apcore_task_status) returns ASYNC_TASK_NOT_FOUND envelope when task not found", async () => {
     const bridge = new AsyncTaskBridge(buildManager());
-    await expect(
-      bridge.handleMetaTool(META_TOOL_NAMES.STATUS, { task_id: "gone" }),
-    ).rejects.toThrow(/Task not found/);
+    const result = await bridge.handleMetaTool(META_TOOL_NAMES.STATUS, {
+      task_id: "gone",
+    });
+    expect(result).toEqual({
+      error: "ASYNC_TASK_NOT_FOUND",
+      task_id: "gone",
+      isError: true,
+    });
   });
 
-  it("handleMetaTool(__apcore_task_cancel) returns {task_id, cancelled}", async () => {
-    const bridge = new AsyncTaskBridge(buildManager());
+  it("handleMetaTool(__apcore_task_cancel) returns {task_id, cancelled} when task exists", async () => {
+    // [D10-004] Cancel pre-checks getStatus; provide a status so the manager.cancel
+    // path runs (default mock has getStatus returning null).
+    const bridge = new AsyncTaskBridge(
+      buildManager({
+        getStatus: vi.fn().mockReturnValue({
+          taskId: "t1",
+          moduleId: "demo.module",
+          status: "running",
+          submittedAt: 1,
+          startedAt: 2,
+          completedAt: null,
+          result: null,
+          error: null,
+        }),
+      }),
+    );
     const result = await bridge.handleMetaTool(META_TOOL_NAMES.CANCEL, {
       task_id: "t1",
     });
     expect(result).toEqual({ task_id: "t1", cancelled: true });
+  });
+
+  // [D10-004] CANCEL returns ASYNC_TASK_NOT_FOUND envelope when task is unknown,
+  // matching Python's `_handle_cancel_tool`. Pre-fix TS silently returned
+  // `{cancelled: false}` for unknown ids — callers couldn't distinguish
+  // "task existed and is uncancellable" from "task never existed".
+  it("handleMetaTool(__apcore_task_cancel) returns ASYNC_TASK_NOT_FOUND envelope when task unknown", async () => {
+    const bridge = new AsyncTaskBridge(buildManager()); // default: getStatus → null
+    const result = await bridge.handleMetaTool(META_TOOL_NAMES.CANCEL, {
+      task_id: "ghost",
+    });
+    expect(result).toEqual({
+      error: "ASYNC_TASK_NOT_FOUND",
+      task_id: "ghost",
+      isError: true,
+    });
   });
 
   it("handleMetaTool(__apcore_task_list) returns {tasks: []}", async () => {

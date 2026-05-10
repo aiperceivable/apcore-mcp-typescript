@@ -535,9 +535,14 @@ export class AsyncTaskBridge {
         }
         const info = this._manager.getStatus(taskId);
         if (!info) {
-          const err = new Error(`Task not found: ${taskId}`);
-          (err as Error & { code?: string }).code = "ASYNC_TASK_NOT_FOUND";
-          throw err;
+          // [D10-003] Return envelope (matching Python's `(content, is_error=True, None)`
+          // and Rust's `Ok(envelope)`). Throwing here would force the caller's catch path
+          // to diverge from Python+Rust, breaking cross-SDK error handling.
+          return {
+            error: "ASYNC_TASK_NOT_FOUND",
+            task_id: taskId,
+            isError: true,
+          };
         }
         const projection = this._projectTaskInfo(info);
         // [A-D-025] Inline result on terminal completed status — even
@@ -569,6 +574,18 @@ export class AsyncTaskBridge {
         const taskId = args["task_id"];
         if (typeof taskId !== "string" || taskId.length === 0) {
           throw new Error("__apcore_task_cancel requires task_id (string)");
+        }
+        // [D10-004] Pre-check existence (matching Python `_handle_cancel_tool`).
+        // Without this, unknown task_ids silently return `{cancelled: false}` —
+        // callers can't distinguish "task existed and is uncancellable" from
+        // "task never existed".
+        if (!this._manager.getStatus(taskId)) {
+          this._progressTokens.delete(taskId);
+          return {
+            error: "ASYNC_TASK_NOT_FOUND",
+            task_id: taskId,
+            isError: true,
+          };
         }
         const cancelled = await this._manager.cancel(taskId);
         // [A-D-009] Drop the progress-token binding after a single-task cancel

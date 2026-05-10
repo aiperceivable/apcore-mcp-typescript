@@ -204,6 +204,14 @@ export class TransportManager {
   setAsyncTaskBridge(bridge: {
     cancelSessionTasks(sessionKey: string): Promise<number>;
   }): void {
+    // [D10-006] Reject null/undefined bridge (matching Python `TypeError`).
+    // Silently storing null would surface later as a TypeError on first
+    // session disconnect, far from the actual misconfiguration site.
+    if (bridge == null) {
+      throw new TypeError(
+        "setAsyncTaskBridge requires a non-null bridge with cancelSessionTasks(sessionKey)",
+      );
+    }
     this._asyncTaskBridge = bridge;
   }
 

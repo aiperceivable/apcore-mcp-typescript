@@ -115,44 +115,19 @@ function descriptorToScannedModule(
 /**
  * Render a `ModuleDescriptor` as canonical apcore-toolkit Markdown.
  *
- * Returns the Markdown body produced by
- * `formatModule(scanned, { style: "markdown" })` — title, description,
- * parameters list, returns list, behavior table (toolkit 0.6.x emits
- * only fields that differ from defaults), tags, and examples.
- *
- * Returns `null` (not an error) when apcore-toolkit is not installed,
- * so callers can fall back to plain `descriptor.description`. The
- * promise resolves with `null` on import failure too — apcore-toolkit
- * is an optional peer dep and must not break apcore-mcp consumers
- * that don't install it.
- */
-export async function renderModuleMarkdown(
-  descriptor: ModuleDescriptor,
-  options: { display?: boolean } = {},
-): Promise<string | null> {
-  const toolkit = await loadToolkit();
-  if (!toolkit) return null;
-  const scanned = descriptorToScannedModule(descriptor);
-  try {
-    const rendered = toolkit.formatModule(scanned, {
-      style: "markdown",
-      display: options.display ?? true,
-    });
-    return typeof rendered === "string" ? rendered : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Synchronous variant of {@link renderModuleMarkdown}. Returns `null`
- * when the toolkit hasn't been primed yet — callers that want
+ * Returns `null` when the toolkit hasn't been primed yet — callers that want
  * Markdown rendering inside synchronous code paths (like
- * `MCPServerFactory.buildTool`) MUST `await primeMarkdownToolkit()`
- * during their async startup so the cached reference is populated.
+ * `MCPServerFactory.buildTool`) MUST `await primeMarkdownToolkit()` during
+ * their async startup so the cached reference is populated.
  *
- * Once primed, this function is a thin sync wrapper around
- * `formatModule` (which is itself synchronous in apcore-toolkit-js).
+ * Once primed, this function is a thin sync wrapper around `formatModule`
+ * (which is itself synchronous in apcore-toolkit-js). Returns the Markdown
+ * body — title, description, parameters list, returns list, behavior table
+ * (toolkit 0.6.x emits only fields that differ from defaults), tags, and
+ * examples.
+ *
+ * Returns `null` (not an error) when apcore-toolkit is not installed, so
+ * callers can fall back to plain `descriptor.description`.
  */
 export function renderModuleMarkdownSync(
   descriptor: ModuleDescriptor,

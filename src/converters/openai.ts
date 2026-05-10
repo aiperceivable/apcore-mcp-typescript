@@ -87,7 +87,8 @@ export class OpenAIConverter {
     const tags = options?.tags;
     const prefix = options?.prefix;
     const embedAnnotations = options?.embedAnnotations;
-    const strict = options?.strict;
+    // [D10-005 / OC-1] TS default for `strict` is `true` (changed in 0.14.0 spec).
+    const strict = options?.strict ?? true;
     const richDescription = options?.richDescription;
 
     const moduleIds = registry.list({
@@ -147,7 +148,8 @@ export class OpenAIConverter {
     options?: ConvertOptions,
   ): OpenAIToolDef {
     const embedAnnotations = options?.embedAnnotations ?? false;
-    const strict = options?.strict ?? false;
+    // [D10-005 / OC-1] TS default for `strict` is `true` (changed in 0.14.0 spec).
+    const strict = options?.strict ?? true;
     const richDescription = options?.richDescription ?? false;
 
     const name = this._idNormalizer.normalize(descriptor.moduleId);

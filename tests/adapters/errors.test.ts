@@ -28,14 +28,37 @@ function createModuleError(
 }
 
 describe("ErrorMapper", () => {
-  // TC-ERROR-001: Unknown exception -> INTERNAL_ERROR
-  it("maps unknown exceptions to INTERNAL_ERROR with generic message", () => {
+  // TC-ERROR-001 [D10-001 / D10-002]: Unknown exception -> GENERAL_INTERNAL_ERROR (EM-6)
+  it("maps unknown exceptions to canonical GENERAL_INTERNAL_ERROR envelope", () => {
     const result = mapper.toMcpError(new TypeError("something unexpected"));
 
     expect(result.isError).toBe(true);
-    expect(result.errorType).toBe("INTERNAL_ERROR");
+    expect(result.errorType).toBe("GENERAL_INTERNAL_ERROR");
     expect(result.message).toBe("Internal error occurred");
     expect(result.details).toBeNull();
+  });
+
+  // [D10-001 / EM-6] internalErrorResponse helper emits the canonical envelope
+  it("internalErrorResponse() returns the canonical envelope", async () => {
+    const { internalErrorResponse } = await import("../../src/adapters/errors.js");
+    expect(internalErrorResponse()).toEqual({
+      isError: true,
+      errorType: "GENERAL_INTERNAL_ERROR",
+      message: "Internal error occurred",
+      details: null,
+    });
+  });
+
+  // [D10-001 / EM-6] toMcpErrorAny ignores input contents (no leakage)
+  it("toMcpErrorAny ignores input contents — never leaks server-side state", () => {
+    const a = mapper.toMcpErrorAny(new TypeError("secret-XYZ"));
+    const b = mapper.toMcpErrorAny(new RangeError("api-key-leak"));
+    const c = mapper.toMcpErrorAny({ unexpected: "shape" });
+    expect(a).toEqual(b);
+    expect(b).toEqual(c);
+    expect(a.errorType).toBe("GENERAL_INTERNAL_ERROR");
+    expect(JSON.stringify(a)).not.toContain("secret-XYZ");
+    expect(JSON.stringify(b)).not.toContain("api-key-leak");
   });
 
   // TC-ERROR-002: ModuleNotFoundError
