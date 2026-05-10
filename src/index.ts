@@ -57,6 +57,18 @@ export type { ClaimMapping, JWTAuthenticatorOptions } from "./auth/jwt.js";
 export type { Authenticator, Identity } from "./auth/types.js";
 export { identityStorage, getCurrentIdentity } from "./auth/storage.js";
 export { buildExplorerAuthHook } from "./auth/hooks.js";
+// [A-D-230] AuthMiddleware factory for Node http transports. Exposed only;
+// TODO(A-D-230): wire createAuthMiddleware into asyncServe HTTP transport
+// (deferred to follow-up commit).
+export {
+  createAuthMiddleware,
+  DEFAULT_EXEMPT_PATHS,
+} from "./auth/middleware.js";
+export type {
+  AuthMiddleware,
+  AuthMiddlewareOptions,
+  NextHandler,
+} from "./auth/middleware.js";
 
 // ─── Unified Entry Point ─────────────────────────────────────────────────────
 export { APCoreMCP } from "./apcore-mcp.js";
