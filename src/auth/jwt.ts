@@ -123,7 +123,11 @@ export class JWTAuthenticator implements Authenticator {
       const rawId = claims[this._claimMapping.id];
       if (rawId === undefined || rawId === null) return null;
       const id = String(rawId);
-      const type = String(claims[this._claimMapping.type] ?? "user");
+      // [D11-107] Match Python's `claims.get(...) or "user"` semantics —
+      // empty string, null, undefined, or non-string all fall back to "user".
+      const rawType = claims[this._claimMapping.type];
+      const type =
+        typeof rawType === "string" && rawType.length > 0 ? rawType : "user";
 
       const rawRoles = claims[this._claimMapping.roles];
       const roles = Array.isArray(rawRoles) ? rawRoles.map(String) : [];

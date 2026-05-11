@@ -59,6 +59,34 @@ describe("JWTAuthenticator", () => {
     expect(identity!.roles).toEqual([]);
   });
 
+  // [D11-107] Empty-string type claim falls back to "user", matching
+  // Python's `or "user"` semantics. Previously String(claim ?? "user")
+  // produced "" for an empty-string claim, diverging from py/rust.
+  it("defaults type to 'user' when claim is an empty string", async () => {
+    const auth = new JWTAuthenticator({ secret: SECRET });
+    const token = signToken({ sub: "user-empty", type: "" });
+    const req = makeReq({ authorization: `Bearer ${token}` });
+
+    const identity = await auth.authenticate(req);
+
+    expect(identity).not.toBeNull();
+    expect(identity!.id).toBe("user-empty");
+    expect(identity!.type).toBe("user");
+  });
+
+  // [D11-107] Non-empty type claim is preserved unchanged.
+  it("preserves a non-empty type claim verbatim", async () => {
+    const auth = new JWTAuthenticator({ secret: SECRET });
+    const token = signToken({ sub: "user-dev", type: "developer" });
+    const req = makeReq({ authorization: `Bearer ${token}` });
+
+    const identity = await auth.authenticate(req);
+
+    expect(identity).not.toBeNull();
+    expect(identity!.id).toBe("user-dev");
+    expect(identity!.type).toBe("developer");
+  });
+
   it("returns null when sub is missing (matches Python behavior)", async () => {
     const auth = new JWTAuthenticator({ secret: SECRET, requireClaims: [] });
     const token = signToken({ custom_field: "value" });
