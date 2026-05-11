@@ -12,21 +12,18 @@ importers:
         specifier: ^1.26.0
         version: 1.26.0(zod@4.3.6)
       apcore-js:
-        specifier: '>=0.21.1'
+        specifier: ^0.21.1
         version: 0.21.1
       jsonwebtoken:
         specifier: ^9.0.3
         version: 9.0.3
       mcp-embedded-ui:
-        specifier: '>=0.4.0'
+        specifier: ^0.4.0
         version: 0.4.0
     devDependencies:
       '@eslint/js':
         specifier: ^9.0.0
         version: 9.39.4
-      '@sinclair/typebox':
-        specifier: ^0.34.48
-        version: 0.34.48
       '@types/jsonwebtoken':
         specifier: ^9.0.10
         version: 9.0.10
@@ -53,7 +50,7 @@ importers:
         version: 3.2.4(@types/node@20.19.33)
     optionalDependencies:
       apcore-toolkit:
-        specifier: '>=0.6.1'
+        specifier: ^0.6.1
         version: 0.6.1(@sinclair/typebox@0.34.48)
 
 packages:
