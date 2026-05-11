@@ -49,14 +49,41 @@ describe("ErrorMapper", () => {
     });
   });
 
-  // [D10-001 / EM-6] toMcpErrorAny ignores input contents (no leakage)
-  it("toMcpErrorAny ignores input contents — never leaks server-side state", () => {
+  // [D9-004] toMcpErrorAny — ModuleError subclasses are forwarded to toMcpError
+  // so structured error fields survive the generic-any entry point. Non-module
+  // inputs still fall back to the canonical GENERAL_INTERNAL_ERROR envelope
+  // (no leakage of message / class / stack).
+  it("toMcpErrorAny forwards ModuleError subclasses to toMcpError", async () => {
+    const apcore = await import("apcore-js");
+    // ModuleError is the documented base class for all apcore module errors.
+    const ModuleError = (apcore as Record<string, unknown>)["ModuleError"] as
+      | (new (code: string, message: string, details?: unknown) => Error)
+      | undefined;
+    expect(ModuleError).toBeTypeOf("function");
+
+    const err = new ModuleError!(
+      "MODULE_NOT_FOUND",
+      "Module 'image.resize' not found",
+    );
+    const result = mapper.toMcpErrorAny(err);
+
+    expect(result.isError).toBe(true);
+    expect(result.errorType).toBe("MODULE_NOT_FOUND");
+    expect(result.message).toBe("Module 'image.resize' not found");
+  });
+
+  it("toMcpErrorAny falls back to GENERAL_INTERNAL_ERROR for non-module errors", () => {
     const a = mapper.toMcpErrorAny(new TypeError("secret-XYZ"));
     const b = mapper.toMcpErrorAny(new RangeError("api-key-leak"));
     const c = mapper.toMcpErrorAny({ unexpected: "shape" });
+
+    // Plain Error / non-module inputs all collapse to the canonical envelope,
+    // never leaking the original message, class, or details.
     expect(a).toEqual(b);
     expect(b).toEqual(c);
     expect(a.errorType).toBe("GENERAL_INTERNAL_ERROR");
+    expect(a.message).toBe("Internal error occurred");
+    expect(a.details).toBeNull();
     expect(JSON.stringify(a)).not.toContain("secret-XYZ");
     expect(JSON.stringify(b)).not.toContain("api-key-leak");
   });

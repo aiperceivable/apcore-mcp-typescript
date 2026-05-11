@@ -36,8 +36,14 @@ export function internalErrorResponse(): McpErrorResponse {
  * Lazy snapshot of apcore-js error classes used for `instanceof` dispatch.
  * Populated on first use; falls back to duck-typing when apcore-js is
  * unavailable. Cached across calls for perf.
+ *
+ * `ModuleError` is the documented base class for all structured apcore errors.
+ * `toMcpErrorAny` uses it as a downcast pivot, mirroring Rust's
+ * `to_mcp_error_any` which checks `err.downcast_ref::<ModuleError>()` before
+ * collapsing to the canonical envelope.
  */
 let _apcoreErrorClasses: {
+  ModuleError?: new (...args: unknown[]) => Error;
   TaskLimitExceededError?: new (...args: unknown[]) => Error;
   VersionConstraintError?: new (...args: unknown[]) => Error;
   DependencyNotFoundError?: new (...args: unknown[]) => Error;
@@ -51,6 +57,7 @@ async function _loadApcoreErrorClasses(): Promise<NonNullable<typeof _apcoreErro
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const apcore = (await import("apcore-js")) as any;
     _apcoreErrorClasses = {
+      ModuleError: apcore.ModuleError,
       TaskLimitExceededError: apcore.TaskLimitExceededError,
       VersionConstraintError: apcore.VersionConstraintError,
       DependencyNotFoundError: apcore.DependencyNotFoundError,
@@ -330,11 +337,21 @@ export class ErrorMapper {
   }
 
   /**
-   * Generic-error fallback for arbitrary inputs. The original error's class,
-   * message, traceback, and details are deliberately ignored (security: avoid
-   * leaking server-side state). Returns the canonical envelope unchanged.
+   * Generic-error fallback for arbitrary inputs.
+   *
+   * Ports Rust's `to_mcp_error_any` downcast pattern: if the input is a
+   * `ModuleError` subclass, delegate to {@link toMcpError} so structured
+   * fields (code, details, AI guidance) survive. Otherwise — plain `Error`,
+   * unrelated subclass, or non-error object — return the canonical
+   * GENERAL_INTERNAL_ERROR envelope. The original class, message, stack,
+   * and details are deliberately discarded in that branch (security: avoid
+   * leaking server-side state). [D9-004]
    */
-  toMcpErrorAny(_error: unknown): McpErrorResponse {
+  toMcpErrorAny(error: unknown): McpErrorResponse {
+    const ModuleError = _apcoreErrorClasses?.ModuleError;
+    if (ModuleError && error instanceof ModuleError) {
+      return this.toMcpError(error);
+    }
     return internalErrorResponse();
   }
 
