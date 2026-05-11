@@ -28,13 +28,27 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Authenticator } from "./types.js";
 import { identityStorage } from "./storage.js";
 
-/** Downstream handler invoked when auth succeeds (or is exempt/permissive). */
+/**
+ * Downstream handler invoked when auth succeeds (or is exempt/permissive).
+ *
+ * @internal
+ *
+ * Re-exported only from `src/auth/middleware.ts`. The public package barrel
+ * intentionally omits this type until A-D-230 wires the middleware into the
+ * asyncServe HTTP transport. Consumers should not depend on it.
+ */
 export type NextHandler = (
   req: IncomingMessage,
   res: ServerResponse,
 ) => void | Promise<void>;
 
-/** Options for {@link createAuthMiddleware}. */
+/**
+ * Options for {@link createAuthMiddleware}.
+ *
+ * @internal
+ *
+ * See {@link NextHandler} for the @internal rationale.
+ */
 export interface AuthMiddlewareOptions {
   /** Authenticator that validates the Bearer token. Required. */
   authenticator: Authenticator;
@@ -59,14 +73,26 @@ export interface AuthMiddlewareOptions {
   requireAuth?: boolean;
 }
 
-/** Default exempt paths — kept in sync with TransportManager.exemptPaths. */
+/**
+ * Default exempt paths — kept in sync with TransportManager.exemptPaths.
+ *
+ * @internal
+ *
+ * See {@link NextHandler} for the @internal rationale.
+ */
 export const DEFAULT_EXEMPT_PATHS: ReadonlySet<string> = new Set([
   "/health",
   "/metrics",
   "/usage",
 ]);
 
-/** Auth middleware function compatible with Node's `http` request handlers. */
+/**
+ * Auth middleware function compatible with Node's `http` request handlers.
+ *
+ * @internal
+ *
+ * See {@link NextHandler} for the @internal rationale.
+ */
 export type AuthMiddleware = (
   req: IncomingMessage,
   res: ServerResponse,
@@ -82,6 +108,13 @@ export type AuthMiddleware = (
  * - Sets `WWW-Authenticate: Bearer` per RFC 6750.
  * - Wraps `next()` in `identityStorage.run(identity, ...)` so downstream
  *   code calling `getCurrentIdentity()` sees the authenticated principal.
+ *
+ * @internal
+ *
+ * Implementation lives here and is reachable via the package's source tree
+ * for testing, but the top-level package barrel does NOT re-export this
+ * factory. The middleware is not yet wired into `asyncServe()`'s HTTP
+ * transport (tracked under A-D-230). Re-exposed once wiring lands.
  */
 export function createAuthMiddleware(
   options: AuthMiddlewareOptions,
