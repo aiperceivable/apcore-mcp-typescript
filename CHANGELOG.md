@@ -5,18 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.15.0] - 2026-05-09
+## [0.15.0] - 2026-05-14
 
-Leverages **apcore-js 0.21.1 + apcore-toolkit 0.6.1**. Cross-SDK byte-
+Leverages **apcore-js 0.21.1 + apcore-toolkit 0.7.0**. Cross-SDK byte-
 equivalent with `apcore-mcp-python` and `apcore-mcp-rust` 0.15.0.
 
 ### Changed
 
-- **Dependency bump**: `apcore-js >= 0.21.1` (was `>= 0.19.0`); `apcore-toolkit >= 0.6.1` (was `>= 0.5.0`, kept as `optionalDependencies`).
-- **`AsyncTaskBridgeOptions.executor`** — new optional field for the preview meta-tool. The `createAsyncTaskBridge` factory automatically threads the `executor` argument through when it duck-types to a `validate` function.
+- **Dependency bump**: `apcore-js >= 0.21.1` (was `>= 0.19.0`); `apcore-toolkit >= 0.7.0` (was `>= 0.5.0`, kept as `optionalDependencies`).
 
 ### Added
 
+- **Built-in output format support**: Added `--output-format` (`json`, `csv`, `jsonl`) to CLI and `outputFormat` option to `serve()`. Leverages `apcore-toolkit` 0.7 for standard tabular formatting.
 - **`__apcore_module_preview` meta-tool** (apcore 0.21 PROTOCOL_SPEC §5.6 / §12.8) — fifth reserved meta-tool alongside the four `__apcore_task_*` ones. New `META_TOOL_NAMES.PREVIEW` constant. The handler drives `executor.validate(moduleId, inputs, context)` and returns a `{valid, requires_approval, predicted_changes, checks}` envelope WITHOUT executing the module. PreflightResult fields are normalized from camelCase (`requiresApproval`, `predictedChanges`) to snake_case to match the cross-SDK wire shape Python and Rust emit. `arguments: null` and missing `arguments` are both preserved as `null` (the calling business decides whether null is acceptable); structurally-wrong shapes (arrays, scalars) throw `__apcore_module_preview requires \`arguments\` to be a JSON object or null`. Returns `{error: "PREVIEW_UNAVAILABLE"}` envelope when the bridge was constructed without an `executor`.
 - **`MCPServerFactory({ richDescription: true })` + `MCPServerFactory.prepare()` static method** — when `richDescription` is on, `buildTool` renders `Tool.description` as canonical apcore-toolkit Markdown (`formatModule({ style: "markdown" })`) instead of the plain one-line description. Includes title, description, parameters list, returns list, behavior table (only fields differing from defaults — toolkit 0.6 alignment), tags, and examples. LLMs select tools primarily from this string; Markdown packs more decision signal per token. Display-overlay `mcp.description` overrides still win first. The static `MCPServerFactory.prepare()` async method primes the toolkit cache so subsequent synchronous `buildTool` calls can render Markdown without re-importing the optional dependency. One-shot `console.warn` when `apcore-toolkit` is missing.
 - **`OpenAIConverter` `richDescription` option** — same Markdown rendering for OpenAI tool definitions. Accepted on both `convertRegistry({ richDescription: true })` and `convertDescriptor({ richDescription: true })`. Pairs with `await primeMarkdownToolkit()` for sync rendering.

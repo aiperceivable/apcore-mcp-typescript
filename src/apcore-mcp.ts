@@ -80,7 +80,7 @@ export interface APCoreMCPOptions {
    * Optional function that formats execution results into text for LLM consumption.
    * When undefined, results are serialised with `JSON.stringify(result)`.
    */
-  outputFormatter?: (result: Record<string, unknown>) => string;
+  outputFormatter?: (result: Record<string, unknown> | Array<unknown>) => string;
   /**
    * Optional list of apcore `Middleware` instances to install on the Executor
    * via `executor.use()`. Appended to any middleware declared under Config

@@ -102,6 +102,7 @@ npx apcore-mcp --extensions-dir ./extensions --transport sse --port 8000
 | `--jwt-require-auth` | `true` | Require auth (use `--jwt-permissive` to override and allow unauthenticated requests) |
 | `--jwt-permissive` | `false` | Permissive mode: allow unauthenticated requests (overrides `--jwt-require-auth`) |
 | `--exempt-paths` | `/health,/metrics,/usage` | Comma-separated paths exempt from auth |
+| `--output-format` | `json` | Built-in output format: `json`, `csv`, or `jsonl` |
 
 JWT key resolution priority: `--jwt-key-file` > `--jwt-secret` > `APCORE_JWT_SECRET` environment variable.
 
@@ -375,6 +376,22 @@ await close();
 ```
 
 Accepts the same options as `serve()` except `transport`, `host`, `port`, `onStartup`, and `onShutdown`.
+
+### Output Formatting
+
+By default, tool execution results are serialized as JSON (`JSON.stringify`). You can customize this by passing an `outputFormat` name or a custom `outputFormatter` function.
+
+**Built-in formats** (requires `apcore-toolkit` 0.7.0+):
+
+```typescript
+// Via CLI
+// npx apcore-mcp --extensions-dir ./extensions --output-format csv
+
+// Via API
+const mcp = new APCoreMCP("./extensions", { outputFormat: "csv" });
+```
+
+Supports `json`, `csv`, and `jsonl`. Non-tabular data gracefully falls back to JSON.
 
 ### Tool Explorer
 

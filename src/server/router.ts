@@ -111,7 +111,12 @@ export interface ExecutionRouterOptions {
    * When undefined, results are serialised with `JSON.stringify(result)`.
    * Only applied to plain-object results; non-object results always use JSON.stringify.
    */
-  outputFormatter?: (result: Record<string, unknown>) => string;
+  outputFormatter?: (result: Record<string, unknown> | Array<unknown>) => string;
+  /**
+   * Optional built-in output format name ("json", "csv", "jsonl").
+   * Takes precedence over outputFormatter if both are set.
+   */
+  outputFormat?: "json" | "csv" | "jsonl";
   /**
    * When true (default), redact sensitive fields from output using apcore's
    * `redactSensitive()` before formatting. Requires apcore-js to be installed
@@ -162,7 +167,8 @@ export class ExecutionRouter {
   private readonly _executor: Executor;
   private readonly _errorMapper: ErrorMapper;
   private readonly _validateInputs: boolean;
-  private readonly _outputFormatter?: (result: Record<string, unknown>) => string;
+  private readonly _outputFormatter?: (result: Record<string, unknown> | Array<unknown>) => string;
+  private readonly _outputFormat?: "json" | "csv" | "jsonl";
   private readonly _redactOutput: boolean;
   private readonly _outputSchemaMap: Record<string, Record<string, unknown>>;
   private readonly _trace: boolean;
@@ -185,11 +191,18 @@ export class ExecutionRouter {
     this._executor = executor;
     this._errorMapper = new ErrorMapper();
     this._validateInputs = options?.validateInputs ?? false;
-    this._outputFormatter = options?.outputFormatter;
+    this._outputFormat = options?.outputFormat;
     this._redactOutput = options?.redactOutput ?? true;
     this._outputSchemaMap = options?.outputSchemaMap ?? {};
     this._trace = options?.trace ?? false;
     this._asyncTaskBridge = options?.asyncTaskBridge;
+
+    // Use custom formatter if provided, or a sentinel if a builtin format is requested
+    this._outputFormatter = options?.outputFormatter;
+    if (!this._outputFormatter && this._outputFormat && this._outputFormat !== "json") {
+      // Sentinel to ensure _formatResult enters the formatting block
+      this._outputFormatter = () => ""; 
+    }
   }
 
   /** Expose the async task bridge (for factory tool-list merging). */
@@ -304,20 +317,42 @@ export class ExecutionRouter {
    * Format an execution result into text for LLM consumption.
    *
    * Uses the configured outputFormatter if set, otherwise falls back
-   * to `JSON.stringify(result)`. The formatter is only applied to
-   * plain-object results.
+   * to `JSON.stringify(result)`. The formatter is applied to
+   * plain-object or array results.
    */
-  private _formatResult(result: unknown): string {
-    if (
-      this._outputFormatter &&
-      result !== null &&
-      typeof result === "object" &&
-      !Array.isArray(result)
-    ) {
-      try {
-        return this._outputFormatter(result as Record<string, unknown>);
-      } catch {
-        // outputFormatter failed — fall back to JSON.stringify
+  private async _formatResult(result: unknown): Promise<string> {
+    if (result !== null && typeof result === "object") {
+      // Builtin tabular formats (csv/jsonl) apply to both arrays and plain objects.
+      if (this._outputFormat && this._outputFormat !== "json") {
+        const rows = Array.isArray(result) ? result : [result];
+        if (rows.every((r) => r !== null && typeof r === "object" && !Array.isArray(r))) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const toolkit = await import("apcore-toolkit") as any;
+            const formatCsv = toolkit.formatCsv ?? toolkit.default?.formatCsv;
+            const formatJsonl = toolkit.formatJsonl ?? toolkit.default?.formatJsonl;
+
+            if (this._outputFormat === "csv" && typeof formatCsv === "function") {
+              return formatCsv(rows);
+            }
+            if (this._outputFormat === "jsonl" && typeof formatJsonl === "function") {
+              return formatJsonl(rows);
+            }
+          } catch {
+            console.warn(`apcore-toolkit not available for builtin format: ${this._outputFormat}`);
+          }
+        } else {
+          console.warn(`outputFormat=${this._outputFormat} requested but result is not tabular; falling back to JSON`);
+        }
+      }
+
+      // Custom outputFormatter only applies to plain objects, not arrays.
+      if (this._outputFormatter && !Array.isArray(result)) {
+        try {
+          return await this._outputFormatter(result as Record<string, unknown> | Array<unknown>);
+        } catch {
+          // outputFormatter failed — fall back to JSON.stringify
+        }
       }
     }
     return JSON.stringify(result);
@@ -486,7 +521,7 @@ export class ExecutionRouter {
             context,
           );
           const content: TextContentDict[] = [
-            { type: "text", text: this._formatResult(metaResult) },
+            { type: "text", text: await this._formatResult(metaResult) },
           ];
           return [content, false, effectiveTraceId];
         } catch (err: unknown) {
@@ -527,7 +562,7 @@ export class ExecutionRouter {
               },
             );
             const content: TextContentDict[] = [
-              { type: "text", text: this._formatResult(envelope) },
+              { type: "text", text: await this._formatResult(envelope) },
             ];
             return [content, false, effectiveTraceId];
           } catch (err: unknown) {
@@ -634,7 +669,7 @@ export class ExecutionRouter {
         const content: TextContentDict[] = [
           {
             type: "text",
-            text: this._formatResult(redacted),
+            text: await this._formatResult(redacted),
           },
         ];
 
@@ -683,7 +718,7 @@ export class ExecutionRouter {
       const content: TextContentDict[] = [
         {
           type: "text",
-          text: this._formatResult(redacted),
+          text: await this._formatResult(redacted),
           ...(traceMeta ? { _meta: { trace: traceMeta } } : {}),
         } as TextContentDict,
       ];

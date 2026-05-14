@@ -19,6 +19,19 @@ export interface ConvertSchemaOptions {
  */
 const MAX_REF_DEPTH = 32;
 
+/**
+ * JavaScript-specific prototype-pollution guard (mirrors apcore-toolkit's
+ * `PROTO_DENY_LIST` in `binding-parser.ts`). Reject these names when used as
+ * `$ref` segments, so that a malicious schema cannot resolve `#/$defs/__proto__`,
+ * `#/$defs/constructor`, or `#/$defs/prototype` to inherited values on
+ * `Object.prototype`. Python and Rust ports do not require an equivalent.
+ */
+const PROTO_DENY_LIST: ReadonlySet<string> = new Set([
+  "__proto__",
+  "constructor",
+  "prototype",
+]);
+
 export class SchemaConverter {
   /**
    * Convert a module descriptor's inputSchema to an MCP-compatible schema.
@@ -249,6 +262,15 @@ export class SchemaConverter {
    *
    * Returns a deep copy of the resolved definition to avoid mutation.
    * Throws Error if the ref format is invalid or the definition is not found.
+   *
+   * JS-specific hardening (mirrors apcore-toolkit's `PROTO_DENY_LIST` in
+   * `binding-parser.ts`): reject ref segments that resolve to dangerous
+   * prototype-chain keys (`__proto__`, `constructor`, `prototype`). Without
+   * this guard, `defs[name]` would return values from `Object.prototype`
+   * even when the user supplied no matching definition, enabling prototype
+   * pollution / unexpected schema resolution. This deny-list has no Python
+   * counterpart because Python's attribute lookups are not affected by this
+   * vulnerability class.
    */
   _resolveRef(
     refPath: string,
@@ -262,6 +284,17 @@ export class SchemaConverter {
     const name = refPath.slice(prefix.length);
     if (!name) {
       throw new Error(`Invalid $ref format: ${refPath}`);
+    }
+
+    // [SC-PROTO] Reject prototype-pollution segments before key lookup.
+    if (PROTO_DENY_LIST.has(name)) {
+      throw new Error(`$ref not found: ${refPath}`);
+    }
+
+    // Use Object.prototype.hasOwnProperty.call to guarantee we never read
+    // inherited keys (defense-in-depth alongside PROTO_DENY_LIST above).
+    if (!Object.prototype.hasOwnProperty.call(defs, name)) {
+      throw new Error(`$ref not found: ${refPath}`);
     }
 
     const definition = defs[name];

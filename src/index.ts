@@ -432,7 +432,12 @@ export interface BaseServeOptions {
    * When undefined, results are serialised with `JSON.stringify(result)`.
    * Only applied to plain-object results; non-object results always use JSON.stringify.
    */
-  outputFormatter?: (result: Record<string, unknown>) => string;
+  outputFormatter?: (result: Record<string, unknown> | Array<unknown>) => string;
+  /**
+   * Optional built-in output format name ("json", "csv", "jsonl").
+   * When set, automatically uses the corresponding formatter from `apcore-toolkit`.
+   */
+  outputFormat?: "json" | "csv" | "jsonl";
   /**
    * When true (default), redact sensitive fields from tool output using apcore's
    * `redactSensitive()` before formatting. Requires apcore-js to be installed.
@@ -522,6 +527,7 @@ export async function serve(
     exemptPaths,
     approvalHandler,
     outputFormatter,
+    outputFormat,
     redactOutput,
     strategy,
     trace,
@@ -617,6 +623,7 @@ export async function serve(
   const router = new ExecutionRouter(executor, {
     validateInputs,
     outputFormatter,
+    outputFormat,
     redactOutput,
     outputSchemaMap,
     trace,
@@ -782,6 +789,7 @@ export async function asyncServe(
     approvalHandler,
     endpoint,
     outputFormatter,
+    outputFormat,
     redactOutput,
     strategy,
     trace,
@@ -876,6 +884,7 @@ export async function asyncServe(
   const router = new ExecutionRouter(executor, {
     validateInputs,
     outputFormatter,
+    outputFormat,
     redactOutput,
     outputSchemaMap,
     trace,

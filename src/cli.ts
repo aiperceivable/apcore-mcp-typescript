@@ -43,6 +43,7 @@ Options:
   --jwt-permissive           Permissive mode: allow unauthenticated requests (overrides --jwt-require-auth)
   --strategy <name>          Execution strategy: standard, internal, testing, performance, minimal
   --approval <mode>          Approval mode: elicit, auto-approve, always-deny, off (default: off)
+  --output-format <type>     Built-in output format: json, csv, jsonl (default: json)
   --exempt-paths <paths>     Comma-separated paths exempt from auth (default: /health,/metrics,/usage)
   --observability            Enable metrics + usage middleware and expose /metrics and /usage endpoints
   --async                    Enable the Async Task Bridge (default: on; use --no-async to disable)
@@ -80,6 +81,7 @@ export async function main(): Promise<void> {
         "jwt-permissive": { type: "boolean", default: false },
         approval: { type: "string", default: "off" },
         strategy: { type: "string" },
+        "output-format": { type: "string", default: "json" },
         "exempt-paths": { type: "string" },
         observability: { type: "boolean", default: false },
         async: { type: "boolean", default: true },
@@ -186,6 +188,15 @@ export async function main(): Promise<void> {
     }
   }
 
+  // Validate output-format
+  const outputFormat = values["output-format"] as string | undefined;
+  const validOutputFormats = ["json", "csv", "jsonl"];
+  if (outputFormat && !validOutputFormats.includes(outputFormat)) {
+    fail(
+      `--output-format must be one of: ${validOutputFormats.join(", ")}. Got '${outputFormat}'.`,
+    );
+  }
+
   let approvalHandler: unknown;
   if (approvalMode === "elicit") {
     approvalHandler = new ElicitationApprovalHandler();
@@ -266,6 +277,7 @@ export async function main(): Promise<void> {
       exemptPaths,
       approvalHandler,
       strategy,
+      outputFormat: outputFormat as "json" | "csv" | "jsonl",
       observability: observabilityEnabled,
       async: asyncEnabled,
     });
