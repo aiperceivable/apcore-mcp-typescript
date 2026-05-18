@@ -82,6 +82,21 @@ describe("ModuleIDNormalizer", () => {
       expect(normalizer.tryDenormalize("ping")).toBe("ping");
     });
 
+    // [D11-3] Cross-language parity: Python/Rust accept underscores within
+    // segments per MODULE_ID_PATTERN. The local NORMALIZED_PATTERN used to
+    // forbid them, causing tryDenormalize("my_mod-v2") to return null while
+    // Python/Rust returned "my_mod.v2".
+    it("accepts underscores within segments (cross-language parity)", () => {
+      expect(normalizer.tryDenormalize("my_mod-v2")).toBe("my_mod.v2");
+    });
+
+    it("round-trips an id with underscore segments", () => {
+      const normalized = normalizer.normalize("my_org.tools.search_v2");
+      expect(normalizer.tryDenormalize(normalized)).toBe(
+        "my_org.tools.search_v2",
+      );
+    });
+
     it("plain denormalize remains lenient on invalid inputs", () => {
       expect(normalizer.denormalize("Image-Resize")).toBe("Image.Resize");
       expect(normalizer.denormalize("foo--bar")).toBe("foo..bar");

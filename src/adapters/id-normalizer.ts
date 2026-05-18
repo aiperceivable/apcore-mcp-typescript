@@ -42,21 +42,18 @@ export class ModuleIDNormalizer {
    * Bijection-guarded variant of denormalize. [MID-5]
    *
    * Returns the denormalized module ID if `toolName` is a valid pre-image of
-   * `normalize()` (i.e. it passes the normalized-name pattern validation).
-   * Returns `null` for inputs that could not have been produced by `normalize()`.
+   * `normalize()` (i.e. the dash→dot replacement yields a string matching
+   * MODULE_ID_PATTERN). Returns `null` for inputs that could not have been
+   * produced by `normalize()`.
    *
-   * Valid normalized names must match: `[a-z0-9]+(-[a-z0-9]+)*`
-   * - Lowercase alphanumeric segments separated by single hyphens.
-   * - No uppercase, no leading/trailing/consecutive hyphens, no empty string.
+   * Cross-language parity [D11-3]: validates the denormalized result against
+   * the shared MODULE_ID_PATTERN so underscores within segments (e.g.
+   * `"my_mod-v2"` → `"my_mod.v2"`) round-trip identically to Python/Rust.
    */
   tryDenormalize(toolName: string): string | null {
-    // Must be non-empty, all-lowercase, no consecutive/leading/trailing hyphens,
-    // only [a-z0-9-] characters.
     if (!toolName || toolName.length === 0) return null;
-    // Pattern: segments of [a-z][a-z0-9]* joined by single hyphens.
-    // Mirrors MODULE_ID_PATTERN where each segment starts with a lowercase letter.
-    const NORMALIZED_PATTERN = /^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$/;
-    if (!NORMALIZED_PATTERN.test(toolName)) return null;
-    return this.denormalize(toolName);
+    const denormalized = this.denormalize(toolName);
+    if (!MODULE_ID_PATTERN.test(denormalized)) return null;
+    return denormalized;
   }
 }
