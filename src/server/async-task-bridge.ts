@@ -239,13 +239,17 @@ export class AsyncTaskBridge {
     const meta = descriptor.metadata ?? {};
     // Accept both boolean true AND the string "true" — Python and Rust
     // both accept the string form (registries that store annotations as
-    // YAML produce string booleans). [A-D-021]
+    // YAML produce string booleans). Match Python's case-insensitive
+    // semantics so that `"True"` / `"TRUE"` round-tripped through YAML
+    // dispatchers agree across SDKs. [A-D-021 / A-003 cross-lang fix]
+    const isTruthyAsyncString = (v: unknown): boolean =>
+      typeof v === "string" && v.toLowerCase() === "true";
     const asyncFlag = meta["async"];
-    if (asyncFlag === true || asyncFlag === "true") return true;
+    if (asyncFlag === true || isTruthyAsyncString(asyncFlag)) return true;
     const annotations = descriptor.annotations;
     if (annotations?.extra) {
       const flag = annotations.extra["mcp_async"];
-      if (flag === true || flag === "true") return true;
+      if (flag === true || isTruthyAsyncString(flag)) return true;
     }
     return false;
   }
@@ -601,6 +605,17 @@ export class AsyncTaskBridge {
         if (typeof moduleId !== "string" || moduleId.length === 0) {
           throw new Error(
             "__apcore_module_preview requires module_id (string)",
+          );
+        }
+        // Reject reserved-prefix module ids the same way the submit branch
+        // does at line 474 — the preview meta-tool must not introspect the
+        // bridge's own meta-tools (apcore PROTOCOL_SPEC §5.6 contract).
+        // Cross-SDK parity: Python and Rust apply the same guard.
+        if (moduleId.startsWith(APCORE_META_TOOL_PREFIX)) {
+          throw new Error(
+            `Reserved module id: "${moduleId}". Names starting with ` +
+              `"${APCORE_META_TOOL_PREFIX}" are reserved for apcore-mcp ` +
+              "meta-tools and cannot be previewed via this handler.",
           );
         }
         if (!this._executor) {

@@ -483,6 +483,67 @@ curl -X POST http://localhost:8000/mcp \
 curl http://localhost:8000/health
 ```
 
+#### Per-request identity helpers
+
+When auth is enabled, each request runs inside an `AsyncLocalStorage`
+context whose value is the verified `Identity`. Modules and middleware
+read it with `getCurrentIdentity()` — no need to thread it through every
+function.
+
+```typescript
+import { getCurrentIdentity, identityStorage } from "apcore-mcp";
+import type { Identity } from "apcore-mcp";
+
+// Inside a module / middleware called from a tool invocation:
+const id: Identity | null = getCurrentIdentity();
+if (id) {
+  // id.id (user id), id.type ("user" | "service" | ...), id.roles, id.attrs
+}
+
+// Lower-level access (e.g. for running custom code inside a known identity):
+identityStorage.run(myIdentity, async () => {
+  /* code that calls getCurrentIdentity() */
+});
+```
+
+Python parity: `apcore_mcp.get_current_identity()` / `auth_identity_var`.
+Rust parity: `apcore_mcp::AUTH_IDENTITY` task-local.
+
+#### Mounting the Explorer behind your own server
+
+If you embed the bridge via `asyncServe(...)` instead of `serve(...)`,
+gate the explorer routes behind an auth hook with
+`buildExplorerAuthHook(authenticator)`:
+
+```typescript
+import { buildExplorerAuthHook } from "apcore-mcp";
+import { JWTAuthenticator } from "apcore-mcp";
+
+const auth = new JWTAuthenticator({ key: process.env.JWT_SECRET! });
+const guard = buildExplorerAuthHook(auth);
+
+// `guard` is a `(req, next) => Promise<Response>` hook accepted by
+// mcp-embedded-ui's Hono router. Returns a 401 response when the
+// Authorization header is missing or invalid; otherwise runs `next()`
+// inside `identityStorage.run(identity, ...)` so the explorer's
+// downstream handlers see the authenticated identity.
+```
+
+#### Custom observability stack (advanced)
+
+For callers who don't want the `serve(... observability: true)` shorthand,
+`installObservability` wires the metrics + usage middleware onto an
+existing `Executor` directly. It is what `serve()` calls internally.
+
+```typescript
+import { installObservability } from "apcore-mcp";
+import type { ObservabilityFlag } from "apcore-mcp";
+
+const stack = await installObservability(executor, /* metricsCollector */ null, true satisfies ObservabilityFlag);
+// stack.metricsCollector / stack.usageCollector are then exposed on
+// the `/metrics` and `/usage` endpoints by your own HTTP wiring.
+```
+
 ### `toOpenaiTools(registryOrExecutor, options?)`
 
 Export apcore modules as OpenAI-compatible tool definitions.
