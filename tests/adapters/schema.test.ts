@@ -611,4 +611,33 @@ describe("SchemaConverter", () => {
     expect(contains).toBeDefined();
     expect(contains["additionalProperties"]).toBe(false);
   });
+
+  // [D11-4] Cross-language parity: when a schema declares a non-object `type`
+  // but also defines `properties`, Python/Rust force `type: "object"`. The TS
+  // implementation used to early-return whenever `type` was defined, leaving
+  // mismatched schemas alone.
+  it("D11-4: upgrades type:string to type:object when properties present", () => {
+    const conv = new SchemaConverter();
+    const result = conv._ensureObjectType({
+      type: "string",
+      properties: { a: { type: "string" } },
+    });
+    expect(result["type"]).toBe("object");
+    expect(result["properties"]).toEqual({ a: { type: "string" } });
+  });
+
+  it("D11-4: leaves type alone when no properties present", () => {
+    const conv = new SchemaConverter();
+    const result = conv._ensureObjectType({ type: "string" });
+    expect(result["type"]).toBe("string");
+  });
+
+  it("D11-4: leaves type alone when type already includes object", () => {
+    const conv = new SchemaConverter();
+    const result = conv._ensureObjectType({
+      type: ["object", "null"],
+      properties: { a: { type: "string" } },
+    });
+    expect(result["type"]).toEqual(["object", "null"]);
+  });
 });

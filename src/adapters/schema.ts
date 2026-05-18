@@ -311,6 +311,8 @@ export class SchemaConverter {
    *
    * - Empty schema -> `{ type: "object", properties: {} }`
    * - Schema without `type` -> adds `type: "object"`
+   * - Schema with non-object `type` but defining `properties` -> forces
+   *   `type: "object"` to keep cross-language parity with Python/Rust [D11-4].
    */
   _ensureObjectType(schema: JsonSchema): JsonSchema {
     // Empty schema (no keys)
@@ -318,8 +320,20 @@ export class SchemaConverter {
       return { type: "object", properties: {} };
     }
 
-    // If type is already set, return as-is
+    // If type is already set, only upgrade when `properties` is present but
+    // the current type is not object-compatible (Python/Rust parity).
     if (schema["type"] !== undefined) {
+      const hasProperties =
+        schema !== null &&
+        typeof schema === "object" &&
+        "properties" in schema;
+      const typeValue = schema["type"];
+      const typeIsObject =
+        typeValue === "object" ||
+        (Array.isArray(typeValue) && typeValue.includes("object"));
+      if (hasProperties && !typeIsObject) {
+        schema["type"] = "object";
+      }
       return schema;
     }
 
