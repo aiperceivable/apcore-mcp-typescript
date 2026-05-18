@@ -1,13 +1,12 @@
 /**
  * Auth module barrel exports.
  *
- * NOTE [A-D-230 / D9-005]: `createAuthMiddleware` is intentionally NOT
- * re-exported here. The factory in `./middleware.ts` exists for the
- * eventual asyncServe wiring but has no caller inside the bridge today;
- * advertising it publicly would imply a contract the package doesn't
- * deliver. Import directly from `./middleware.ts` for internal use; the
- * barrel re-export returns once A-D-230 wires the middleware into the
- * asyncServe HTTP transport.
+ * NOTE [A-D-230 / D9-003]: `createAuthMiddleware` (and `./middleware.ts`)
+ * have been removed. The factory was orphan code with no production caller
+ * inside the bridge, and asyncServe never wired it into the HTTP transport.
+ * A future PR landing the asyncServe wiring should reintroduce a fresh
+ * middleware module that integrates with the live transport stack rather
+ * than resurrect a stale stub.
  */
 
 export type { Authenticator, Identity } from "./types.js";

@@ -59,12 +59,11 @@ export type { ClaimMapping, JWTAuthenticatorOptions } from "./auth/jwt.js";
 export type { Authenticator, Identity } from "./auth/types.js";
 export { identityStorage, getCurrentIdentity } from "./auth/storage.js";
 export { buildExplorerAuthHook } from "./auth/hooks.js";
-// [A-D-230 / D9-005] createAuthMiddleware is implemented in
-// src/auth/middleware.ts but NOT re-exported from the public package barrel.
-// The factory has no callers inside the bridge (asyncServe doesn't wire it
-// into its HTTP transport yet), so exposing it publicly advertised a feature
-// users couldn't actually compose into the default serve path. Re-export here
-// once the asyncServe wiring lands under A-D-230.
+// [A-D-230 / D9-003] createAuthMiddleware and src/auth/middleware.ts have
+// been removed. The factory was orphan code with no production caller, and
+// asyncServe never wired it into its HTTP transport. A future PR landing
+// the asyncServe wiring should reintroduce a middleware module that
+// integrates with the live transport stack.
 
 // ─── Unified Entry Point ─────────────────────────────────────────────────────
 export { APCoreMCP } from "./apcore-mcp.js";
