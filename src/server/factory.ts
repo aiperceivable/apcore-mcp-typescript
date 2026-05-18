@@ -110,6 +110,14 @@ export class MCPServerFactory {
     name: string = "apcore-mcp",
     version: string = "0.1.0",
   ): Server {
+    // [D10-002] Cross-language parity: the spec mandates a non-empty name
+    // no longer than 255 chars. Python and Rust both throw on violation
+    // before constructing the underlying Server.
+    if (!name || name.length > 255) {
+      throw new Error(
+        `Server name must be non-empty and ≤255 chars, got ${name?.length ?? 0}`,
+      );
+    }
     // Advertise listChanged: true so MCP clients receive
     // notifications/tools/list_changed and notifications/resources/list_changed
     // when the registry mutates at runtime. Python's build_init_options and

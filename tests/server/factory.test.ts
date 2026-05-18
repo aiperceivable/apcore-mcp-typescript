@@ -67,6 +67,21 @@ describe("MCPServerFactory", () => {
     expect(typeof server.connect).toBe("function");
   });
 
+  // [D10-002] Cross-language parity: spec mandates non-empty, max 255 chars.
+  // Python (apcore_mcp/server/factory.py) and Rust both throw on violation.
+  it("D10-002: createServer throws on empty name", () => {
+    expect(() => factory.createServer("", "1.0.0")).toThrow();
+  });
+
+  it("D10-002: createServer throws when name exceeds 255 chars", () => {
+    expect(() => factory.createServer("x".repeat(256), "1.0.0")).toThrow();
+  });
+
+  it("D10-002: createServer accepts a 255-char name", () => {
+    const server = factory.createServer("x".repeat(255), "1.0.0");
+    expect(server).toBeDefined();
+  });
+
   // TC-FACTORY-002
   it("buildTool creates a correct Tool with name, description, inputSchema, and annotations", () => {
     const descriptor = makeDescriptor({
