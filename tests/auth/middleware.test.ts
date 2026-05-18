@@ -218,10 +218,25 @@ describe("createAuthMiddleware [A-D-230]", () => {
     expect(headersPassed["x-forwarded-for"]).toBe("1.2.3.4, 5.6.7.8");
   });
 
-  it("DEFAULT_EXEMPT_PATHS matches transport.ts defaults", () => {
+  // [D11-2] Cross-language contract: only /health and /metrics are exempt
+  // by default. /usage leaks invocation counts and must require auth.
+  it("DEFAULT_EXEMPT_PATHS matches Python/Rust security contract", () => {
     expect(new Set(DEFAULT_EXEMPT_PATHS)).toEqual(
-      new Set(["/health", "/metrics", "/usage"]),
+      new Set(["/health", "/metrics"]),
     );
+    expect(DEFAULT_EXEMPT_PATHS.has("/usage")).toBe(false);
+  });
+
+  it("D11-2: /usage requires auth and returns 401 without a token", async () => {
+    const auth = makeAuthenticator(null);
+    const mw = createAuthMiddleware({ authenticator: auth });
+    const next = vi.fn();
+    const res = makeRes();
+
+    await mw(makeReq("/usage"), res, next);
+
+    expect((res as unknown as FakeResponse).statusCode).toBe(401);
+    expect(next).not.toHaveBeenCalled();
   });
 
   // [D11-1] Cross-language parity: Python/Rust still call the authenticator

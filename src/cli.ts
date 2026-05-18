@@ -44,7 +44,7 @@ Options:
   --strategy <name>          Execution strategy: standard, internal, testing, performance, minimal
   --approval <mode>          Approval mode: elicit, auto-approve, always-deny, off (default: off)
   --output-format <type>     Built-in output format: json, csv, jsonl (default: json)
-  --exempt-paths <paths>     Comma-separated paths exempt from auth (default: /health,/metrics,/usage)
+  --exempt-paths <paths>     Comma-separated paths exempt from auth (default: /health,/metrics; /usage requires auth per D11-2 contract)
   --observability            Enable metrics + usage middleware and expose /metrics and /usage endpoints
   --async                    Enable the Async Task Bridge (default: on; use --no-async to disable)
   --no-async                 Disable the Async Task Bridge

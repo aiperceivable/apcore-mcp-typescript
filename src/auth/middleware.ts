@@ -5,9 +5,10 @@
  * `apcore_mcp::auth::middleware::AuthMiddleware`. Sits in front of any
  * Node `http`/`https` request handler to:
  *
- *   1. Skip auth for exempt paths (default: `/health`, `/metrics`, `/usage`)
- *      and exempt prefixes — these mirror the transport's existing
- *      health/metrics/usage endpoints.
+ *   1. Skip auth for exempt paths (default: `/health`, `/metrics`) and
+ *      exempt prefixes. `/usage` is intentionally NOT exempt — it leaks
+ *      per-module invocation counts and must require a valid Bearer token
+ *      when `requireAuth: true` (D11-2 cross-language contract).
  *   2. Flatten request headers to a `Record<string, string>` and delegate to
  *      the configured {@link Authenticator}.
  *   3. On auth failure (no/invalid Bearer), reject with a structured
@@ -53,9 +54,10 @@ export interface AuthMiddlewareOptions {
   /** Authenticator that validates the Bearer token. Required. */
   authenticator: Authenticator;
   /**
-   * Paths that bypass auth entirely. Default mirrors transport.ts:111 —
-   * `{"/health", "/metrics", "/usage"}` so health probes and Prometheus
-   * scrapes work out of the box without credentials.
+   * Paths that bypass auth entirely. Default is `{"/health", "/metrics"}`
+   * so health probes and Prometheus scrapes work out of the box without
+   * credentials. `/usage` is intentionally NOT in the default set — see
+   * {@link DEFAULT_EXEMPT_PATHS} (D11-2).
    */
   exemptPaths?: Set<string>;
   /**
@@ -74,7 +76,11 @@ export interface AuthMiddlewareOptions {
 }
 
 /**
- * Default exempt paths — kept in sync with TransportManager.exemptPaths.
+ * Default exempt paths — cross-language contract with Python/Rust auth
+ * middleware. Only `/health` and `/metrics` bypass authentication by
+ * default. The `/usage` endpoint is intentionally NOT exempt because it
+ * leaks per-module invocation counts (D11-2): when `requireAuth: true`,
+ * callers must present a valid Bearer token to read it.
  *
  * @internal
  *
@@ -83,7 +89,6 @@ export interface AuthMiddlewareOptions {
 export const DEFAULT_EXEMPT_PATHS: ReadonlySet<string> = new Set([
   "/health",
   "/metrics",
-  "/usage",
 ]);
 
 /**
