@@ -297,12 +297,14 @@ describe("ErrorMapper", () => {
     expect(result.suggestion).toBeUndefined();
   });
 
-  // TC-ERROR-014: APPROVAL_PENDING narrows details to approvalId
-  it("narrows APPROVAL_PENDING details to approvalId only", () => {
+  // TC-ERROR-014: APPROVAL_PENDING narrows snake_case approval_id to camelCase approvalId.
+  // [D10-003] Upstream apcore SDKs always emit snake_case; the camelCase
+  // input branch has been removed for cross-language parity.
+  it("narrows APPROVAL_PENDING details from snake_case approval_id to approvalId", () => {
     const error = createModuleError(
       "APPROVAL_PENDING",
       "Approval pending",
-      { approvalId: "abc-123", extra: "should-be-dropped" },
+      { approval_id: "abc-123", extra: "should-be-dropped" },
     );
 
     const result = mapper.toMcpError(error);
@@ -313,19 +315,18 @@ describe("ErrorMapper", () => {
     expect(result.details).toEqual({ approvalId: "abc-123" });
   });
 
-  // TC-ERROR-014b: APPROVAL_PENDING narrows snake_case approval_id too
-  it("narrows APPROVAL_PENDING details with snake_case approval_id", () => {
+  // [D10-003] camelCase approvalId input is no longer accepted — drops to null
+  // to match Python/Rust which only recognize snake_case approval_id.
+  it("drops camelCase approvalId source key (D10-003 parity)", () => {
     const error = createModuleError(
       "APPROVAL_PENDING",
       "Approval pending",
-      { approval_id: "snake-456", extra: "should-be-dropped" },
+      { approvalId: "camel-789" },
     );
 
     const result = mapper.toMcpError(error);
 
-    expect(result.isError).toBe(true);
-    expect(result.errorType).toBe("APPROVAL_PENDING");
-    expect(result.details).toEqual({ approvalId: "snake-456" });
+    expect(result.details).toBeNull();
   });
 
   // TC-ERROR-015: APPROVAL_PENDING with no approvalId in details
@@ -435,20 +436,11 @@ describe("ErrorMapper", () => {
   });
 });
 
-// D10-011: approvalId/approval_id dual-key handling (TS behavior is CORRECT)
-describe("D10-011: approvalId camelCase + approval_id snake_case dual handling", () => {
-  it("handles camelCase approvalId (apcore-js convention)", () => {
-    const mapper = new ErrorMapper();
-    const error = createModuleError("APPROVAL_PENDING", "Approval needed", {
-      approvalId: "abc-123",
-    });
-    const result = mapper.toMcpError(error);
-    expect(result.errorType).toBe("APPROVAL_PENDING");
-    // Handles both camelCase (apcore-js) and snake_case (apcore-py/rs) field names
-    expect((result.details as Record<string, unknown>)?.approvalId).toBe("abc-123");
-  });
-
-  it("handles snake_case approval_id (apcore-py/rs convention)", () => {
+// [D10-003] Approval source-key contract: only snake_case approval_id is
+// accepted; camelCase approvalId is dropped. This supersedes the older
+// D10-011 dual-key handling test block which asserted both branches.
+describe("D10-003: approval_id snake_case is the sole accepted source key", () => {
+  it("handles snake_case approval_id (apcore-py/rs/js shared convention)", () => {
     const mapper = new ErrorMapper();
     const error = createModuleError("APPROVAL_PENDING", "Approval needed", {
       approval_id: "xyz-456",
@@ -456,6 +448,16 @@ describe("D10-011: approvalId camelCase + approval_id snake_case dual handling",
     const result = mapper.toMcpError(error);
     expect(result.errorType).toBe("APPROVAL_PENDING");
     expect((result.details as Record<string, unknown>)?.approvalId).toBe("xyz-456");
+  });
+
+  it("drops the input when only camelCase approvalId is present", () => {
+    const mapper = new ErrorMapper();
+    const error = createModuleError("APPROVAL_PENDING", "Approval needed", {
+      approvalId: "abc-123",
+    });
+    const result = mapper.toMcpError(error);
+    expect(result.errorType).toBe("APPROVAL_PENDING");
+    expect(result.details).toBeNull();
   });
 });
 

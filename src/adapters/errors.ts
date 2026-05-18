@@ -152,19 +152,17 @@ export class ErrorMapper {
         return result;
       }
 
-      // Approval pending -> narrow details to approvalId only
-      // Handles both camelCase (apcore-js) and snake_case (apcore-py/rs) field names.
-      // [D10-011] TypeScript intentionally handles both conventions; Python+Rust only
-      // handle snake_case and would silently emit `details: null` for camelCase errors.
+      // Approval pending -> narrow details to approvalId only.
+      // [D10-003] Cross-language parity: upstream apcore SDKs emit
+      // snake_case (`approval_id`) exclusively, so the previous dual-key
+      // branch for camelCase `approvalId` was dormant and diverged from
+      // Python/Rust contracts (which accept snake_case only). Drop the
+      // camelCase source key; the output stays camelCase per MCP convention.
       if (code === ErrorCodes.APPROVAL_PENDING) {
-        const idKey = details && "approvalId" in details
-          ? "approvalId"
-          : details && "approval_id" in details
-            ? "approval_id"
+        const narrowed =
+          details && "approval_id" in details
+            ? { approvalId: details["approval_id"] }
             : null;
-        const narrowed = idKey
-          ? { approvalId: details![idKey] }
-          : null;
         const result: McpErrorResponse = {
           isError: true,
           errorType: code,
