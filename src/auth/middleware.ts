@@ -132,15 +132,6 @@ export function createAuthMiddleware(
     const queryIdx = url.indexOf("?");
     const pathname = queryIdx === -1 ? url : url.slice(0, queryIdx);
 
-    if (exemptPaths.has(pathname)) {
-      return next(req, res);
-    }
-    for (const prefix of exemptPrefixes) {
-      if (prefix.length > 0 && pathname.startsWith(prefix)) {
-        return next(req, res);
-      }
-    }
-
     // Flatten Node's `IncomingHttpHeaders` (string | string[] | undefined)
     // to a lowercase Record<string, string> matching the Authenticator
     // contract. Multi-value headers are joined per HTTP/1.1 convention.
@@ -150,6 +141,32 @@ export function createAuthMiddleware(
       headers[key.toLowerCase()] = Array.isArray(value)
         ? value.join(", ")
         : String(value);
+    }
+
+    // [D11-1] Cross-language parity: on exempt paths/prefixes, Python and
+    // Rust still call the authenticator in best-effort mode so
+    // getCurrentIdentity() resolves to a populated principal when a valid
+    // token is present (used by ErrorMapper guidance, observability spans,
+    // and downstream logic that should be identity-aware even on /health).
+    // Errors are swallowed because the path is exempt by design.
+    const isExempt =
+      exemptPaths.has(pathname) ||
+      [...exemptPrefixes].some(
+        (prefix) => prefix.length > 0 && pathname.startsWith(prefix),
+      );
+    if (isExempt) {
+      let identity: Awaited<ReturnType<Authenticator["authenticate"]>> | null =
+        null;
+      try {
+        identity = await authenticator.authenticate(headers);
+      } catch {
+        // Best-effort: exempt paths must remain reachable regardless of
+        // authenticator failures. Identity stays null.
+      }
+      if (identity) {
+        return identityStorage.run(identity, () => next(req, res));
+      }
+      return next(req, res);
     }
 
     const identity = await authenticator.authenticate(headers);

@@ -136,7 +136,10 @@ describe("createAuthMiddleware [A-D-230]", () => {
     expect((res as unknown as FakeResponse).statusCode).toBe(200);
   });
 
-  it("skips auth for the default exempt path /health", async () => {
+  // [D11-1] Exempt paths still invoke the authenticator (best-effort) so
+  // identity is hydrated when a valid token is present, but never reject the
+  // request on failure.
+  it("forwards exempt path /health without 401 even when auth fails", async () => {
     const auth = makeAuthenticator(null);
     const mw = createAuthMiddleware({ authenticator: auth });
     const next = vi.fn();
@@ -144,12 +147,11 @@ describe("createAuthMiddleware [A-D-230]", () => {
 
     await mw(makeReq("/health"), res, next);
 
-    expect(auth.mock).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledOnce();
     expect((res as unknown as FakeResponse).statusCode).toBe(200);
   });
 
-  it("skips auth when path matches an exempt prefix", async () => {
+  it("forwards exempt prefix without 401 even when auth fails", async () => {
     const auth = makeAuthenticator(null);
     const mw = createAuthMiddleware({
       authenticator: auth,
@@ -160,7 +162,6 @@ describe("createAuthMiddleware [A-D-230]", () => {
 
     await mw(makeReq("/explorer/dashboard?tab=tools"), res, next);
 
-    expect(auth.mock).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledOnce();
   });
 
@@ -172,8 +173,8 @@ describe("createAuthMiddleware [A-D-230]", () => {
 
     await mw(makeReq("/health?probe=1"), res, next);
 
-    expect(auth.mock).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledOnce();
+    expect((res as unknown as FakeResponse).statusCode).toBe(200);
   });
 
   it("permissive mode (requireAuth: false) forwards without identity on auth fail", async () => {
@@ -221,5 +222,71 @@ describe("createAuthMiddleware [A-D-230]", () => {
     expect(new Set(DEFAULT_EXEMPT_PATHS)).toEqual(
       new Set(["/health", "/metrics", "/usage"]),
     );
+  });
+
+  // [D11-1] Cross-language parity: Python/Rust still call the authenticator
+  // on exempt paths in best-effort mode so getCurrentIdentity() resolves when
+  // a valid token is present. TS used to short-circuit before authenticating,
+  // leaving downstream handlers without identity context on /health etc.
+  it("hydrates identity on exempt paths when a valid token is present", async () => {
+    const auth = makeAuthenticator(SAMPLE_IDENTITY);
+    const mw = createAuthMiddleware({ authenticator: auth });
+
+    let observed: Identity | null = null;
+    const next = vi.fn(() => {
+      observed = getCurrentIdentity();
+    });
+
+    const res = makeRes();
+    await mw(
+      makeReq("/health", { authorization: "Bearer good.jwt" }),
+      res,
+      next,
+    );
+
+    expect(auth.mock).toHaveBeenCalledOnce();
+    expect(next).toHaveBeenCalledOnce();
+    expect(observed).toBe(SAMPLE_IDENTITY);
+    // Exempt path must not 401 even if auth had failed — this is best-effort.
+    expect((res as unknown as FakeResponse).statusCode).toBe(200);
+  });
+
+  it("exempt path remains accessible when authenticator fails (best-effort)", async () => {
+    const auth = makeAuthenticator(null);
+    const mw = createAuthMiddleware({ authenticator: auth });
+
+    let observed: Identity | null = null;
+    const next = vi.fn(() => {
+      observed = getCurrentIdentity();
+    });
+
+    const res = makeRes();
+    await mw(
+      makeReq("/health", { authorization: "Bearer broken.jwt" }),
+      res,
+      next,
+    );
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(observed).toBeNull();
+    expect((res as unknown as FakeResponse).statusCode).toBe(200);
+  });
+
+  it("exempt path still forwards even if authenticator throws", async () => {
+    const auth: Authenticator = {
+      authenticate: vi.fn().mockRejectedValue(new Error("boom")),
+    };
+    const mw = createAuthMiddleware({ authenticator: auth });
+    const next = vi.fn();
+    const res = makeRes();
+
+    await mw(
+      makeReq("/health", { authorization: "Bearer x" }),
+      res,
+      next,
+    );
+
+    expect(next).toHaveBeenCalledOnce();
+    expect((res as unknown as FakeResponse).statusCode).toBe(200);
   });
 });
