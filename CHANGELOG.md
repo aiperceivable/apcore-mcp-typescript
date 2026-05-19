@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-05-19
+
+Audit-driven consistency release from `/apcore-skills:audit --scope mcp`. Nine TypeScript-side fixes land here; cross-SDK parity with `apcore-mcp-python` and `apcore-mcp-rust` 0.16.0.
+
+### Breaking Changes
+
+- **[D11-2] `/usage` removed from `DEFAULT_EXEMPT_PATHS` in `auth/middleware.ts`.** Previously `DEFAULT_EXEMPT_PATHS = {"/health", "/metrics", "/usage"}` — `/usage` was unauthenticated by default in TypeScript, but Python and Rust used `{"/health", "/metrics"}` and would 401 the same request when `require_auth=true`. The `/usage` endpoint now requires authentication by default. Callers who want it exempt must opt-in explicitly via `exemptPaths`.
+
+### Fixed
+
+- **[D11-1] Auth middleware now hydrates identity on exempt paths (best-effort).** Previously `/health`, `/metrics`, and `/usage` early-returned without invoking the authenticator, so `getCurrentIdentity()` returned `null` inside the exempt-route handler even when a valid `Authorization: Bearer …` header was present. Python and Rust have always done best-effort identity extraction on exempt paths. The authenticator is now called inside a try/catch (log + continue on error) and the resolved identity is bound to the per-request `identityStorage` context before `next(req, res)` runs.
+- **[D11-3] `tryDenormalize` now accepts underscore-bearing module IDs to match Python and Rust.** The previous inline regex (`^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$`) rejected the underscore class, so input `"my_mod-v2"` returned `null` in TypeScript while Python and Rust returned `"my_mod.v2"`. Now uses the shared `MODULE_ID_PATTERN` (`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$`) on the dash→dot candidate.
+- **[D11-4] `_ensureObjectType` upgrades `type` to `"object"` when `properties` is present.** Previously TypeScript early-returned the schema unchanged whenever `type` was defined, leaving `{type: "string", properties: {...}}` as-is; Python and Rust force `type: "object"` so the strict pass can inject `additionalProperties: false`. TypeScript now matches.
+- **[D10-002] `MCPServerFactory.createServer(name)` validates non-empty + max 255 chars per spec.** Throws an `Error` for empty / oversized names. Cross-SDK parity with the matching fix in Python and Rust.
+- **[D10-003] `ErrorMapper.toMcpError` for `APPROVAL_PENDING` now only accepts the canonical `approval_id` source key.** Previously TypeScript accepted both `approvalId` and `approval_id`; Python and Rust accepted snake_case only. The `approvalId` branch is dropped — upstream apcore SDKs always emit snake_case, so this is a no-op for production callers.
+
+### Refactored
+
+- **[D9-003] Removed orphan `createAuthMiddleware` factory.** Previously exported from `src/auth/middleware.ts:119` with a 74-LOC body, deliberately not re-exported from `src/index.ts` (per A-D-230). Zero production callers in `src/` or `examples/`; only its own unit tests referenced it. Deleted along with `tests/auth/middleware.test.ts`. The A-D-230 comments in `src/auth/index.ts` now flag the factory as removed pending real `asyncServe` wiring.
+- **[D9-005] Deleted `src/explorer/` and `src/inspector/` TODO-only stub directories.** Both were 3-line files (`// TODO: Port from apcore-mcp-python\nexport {};`) with zero importers. Will be re-created when the ports actually begin.
+- **[D9-010] Relocated `planning/` to `docs/history/planning/`.** Sixteen plan files plus `state.json` with every feature `"status": "completed"` were sitting at top level — long since shipped. Moved out of the project root so the published package surface is cleaner.
+
+### Known Issues
+
+- **[D10-004]** Audit flagged a defensive-depth divergence: TypeScript rejects whitespace-only hosts via `host.trim().length === 0`, while Python and Rust accept whitespace and fail later at bind. The fix actually belongs in Python and Rust (tighten their validation). Tracked for the next round.
+
 ## [0.15.0] - 2026-05-14
 
 Leverages **apcore-js 0.21.1 + apcore-toolkit 0.7.0**. Cross-SDK byte-
