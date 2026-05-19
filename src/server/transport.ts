@@ -107,8 +107,15 @@ export class TransportManager {
   /** Optional authenticator for request authentication. */
   private _authenticator?: Authenticator;
 
-  /** Configurable set of paths exempt from authentication. */
-  private _exemptPaths = new Set(["/health", "/metrics", "/usage"]);
+  /** Configurable set of paths exempt from authentication.
+   *
+   * [D11-2] Cross-SDK parity with apcore-mcp-python (auth/middleware.py)
+   * and apcore-mcp-rust (auth/middleware.rs) which both default to
+   * {"/health", "/metrics"} only. `/usage` is an auth-requiring diagnostic
+   * endpoint by default; callers who want it exempt must opt in explicitly
+   * via the exemptPaths option.
+   */
+  private _exemptPaths = new Set(["/health", "/metrics"]);
 
   /** Explicit requireAuth override (when set, takes precedence over authenticator's own value). */
   private _requireAuth?: boolean;
