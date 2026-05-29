@@ -48,11 +48,11 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.26.0",
-    "apcore-js": "^0.21.1",
-    "apcore-toolkit": "^0.7.0",
-    "jsonwebtoken": "^9.0.3",
-    "mcp-embedded-ui": "^0.4.0"
+    "@modelcontextprotocol/sdk": ">=1.26.0",
+    "apcore-js": ">=0.22.0",
+    "apcore-toolkit": ">=0.8.0",
+    "jsonwebtoken": ">=9.0.3",
+    "mcp-embedded-ui": ">=0.4.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

@@ -5,9 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+
+## [0.15.0] - 2026-05-29
 
 Audit-driven consistency work from `/apcore-skills:audit --scope mcp`. Nine TypeScript-side fixes land here; the docs/spec repo (`apcore-mcp/`) remains at 0.15.0 because no spec contracts changed, so SDK versions also stay at 0.15.0 pending an explicit release decision. The entries below describe changes already committed on `main`.
+
+### Changed
+
+- **Upgraded required runtime to apcore-js 0.22.0 and apcore-toolkit 0.8.0** (`package.json`). Adopts the apcore-js 0.22.0 real-interrupt cancellation contract (D-18): the bridge `CancelToken` is now backed by an `AbortController` and exposes `signal`, and `BridgeContext` exposes a `signal: AbortSignal` (the bound token's signal, or a shared never-aborted fallback) so modules performing Web-API I/O (`fetch`, `setTimeout` via `AbortSignal.timeout`, Web Streams) participate in real abort on inbound MCP `notifications/cancelled` — previously only cooperative `isCancelled` polling worked. No public API change; full suite green (582 passed, incl. 4 new D-18 signal tests).
 
 ### Breaking Changes
 
@@ -31,7 +36,6 @@ Audit-driven consistency work from `/apcore-skills:audit --scope mcp`. Nine Type
 
 - **[D10-004]** Audit flagged a defensive-depth divergence: TypeScript rejects whitespace-only hosts via `host.trim().length === 0`, while Python and Rust accept whitespace and fail later at bind. The fix actually belongs in Python and Rust (tighten their validation). Tracked for the next round.
 
-## [0.15.0] - 2026-05-14
 
 Leverages **apcore-js 0.21.1 + apcore-toolkit 0.7.0**. Cross-SDK byte-
 equivalent with `apcore-mcp-python` and `apcore-mcp-rust` 0.15.0.

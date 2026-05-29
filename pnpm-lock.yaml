@@ -9,19 +9,19 @@ importers:
   .:
     dependencies:
       '@modelcontextprotocol/sdk':
-        specifier: ^1.26.0
+        specifier: '>=1.26.0'
         version: 1.26.0(zod@4.3.6)
       apcore-js:
-        specifier: ^0.21.1
-        version: 0.21.1
+        specifier: '>=0.22.0'
+        version: 0.22.0
       apcore-toolkit:
-        specifier: ^0.7.0
-        version: 0.7.0(@sinclair/typebox@0.34.48)
+        specifier: '>=0.8.0'
+        version: 0.8.0(@sinclair/typebox@0.34.48)
       jsonwebtoken:
-        specifier: ^9.0.3
+        specifier: '>=9.0.3'
         version: 9.0.3
       mcp-embedded-ui:
-        specifier: ^0.4.0
+        specifier: '>=0.4.0'
         version: 0.4.0
     devDependencies:
       '@eslint/js':
@@ -637,12 +637,12 @@ packages:
     resolution: {integrity: sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg==}
     engines: {node: '>=12'}
 
-  apcore-js@0.21.1:
-    resolution: {integrity: sha512-CMGvufGeeHeonwNbA6XQoAUXtWfegi4wUYH0MYrKl0zIOiAkck9KDpW+yYyheWl/Wlhp0Mnf2VNUtCMDVvZ1VQ==}
-    engines: {node: '>=18.0.0'}
+  apcore-js@0.22.0:
+    resolution: {integrity: sha512-gjnK2CtvSPrJQBYqZ18xx9vdM492UFNL6HF/3fS40xRFdHHkOAfgdjS++bJ30Xc/VqlhWKLbkpdOfdZEZNMiWQ==}
+    engines: {node: '>=20.0.0'}
 
-  apcore-toolkit@0.7.0:
-    resolution: {integrity: sha512-FCJl/wqOoXfHhDVtU1zdxG0MJRG8DC2C1o9X69VOq7rCFZ/aRJOF9DZ0BeQ54IveZDfHr/UTCxdqkk8gwrK3pQ==}
+  apcore-toolkit@0.8.0:
+    resolution: {integrity: sha512-YPkcMTA2DE9MjVToWhZP6gkuVkoLhN7dLDC4j4JCKaLTv8XzvFSmjV/kHnq2TuedadVGi0qxooJXiqjUKQsCag==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       '@sinclair/typebox': '>=0.31.0'
@@ -2124,17 +2124,17 @@ snapshots:
 
   ansi-styles@6.2.3: {}
 
-  apcore-js@0.21.1:
+  apcore-js@0.22.0:
     dependencies:
       '@sinclair/typebox': 0.34.48
       js-yaml: 4.1.1
       uuid: 11.1.0
 
-  apcore-toolkit@0.7.0(@sinclair/typebox@0.34.48):
+  apcore-toolkit@0.8.0(@sinclair/typebox@0.34.48):
     dependencies:
       '@sinclair/typebox': 0.34.48
       ajv: 8.18.0
-      apcore-js: 0.21.1
+      apcore-js: 0.22.0
       js-yaml: 4.1.1
 
   apdev-js@0.2.4(typescript@5.9.3):

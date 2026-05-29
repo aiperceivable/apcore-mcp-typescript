@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createBridgeContext } from "../../src/server/context.js";
+import { CancelToken } from "../../src/server/router.js";
 import { createIdentity } from "apcore-js";
 
 describe("createBridgeContext", () => {
@@ -91,5 +92,40 @@ describe("createBridgeContext", () => {
 
     expect(child.identity).toBe(identity);
     expect(grandchild.identity).toBe(identity);
+  });
+
+  // D-18 (apcore-js 0.22.0): cancellation is a real interrupt — the bound
+  // CancelToken's AbortSignal is exposed on the context so Web-API I/O aborts.
+  describe("signal (D-18 real-interrupt cancellation)", () => {
+    it("exposes a never-aborted fallback signal when no cancelToken is bound", () => {
+      const ctx = createBridgeContext({});
+      expect(ctx.signal).toBeInstanceOf(AbortSignal);
+      expect(ctx.signal.aborted).toBe(false);
+    });
+
+    it("returns the bound cancelToken's signal", () => {
+      const token = new CancelToken();
+      const ctx = createBridgeContext({}, null, undefined, token);
+      expect(ctx.signal).toBe(token.signal);
+      expect(ctx.signal.aborted).toBe(false);
+    });
+
+    it("signal aborts when the bound cancelToken is cancelled", () => {
+      const token = new CancelToken();
+      const ctx = createBridgeContext({}, null, undefined, token);
+      expect(ctx.signal.aborted).toBe(false);
+      token.cancel();
+      expect(ctx.signal.aborted).toBe(true);
+      expect(ctx.cancelToken!.isCancelled).toBe(true);
+    });
+
+    it("child() preserves the cancel signal so abort reaches the call chain", () => {
+      const token = new CancelToken();
+      const parent = createBridgeContext({}, null, undefined, token);
+      const child = parent.child("mod.a").child("mod.b");
+      expect(child.signal).toBe(token.signal);
+      token.cancel();
+      expect(child.signal.aborted).toBe(true);
+    });
   });
 });

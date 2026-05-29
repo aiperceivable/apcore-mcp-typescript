@@ -142,16 +142,29 @@ export interface ExecutionRouterOptions {
 }
 
 /**
- * Cooperative cancellation token. Mirrors apcore-py's CancelToken and
- * Rust's apcore::CancelToken. [B-002]
+ * Cancellation token for inbound MCP `notifications/cancelled`. Mirrors
+ * apcore-py's CancelToken and Rust's apcore::CancelToken. [B-002]
+ *
+ * Backed by an `AbortController` (apcore-js 0.22.0 D-18) so that cancellation
+ * is a real interrupt, not merely a cooperative flag: the exposed `signal`
+ * is threaded onto the bridge Context, letting modules that perform Web-API
+ * I/O (`fetch`, `setTimeout` via `AbortSignal.timeout`, Web Streams) abort
+ * in-flight work. The `isCancelled` accessor remains for cooperative pause
+ * points that poll instead of attaching the signal.
  */
 export class CancelToken {
-  private _cancelled = false;
+  private readonly _controller = new AbortController();
+  /** Underlying `AbortSignal` for real-interrupt cancellation (D-18). */
+  get signal(): AbortSignal {
+    return this._controller.signal;
+  }
   get isCancelled(): boolean {
-    return this._cancelled;
+    return this._controller.signal.aborted;
   }
   cancel(): void {
-    this._cancelled = true;
+    if (!this._controller.signal.aborted) {
+      this._controller.abort();
+    }
   }
 }
 
@@ -494,9 +507,10 @@ export class ExecutionRouter {
       // [A-D-001] Always create a context so the cancelToken is threaded
       // into the executor pipeline. Without this, modules cannot observe
       // inbound MCP `notifications/cancelled` via `context.cancelToken?.isCancelled`
-      // and cooperative cancellation is silently broken — the router-level
-      // cancel API works but the cancel signal never reaches the running module.
-      // Mirrors Python's `context.cancel_token = cancel_token` (router.py:379).
+      // (cooperative) or `context.signal` (real abort, D-18), and cancellation
+      // is silently broken — the router-level cancel API works but the cancel
+      // signal never reaches the running module. Mirrors Python's first-class
+      // `Context.create(..., cancel_token=...)` (apcore 0.22.0 D-24).
       const context = createBridgeContext(
         contextData,
         identity,

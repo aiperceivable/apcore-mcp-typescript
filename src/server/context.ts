@@ -23,9 +23,30 @@ export interface BridgeContext {
   readonly executor: unknown;
   readonly identity: Identity | null;
   readonly cancelToken: CancelToken | null;
+  /**
+   * Real-interrupt cancellation signal (apcore-js 0.22.0 D-18). Returns the
+   * bound `cancelToken.signal` when present, otherwise a never-aborted
+   * fallback so modules can unconditionally attach it to Web APIs (`fetch`,
+   * etc.) without firing in the no-cancel case. Mirrors apcore-js
+   * `Context.signal`.
+   */
+  readonly signal: AbortSignal;
   redactedInputs: Record<string, unknown> | null;
   readonly data: Record<string, unknown>;
   child(moduleId: string): BridgeContext;
+}
+
+/**
+ * Lazily-created never-aborted signal shared by all cancel-less contexts, so
+ * the no-cancel path pays no per-context `AbortController` cost. Mirrors
+ * apcore-js `Context._NEVER_SIGNAL`. (D-18)
+ */
+let _neverSignal: AbortSignal | null = null;
+function neverSignal(): AbortSignal {
+  if (_neverSignal === null) {
+    _neverSignal = new AbortController().signal;
+  }
+  return _neverSignal;
 }
 
 /**
@@ -72,6 +93,9 @@ function _buildContext(
     executor: null,
     identity,
     cancelToken,
+    get signal(): AbortSignal {
+      return cancelToken?.signal ?? neverSignal();
+    },
     redactedInputs: null,
     data,
     child(moduleId: string): BridgeContext {
