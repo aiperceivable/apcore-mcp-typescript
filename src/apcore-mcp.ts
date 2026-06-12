@@ -35,6 +35,8 @@ import type {
 import type { Authenticator } from "./auth/types.js";
 import type { MetricsExporter } from "./server/transport.js";
 import type { ObservabilityFlag } from "./server/observability.js";
+import type { ApprovalStore } from "./approval-store.js";
+import { StorageBackedApprovalHandler } from "./adapters/approval.js";
 import {
   serve,
   asyncServe,
@@ -76,6 +78,19 @@ export interface APCoreMCPOptions {
   exemptPaths?: string[];
   /** Optional approval handler passed to the Executor. */
   approvalHandler?: unknown;
+  /**
+   * Pluggable ApprovalStore for Phase B async polling.
+   * When provided and no explicit `approvalHandler` is given, a
+   * StorageBackedApprovalHandler is auto-created and wired as the Executor's
+   * approval handler.
+   */
+  approvalStore?: ApprovalStore;
+  /**
+   * Optional callback invoked when a new approval is requested.
+   * Used together with `approvalStore` to fan out to Slack/email/webhooks.
+   * Signature: (approvalId, moduleId, args) => Promise<void>
+   */
+  approvalNotify?: (approvalId: string, moduleId: string, args: Record<string, unknown>) => Promise<void>;
   /**
    * Optional function that formats execution results into text for LLM consumption.
    * When undefined, results are serialised with `JSON.stringify(result)`.
@@ -146,6 +161,8 @@ export class APCoreMCP {
   private _registry: Registry | undefined;
   private _executor: Executor | undefined;
   private readonly _extensionsDir: string | undefined;
+  private readonly _approvalStore: ApprovalStore | undefined;
+  private readonly _approvalHandler: StorageBackedApprovalHandler | undefined;
 
   /**
    * Create an APCoreMCP instance.
@@ -178,6 +195,18 @@ export class APCoreMCP {
     }
 
     this._options = { name, ...options };
+
+    // Auto-create StorageBackedApprovalHandler when approvalStore is provided
+    // and no explicit approvalHandler was given.
+    if (options.approvalStore && !options.approvalHandler) {
+      this._approvalStore = options.approvalStore;
+      this._approvalHandler = new StorageBackedApprovalHandler(options.approvalStore, {
+        notifyCallback: options.approvalNotify,
+      });
+    } else {
+      this._approvalStore = options.approvalStore;
+      this._approvalHandler = undefined;
+    }
 
     if (typeof extensionsDirOrBackend === "string") {
       // Defer discovery to first use — will be resolved lazily
@@ -250,7 +279,7 @@ export class APCoreMCP {
       authenticator: this._options.authenticator,
       requireAuth: this._options.requireAuth,
       exemptPaths: this._options.exemptPaths,
-      approvalHandler: this._options.approvalHandler,
+      approvalHandler: this._approvalHandler ?? this._options.approvalHandler,
       outputFormatter: this._options.outputFormatter,
       middleware: this._options.middleware,
       acl: this._options.acl,
@@ -296,7 +325,17 @@ export class APCoreMCP {
    */
   async serve(options: APCoreMCPServeOptions = {}): Promise<void> {
     const backend = await this._resolveBackend();
-    await serve(backend, this._buildServeOptions(options));
+    const store = this._approvalStore;
+    if (store && typeof (store as unknown as { start?: () => void }).start === "function") {
+      (store as unknown as { start: () => void }).start();
+    }
+    try {
+      await serve(backend, this._buildServeOptions(options));
+    } finally {
+      if (store && typeof (store as unknown as { stop?: () => void }).stop === "function") {
+        (store as unknown as { stop: () => void }).stop();
+      }
+    }
   }
 
   /**
@@ -330,14 +369,27 @@ export class APCoreMCP {
       authenticator: this._options.authenticator,
       requireAuth: this._options.requireAuth,
       exemptPaths: this._options.exemptPaths,
-      approvalHandler: this._options.approvalHandler,
+      approvalHandler: this._approvalHandler ?? this._options.approvalHandler,
       endpoint: options.endpoint,
       outputFormatter: this._options.outputFormatter,
       middleware: this._options.middleware,
       acl: this._options.acl,
     };
 
-    return asyncServe(backend, asyncOpts);
+    const store = this._approvalStore;
+    if (store && typeof (store as unknown as { start?: () => void }).start === "function") {
+      (store as unknown as { start: () => void }).start();
+    }
+
+    const app = await asyncServe(backend, asyncOpts);
+    const originalClose = app.close;
+    app.close = async () => {
+      await originalClose();
+      if (store && typeof (store as unknown as { stop?: () => void }).stop === "function") {
+        (store as unknown as { stop: () => void }).stop();
+      }
+    };
+    return app;
   }
 
   /**

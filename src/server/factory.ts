@@ -28,6 +28,7 @@ import type { ExecutionRouter } from "./router.js";
 import type { HandleCallExtra } from "./router.js";
 import { buildTraceparent } from "./trace-context.js";
 import { APCORE_META_TOOL_PREFIX, type AsyncTaskBridge } from "./async-task-bridge.js";
+import { ApprovalBridge } from "./approval-bridge.js";
 import {
   isMarkdownAvailable,
   primeMarkdownToolkit,
@@ -415,11 +416,17 @@ export class MCPServerFactory {
     server: Server,
     tools: Tool[],
     router: ExecutionRouter,
-    options?: { asyncTaskBridge?: AsyncTaskBridge },
+    options?: { asyncTaskBridge?: AsyncTaskBridge; approvalBridge?: ApprovalBridge },
   ): void {
     // [D11-014] If asyncTaskBridge is provided, extend tools list with meta-tools.
     const bridge = options?.asyncTaskBridge;
-    const allTools: Tool[] = bridge ? this.attachAsyncMetaTools(tools, bridge) : tools;
+    const approvalBridge = options?.approvalBridge;
+    let allTools: Tool[] = bridge ? this.attachAsyncMetaTools(tools, bridge) : tools;
+
+    // Append approval bridge meta-tools if present.
+    if (approvalBridge) {
+      allTools = [...allTools, ...approvalBridge.buildMetaTools()];
+    }
 
     // Handle tools/list requests
     server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -483,6 +490,17 @@ export class MCPServerFactory {
         }
       } catch {
         // auth module not available — skip silently (auth is optional).
+      }
+
+      // Dispatch to approval bridge meta-tool if applicable (AFTER async bridge,
+      // BEFORE the async-hint route in router.handleCall).
+      if (approvalBridge && ApprovalBridge.isMetaTool(name)) {
+        const [apContent, apIsError] = await approvalBridge.handleMetaTool(name, toolArgs);
+        const apTextContents = apContent.map(c => ({ type: "text" as const, text: c.text }));
+        if (apIsError) {
+          throw new Error(apTextContents[0]?.text ?? "Unknown approval error");
+        }
+        return { content: apTextContents };
       }
 
       const [content, isError, traceId] = await router.handleCall(

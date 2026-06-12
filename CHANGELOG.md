@@ -8,6 +8,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.16.0] - 2026-06-12
 
+### Added
+
+- **Approval Phase B: async polling via `__apcore_approval_check` meta-tool**.
+  apcore-mcp now supports out-of-band human approvals that do not block the MCP connection.
+
+  New public API:
+  - `ApprovalStore` (interface) — pluggable persistence; three async methods:
+    `savePending`, `getResult`, `resolve`.
+  - `InMemoryApprovalStore` — in-process implementation for testing/local dev.
+    Bounded memory: per-record TTL via `setTimeout`, background `setInterval` sweep
+    (`.unref()`'d to not block process exit), and `maxRecords` hard cap.
+    **Not suitable for production.**
+  - `StorageBackedApprovalHandler` — writes pending records on `requestApproval()`,
+    reads them on `checkApproval()`. Optional `notifyCallback` for Slack/email/webhooks.
+  - `ApprovalBridge` — registers `__apcore_approval_check` as an MCP meta-tool,
+    symmetric with `AsyncTaskBridge`.
+
+  Usage:
+  ```typescript
+  import { APCoreMCP, InMemoryApprovalStore } from "apcore-mcp";
+
+  const store = new InMemoryApprovalStore();
+  const mcp = new APCoreMCP(registry, { approvalStore: store });
+
+  // External system approves out-of-band:
+  await store.resolve(approvalId, { approved: true });
+  ```
+
+  Phase A (`ElicitationApprovalHandler`) is unchanged.
+
 Closes [issue #70](https://github.com/aiperceivable/apcore/issues/70): remove bridge-level `userFixable` stamping now that apcore-js 0.24.0 resolves it at construction time.
 
 ### Changed
