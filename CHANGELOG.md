@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.16.0] - 2026-06-12
+
+Closes [issue #70](https://github.com/aiperceivable/apcore/issues/70): remove bridge-level `userFixable` stamping now that apcore-js 0.24.0 resolves it at construction time.
+
+### Changed
+
+- **Raised apcore-js floor to `>=0.24.0`** (`package.json`). apcore-js 0.24.0 introduced the `userFixable` field on `ModuleError` (resolved by `_USER_FIXABLE_BY_CODE` at construction) for all user-actionable codes.
+- **Removed bridge-level `userFixable: true` stamps** from `_matchApcoreErrorInstance` and the duck-typing fallback block in `src/adapters/errors.ts`. The three removed branches covered `DependencyNotFoundError`, `DependencyVersionMismatchError`, `VersionConstraintError` (instanceof path) and `DEPENDENCY_NOT_FOUND | DEPENDENCY_VERSION_MISMATCH`, `VERSION_CONSTRAINT_INVALID | BINDING_SCHEMA_*` (duck-typed path). `userFixable` now flows through the existing `_attachAiGuidance` path. All 582 tests pass.
+
 ## [0.15.0] - 2026-05-29
 
 Audit-driven consistency work from `/apcore-skills:audit --scope mcp`. Nine TypeScript-side fixes land here; the docs/spec repo (`apcore-mcp/`) remains at 0.15.0 because no spec contracts changed, so SDK versions also stay at 0.15.0 pending an explicit release decision. The entries below describe changes already committed on `main`.

@@ -249,22 +249,6 @@ export class ErrorMapper {
         return result;
       }
 
-      // Dependency resolution errors (apcore 0.19) -> pass through with user-fixable hint
-      if (
-        code === ErrorCodes.DEPENDENCY_NOT_FOUND ||
-        code === ErrorCodes.DEPENDENCY_VERSION_MISMATCH
-      ) {
-        const result: McpErrorResponse = {
-          isError: true,
-          errorType: code,
-          message: error.message,
-          details,
-          userFixable: true,
-        };
-        this._attachAiGuidance(error, result);
-        return result;
-      }
-
       // Task limit exceeded -> retryable
       if (code === ErrorCodes.TASK_LIMIT_EXCEEDED) {
         const result: McpErrorResponse = {
@@ -296,25 +280,6 @@ export class ErrorMapper {
             "the breaker. Wait until the recovery window elapses, then retry; " +
             "the breaker will move to HALF_OPEN and accept a trial call.";
         }
-        return result;
-      }
-
-      // Binding / version-constraint validation errors (apcore 0.19) -> pass through
-      if (
-        code === ErrorCodes.VERSION_CONSTRAINT_INVALID ||
-        code === ErrorCodes.BINDING_SCHEMA_INFERENCE_FAILED ||
-        code === ErrorCodes.BINDING_SCHEMA_MODE_CONFLICT ||
-        code === ErrorCodes.BINDING_STRICT_SCHEMA_INCOMPATIBLE ||
-        code === ErrorCodes.BINDING_POLICY_VIOLATION
-      ) {
-        const result: McpErrorResponse = {
-          isError: true,
-          errorType: code,
-          message: error.message,
-          details,
-          userFixable: true,
-        };
-        this._attachAiGuidance(error, result);
         return result;
       }
 
@@ -386,7 +351,6 @@ export class ErrorMapper {
         errorType: ErrorCodes.DEPENDENCY_NOT_FOUND,
         message: error.message,
         details: asModErr.details ?? null,
-        userFixable: true,
       };
       this._attachAiGuidance(error as unknown as Record<string, unknown>, result);
       return result;
@@ -398,7 +362,6 @@ export class ErrorMapper {
         errorType: ErrorCodes.DEPENDENCY_VERSION_MISMATCH,
         message: error.message,
         details: asModErr.details ?? null,
-        userFixable: true,
       };
       this._attachAiGuidance(error as unknown as Record<string, unknown>, result);
       return result;
@@ -410,7 +373,6 @@ export class ErrorMapper {
         errorType: ErrorCodes.VERSION_CONSTRAINT_INVALID,
         message: error.message,
         details: asModErr.details ?? null,
-        userFixable: true,
       };
       this._attachAiGuidance(error as unknown as Record<string, unknown>, result);
       return result;
