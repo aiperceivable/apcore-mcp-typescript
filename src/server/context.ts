@@ -1,116 +1,67 @@
 /**
- * BridgeContext — minimal duck-typed context for apcore executors.
+ * Bridge context factory.
  *
- * Since apcore-mcp-typescript does NOT depend on apcore-js, we create a
- * structural stand-in that satisfies the executor's context contract:
+ * apcore-mcp-typescript depends on apcore-js (a hard `dependencies` entry), so
+ * the bridge uses apcore-js's real `Context` instead of a hand-rolled structural
+ * stand-in. `createBridgeContext` is a thin factory that seeds an apcore
+ * `Context` with the MCP call's `data` (which carries MCP callbacks), identity,
+ * inbound W3C trace_id, and cancel token. `BridgeContext` is retained as a public
+ * type alias for `Context` so existing importers keep compiling.
  *
- *   if (context == null) { return Context.create(this).child(moduleId); }
- *   return context.child(moduleId);
- *
- * The key requirement: child() returns a new context that shares the same
- * `data` reference so MCP callbacks remain accessible throughout the call chain.
+ * Why this is no longer a custom type: the previous `BridgeContext` was a manual
+ * mirror of apcore-js's `Context` and had to chase every upstream change
+ * (Issue #66 executor auto-bind, D-18 `signal`, trace-flag propagation) — and it
+ * had already drifted, producing dashed-UUID trace_ids instead of the 32-hex W3C
+ * format apcore enforces. Delegating to the real `Context` removes that drift and
+ * matches apcore-mcp-python, which already builds contexts via `Context.create()`.
  */
 
-import { randomUUID } from "node:crypto";
+import { Context } from "apcore-js";
+import type { CancelToken, TraceParent } from "apcore-js";
 import type { Identity } from "../auth/types.js";
-import type { CancelToken } from "./router.js";
-
-/** Shape of the bridge context object. */
-export interface BridgeContext {
-  readonly traceId: string;
-  readonly callerId: string | null;
-  readonly callChain: readonly string[];
-  readonly executor: unknown;
-  readonly identity: Identity | null;
-  readonly cancelToken: CancelToken | null;
-  /**
-   * Real-interrupt cancellation signal (apcore-js 0.22.0 D-18). Returns the
-   * bound `cancelToken.signal` when present, otherwise a never-aborted
-   * fallback so modules can unconditionally attach it to Web APIs (`fetch`,
-   * etc.) without firing in the no-cancel case. Mirrors apcore-js
-   * `Context.signal`.
-   */
-  readonly signal: AbortSignal;
-  redactedInputs: Record<string, unknown> | null;
-  readonly data: Record<string, unknown>;
-  child(moduleId: string): BridgeContext;
-}
 
 /**
- * Lazily-created never-aborted signal shared by all cancel-less contexts, so
- * the no-cancel path pays no per-context `AbortController` cost. Mirrors
- * apcore-js `Context._NEVER_SIGNAL`. (D-18)
+ * Public type alias for the apcore execution context produced by this bridge.
+ * Retained for backward compatibility with importers of `BridgeContext`.
  */
-let _neverSignal: AbortSignal | null = null;
-function neverSignal(): AbortSignal {
-  if (_neverSignal === null) {
-    _neverSignal = new AbortController().signal;
-  }
-  return _neverSignal;
-}
+export type BridgeContext = Context;
 
 /**
- * Create a minimal bridge context that carries `data` through executor call chains.
+ * Create an apcore `Context` that carries `data` through executor call chains.
  *
- * @param data - Shared data dict (MCP callbacks are injected here)
- * @param identity - Authenticated identity, if any
- * @param traceId - Optional pre-existing traceId (32-hex, W3C format). When
- *   omitted, a fresh UUID is generated. Used to propagate incoming W3C
- *   `traceparent` trace_id so the downstream trace chain stays linked.
- * @param cancelToken - Cooperative cancel token. Threaded into the context so
- *   modules can read `context.cancelToken?.isCancelled` to react to inbound
- *   MCP `notifications/cancelled`. [A-D-001]
- * @returns A BridgeContext with a working child() method
+ * The returned context holds the same `data` reference, and `Context.child()`
+ * preserves it, so MCP callbacks injected into `data` remain accessible
+ * throughout the call chain.
+ *
+ * @param data - Shared data dict (MCP callbacks are injected here).
+ * @param identity - Authenticated identity, if any.
+ * @param traceId - Optional inbound W3C trace_id (32 lowercase hex). When
+ *   provided it seeds the context's `traceId` so the downstream trace chain
+ *   stays linked; when omitted (or not valid 32-hex) apcore generates a fresh
+ *   W3C trace_id.
+ * @param cancelToken - Cooperative + real-interrupt cancel token (D-18). Threaded
+ *   in so modules can read `context.cancelToken?.isCancelled` (cooperative) or
+ *   `context.signal` (real abort).
+ * @returns An apcore `Context` with a working `child()` method.
  */
 export function createBridgeContext(
   data: Record<string, unknown>,
   identity?: Identity | null,
   traceId?: string,
   cancelToken?: CancelToken | null,
-): BridgeContext {
-  return _buildContext(
-    data,
-    traceId ?? randomUUID(),
-    null,
-    [],
-    identity ?? null,
-    cancelToken ?? null,
-  );
-}
-
-function _buildContext(
-  data: Record<string, unknown>,
-  traceId: string,
-  callerId: string | null,
-  callChain: string[],
-  identity: Identity | null,
-  cancelToken: CancelToken | null,
-): BridgeContext {
-  return {
-    traceId,
-    callerId,
-    callChain,
-    executor: null,
-    identity,
-    cancelToken,
-    get signal(): AbortSignal {
-      return cancelToken?.signal ?? neverSignal();
-    },
-    redactedInputs: null,
-    data,
-    child(moduleId: string): BridgeContext {
-      // Match real Context.child(): callerId = last element of current callChain.
-      // child() preserves the cancelToken so cooperative cancel propagates
-      // through the entire executor call chain.
-      const newCallerId = callChain.length > 0 ? callChain[callChain.length - 1] : null;
-      return _buildContext(
-        data,
+): Context {
+  // A TraceParent is the only Context.create channel for an externally-supplied
+  // trace_id. traceFlags is left empty so apcore does not inject a
+  // `_apcore.trace.flags` key into `data` — preserving the prior bridge
+  // behaviour of propagating only the trace_id (not the inbound sampling flags).
+  const traceParent: TraceParent | null = traceId
+    ? {
+        version: "00",
         traceId,
-        newCallerId,
-        [...callChain, moduleId],
-        identity,
-        cancelToken,
-      );
-    },
-  };
+        parentId: "0".repeat(16),
+        traceFlags: "",
+        tracestate: [],
+      }
+    : null;
+  return Context.create(identity ?? null, traceParent, cancelToken ?? null, data);
 }

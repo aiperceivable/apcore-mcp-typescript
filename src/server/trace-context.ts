@@ -4,7 +4,7 @@
  * Inbound (parse): when an MCP `tools/call` request carries
  * `_meta.traceparent`, we dynamically import apcore-js's `TraceContext`
  * utility to validate and extract the 32-hex trace_id, which is then used
- * as the BridgeContext's traceId so downstream middleware (including apcore
+ * as the apcore Context's traceId so downstream middleware (including apcore
  * tracing middleware) continues the same trace.
  *
  * Outbound (inject): after a successful tool execution the bridge attaches

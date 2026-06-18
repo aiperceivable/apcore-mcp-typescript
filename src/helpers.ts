@@ -28,7 +28,7 @@ export interface ElicitResult {
  *
  * No-ops silently when called outside an MCP context (no callback injected).
  *
- * @param context - Object with a `data` dict (apcore Context or BridgeContext)
+ * @param context - Object with a `data` dict (an apcore Context)
  * @param progress - Current progress value
  * @param total - Optional total for percentage calculation
  * @param message - Optional human-readable progress message
@@ -52,7 +52,7 @@ export async function reportProgress(
  *
  * Returns null when called outside an MCP context (no callback injected).
  *
- * @param context - Object with a `data` dict (apcore Context or BridgeContext)
+ * @param context - Object with a `data` dict (an apcore Context)
  * @param message - Message to display to the user
  * @param requestedSchema - Optional JSON Schema describing the expected input
  * @returns ElicitResult with the user's action and optional content, or null

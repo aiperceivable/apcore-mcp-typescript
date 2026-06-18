@@ -10,6 +10,7 @@
  */
 
 import * as crypto from "node:crypto";
+import { CancelToken } from "apcore-js";
 import { ErrorMapper } from "../adapters/errors.js";
 import type { Executor, TextContentDict, McpErrorResponse } from "../types.js";
 import { createBridgeContext } from "./context.js";
@@ -142,31 +143,16 @@ export interface ExecutionRouterOptions {
 }
 
 /**
- * Cancellation token for inbound MCP `notifications/cancelled`. Mirrors
- * apcore-py's CancelToken and Rust's apcore::CancelToken. [B-002]
+ * Cancellation token for inbound MCP `notifications/cancelled`. [B-002]
  *
- * Backed by an `AbortController` (apcore-js 0.22.0 D-18) so that cancellation
- * is a real interrupt, not merely a cooperative flag: the exposed `signal`
- * is threaded onto the bridge Context, letting modules that perform Web-API
- * I/O (`fetch`, `setTimeout` via `AbortSignal.timeout`, Web Streams) abort
- * in-flight work. The `isCancelled` accessor remains for cooperative pause
- * points that poll instead of attaching the signal.
+ * Re-exported from apcore-js (a hard dependency) rather than re-implemented:
+ * apcore-js's `CancelToken` is the same `AbortController`-backed real-interrupt
+ * token (D-18) and a strict superset of what this bridge previously defined
+ * locally (it adds `check()` / `reset()`). Re-exporting keeps the public import
+ * path `import { CancelToken } from ".../server/router.js"` stable while removing
+ * a hand-maintained mirror that could drift from apcore-py / apcore::CancelToken.
  */
-export class CancelToken {
-  private readonly _controller = new AbortController();
-  /** Underlying `AbortSignal` for real-interrupt cancellation (D-18). */
-  get signal(): AbortSignal {
-    return this._controller.signal;
-  }
-  get isCancelled(): boolean {
-    return this._controller.signal.aborted;
-  }
-  cancel(): void {
-    if (!this._controller.signal.aborted) {
-      this._controller.abort();
-    }
-  }
-}
+export { CancelToken };
 
 /**
  * [B-002] Maximum number of cancel-token entries (active + tombstones)

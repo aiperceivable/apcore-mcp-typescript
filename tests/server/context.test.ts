@@ -8,9 +8,10 @@ describe("createBridgeContext", () => {
     const data = { foo: "bar" };
     const ctx = createBridgeContext(data);
 
-    expect(ctx.traceId).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-    );
+    // apcore Context.create() generates a 32-hex W3C trace_id (not a dashed
+    // UUID) — the previous custom bridge produced dashed UUIDs, which drifted
+    // from the W3C format apcore enforces.
+    expect(ctx.traceId).toMatch(/^[0-9a-f]{32}$/);
     expect(ctx.callerId).toBeNull();
     expect(ctx.callChain).toEqual([]);
     expect(ctx.executor).toBeNull();
