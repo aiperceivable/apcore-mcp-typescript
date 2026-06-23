@@ -341,3 +341,70 @@ describe("serve() onStartup/onShutdown (F4)", () => {
     expect(mockRunStdio).toHaveBeenCalledTimes(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase B: approvalStore lifecycle is managed by serve() (item 1)
+// ---------------------------------------------------------------------------
+
+describe("serve() approvalStore lifecycle", () => {
+  it("starts the store before the transport and stops it after", async () => {
+    const registry = createMockRegistry({});
+    const executor = createMockExecutor(registry);
+
+    const order: string[] = [];
+    const store = {
+      savePending: vi.fn().mockResolvedValue(undefined),
+      getResult: vi.fn().mockResolvedValue(null),
+      resolve: vi.fn().mockResolvedValue(false),
+      start: vi.fn(() => order.push("start")),
+      stop: vi.fn(() => order.push("stop")),
+    };
+    mockRunStdio.mockImplementation(async () => {
+      order.push("transport");
+    });
+
+    await serve(executor, { transport: "stdio", approvalStore: store });
+
+    expect(store.start).toHaveBeenCalledTimes(1);
+    expect(store.stop).toHaveBeenCalledTimes(1);
+    // start() must run before the transport binds; stop() after it returns.
+    expect(order).toEqual(["start", "transport", "stop"]);
+  });
+
+  it("stops the store even when the transport throws", async () => {
+    const registry = createMockRegistry({});
+    const executor = createMockExecutor(registry);
+
+    const store = {
+      savePending: vi.fn().mockResolvedValue(undefined),
+      getResult: vi.fn().mockResolvedValue(null),
+      resolve: vi.fn().mockResolvedValue(false),
+      start: vi.fn(),
+      stop: vi.fn(),
+    };
+    mockRunStdio.mockRejectedValueOnce(new Error("transport failed"));
+
+    await expect(
+      serve(executor, { transport: "stdio", approvalStore: store }),
+    ).rejects.toThrow("transport failed");
+
+    expect(store.start).toHaveBeenCalledTimes(1);
+    expect(store.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("tolerates a store without start/stop hooks", async () => {
+    const registry = createMockRegistry({});
+    const executor = createMockExecutor(registry);
+
+    const store = {
+      savePending: vi.fn().mockResolvedValue(undefined),
+      getResult: vi.fn().mockResolvedValue(null),
+      resolve: vi.fn().mockResolvedValue(false),
+    };
+
+    // Should not throw despite missing start()/stop().
+    await serve(executor, { transport: "stdio", approvalStore: store });
+
+    expect(mockRunStdio).toHaveBeenCalledTimes(1);
+  });
+});

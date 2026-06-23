@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.17.0] - 2026-06-23
+
+Audit-driven hardening of the serve/embed entry points and the Phase B approval
+chain, plus the apcore-js 0.25 / apcore-toolkit 0.9.1 dependency uplift.
+
+### Added
+
+- **Low-level `serve()` / `asyncServe()` now accept `approvalStore` /
+  `approvalNotify`** and drive the store lifecycle (`start()` before transport,
+  `stop()` on shutdown / `close()`), so Phase B async approval is usable without
+  the `APCoreMCP` class. This also fixes a latent leak: a manually built store
+  passed via `serve()` previously never had its sweep timer started, so records
+  grew unbounded.
+- **`APCoreMCP` class reaches the full serve surface**: `APCoreMCPOptions` gained
+  `strategy`, `redactOutput`, `outputFormat`, and `trace`;
+  `APCoreMCPServeOptions` / `AsyncServeOptions` gained `dynamic` (runtime tool
+  registration) — all now forwarded.
+- Optional `start?()` / `stop?()` on the `ApprovalStore` interface to match the
+  duck-typed lifecycle already honored at runtime.
+
+### Fixed
+
+- **`outputFormat` now fails fast**: requesting `csv` / `jsonl` when
+  apcore-toolkit is unavailable throws a clear error instead of silently
+  returning an empty string to the model (silent data loss).
+
+### Changed
+
+- Documented `outputFormat: "json"` as a native `JSON.stringify` no-op (it does
+  not route through apcore-toolkit).
+- Raised dependency floors to `apcore-js>=0.25.0` and `apcore-toolkit>=0.9.1`
+  (drop-in; no consumed API changed). All 615 tests pass.
+
+
 ## [0.16.1] - 2026-06-18
 
 ### Changed

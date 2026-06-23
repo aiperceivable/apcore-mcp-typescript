@@ -12,11 +12,11 @@ importers:
         specifier: '>=1.26.0'
         version: 1.26.0(zod@4.3.6)
       apcore-js:
-        specifier: '>=0.24.0'
-        version: 0.24.0
+        specifier: '>=0.25.0'
+        version: 0.25.0
       apcore-toolkit:
-        specifier: '>=0.8.0'
-        version: 0.8.0(@sinclair/typebox@0.34.48)
+        specifier: '>=0.9.1'
+        version: 0.9.1(@sinclair/typebox@0.34.48)
       jsonwebtoken:
         specifier: '>=9.0.3'
         version: 9.0.3
@@ -637,12 +637,12 @@ packages:
     resolution: {integrity: sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg==}
     engines: {node: '>=12'}
 
-  apcore-js@0.24.0:
-    resolution: {integrity: sha512-cNBUcnxPmd4reZ6JguarMZcTLohDC19ddJd8GKH9p3hlubPynDLoGULxCACFuFXni1w+1jtYIeaSzBlmZwnfMg==}
+  apcore-js@0.25.0:
+    resolution: {integrity: sha512-zz8QDsp69e/V0/4lJgkUth2Ikze2xg3BvBmHqYvcu9+ms7f3sunhjgZuOzLo5MK+c3g1Oi4HlCYt+eAJnJBWpg==}
     engines: {node: '>=20.0.0'}
 
-  apcore-toolkit@0.8.0:
-    resolution: {integrity: sha512-YPkcMTA2DE9MjVToWhZP6gkuVkoLhN7dLDC4j4JCKaLTv8XzvFSmjV/kHnq2TuedadVGi0qxooJXiqjUKQsCag==}
+  apcore-toolkit@0.9.1:
+    resolution: {integrity: sha512-DgaVCPto0MOjSwmrIFNa18JnvxS2jLAVomnAznE9mJJr6T8DiPeX/Td0V5ke3RldszBNaNfCGHZStfp8VYNAog==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       '@sinclair/typebox': '>=0.31.0'
@@ -2124,17 +2124,17 @@ snapshots:
 
   ansi-styles@6.2.3: {}
 
-  apcore-js@0.24.0:
+  apcore-js@0.25.0:
     dependencies:
       '@sinclair/typebox': 0.34.48
       js-yaml: 4.1.1
       uuid: 11.1.0
 
-  apcore-toolkit@0.8.0(@sinclair/typebox@0.34.48):
+  apcore-toolkit@0.9.1(@sinclair/typebox@0.34.48):
     dependencies:
       '@sinclair/typebox': 0.34.48
       ajv: 8.18.0
-      apcore-js: 0.24.0
+      apcore-js: 0.25.0
       js-yaml: 4.1.1
 
   apdev-js@0.2.4(typescript@5.9.3):

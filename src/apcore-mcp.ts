@@ -96,6 +96,20 @@ export interface APCoreMCPOptions {
    * When undefined, results are serialised with `JSON.stringify(result)`.
    */
   outputFormatter?: (result: Record<string, unknown> | Array<unknown>) => string;
+  /** Optional built-in output format name ("json", "csv", "jsonl"). */
+  outputFormat?: "json" | "csv" | "jsonl";
+  /**
+   * When true (default), redact sensitive fields from tool output using apcore's
+   * `redactSensitive()` before formatting.
+   */
+  redactOutput?: boolean;
+  /** Execution strategy name passed to the Executor constructor (e.g. "standard", "internal"). */
+  strategy?: string;
+  /**
+   * When true, enable pipeline trace via callWithTrace(). Adds `_meta.trace`
+   * to non-streaming tool responses. Default: false.
+   */
+  trace?: boolean;
   /**
    * Optional list of apcore `Middleware` instances to install on the Executor
    * via `executor.use()`. Appended to any middleware declared under Config
@@ -123,6 +137,8 @@ export interface APCoreMCPServeOptions {
   onStartup?: () => void | Promise<void>;
   /** Callback invoked after the server stops. */
   onShutdown?: () => void | Promise<void>;
+  /** Enable dynamic tool registration/unregistration. Default: false */
+  dynamic?: boolean;
   /** Enable the browser-based Tool Explorer UI (HTTP only). Default: false */
   explorer?: boolean;
   /** URL prefix for the explorer. Default: "/explorer" */
@@ -259,6 +275,7 @@ export class APCoreMCP {
       transport: overrides.transport,
       host: overrides.host,
       port: overrides.port,
+      dynamic: overrides.dynamic,
       name: this._options.name,
       version: this._options.version,
       validateInputs: this._options.validateInputs,
@@ -270,6 +287,10 @@ export class APCoreMCP {
       metricsCollector: this._options.metricsCollector,
       observability: this._options.observability,
       async: this._options.async,
+      strategy: this._options.strategy,
+      redactOutput: this._options.redactOutput,
+      outputFormat: this._options.outputFormat,
+      trace: this._options.trace,
       explorer: overrides.explorer,
       explorerPrefix: overrides.explorerPrefix,
       allowExecute: overrides.allowExecute,
@@ -360,6 +381,10 @@ export class APCoreMCP {
       metricsCollector: this._options.metricsCollector,
       observability: this._options.observability,
       async: this._options.async,
+      strategy: this._options.strategy,
+      redactOutput: this._options.redactOutput,
+      outputFormat: this._options.outputFormat,
+      trace: this._options.trace,
       explorer: options.explorer,
       explorerPrefix: options.explorerPrefix,
       allowExecute: options.allowExecute,

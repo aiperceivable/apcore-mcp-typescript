@@ -116,6 +116,13 @@ export interface ExecutionRouterOptions {
   /**
    * Optional built-in output format name ("json", "csv", "jsonl").
    * Takes precedence over outputFormatter if both are set.
+   *
+   * - "json": native `JSON.stringify` of the result (the default serialization).
+   *   It does NOT route through apcore-toolkit and is equivalent to leaving
+   *   outputFormat unset.
+   * - "csv" / "jsonl": delegated to apcore-toolkit's `formatCsv`/`formatJsonl`.
+   *   If apcore-toolkit is not available, the call fails fast with a clear
+   *   error rather than silently returning empty output.
    */
   outputFormat?: "json" | "csv" | "jsonl";
   /**
@@ -196,12 +203,11 @@ export class ExecutionRouter {
     this._trace = options?.trace ?? false;
     this._asyncTaskBridge = options?.asyncTaskBridge;
 
-    // Use custom formatter if provided, or a sentinel if a builtin format is requested
+    // Built-in tabular formats (csv/jsonl) are handled directly in
+    // _formatResult via the `_outputFormat` branch — no sentinel formatter is
+    // needed. "json" is a no-op (native JSON.stringify). Only a caller-supplied
+    // custom formatter is stored here.
     this._outputFormatter = options?.outputFormatter;
-    if (!this._outputFormatter && this._outputFormat && this._outputFormat !== "json") {
-      // Sentinel to ensure _formatResult enters the formatting block
-      this._outputFormatter = () => ""; 
-    }
   }
 
   /** Expose the async task bridge (for factory tool-list merging). */
@@ -325,20 +331,39 @@ export class ExecutionRouter {
       if (this._outputFormat && this._outputFormat !== "json") {
         const rows = Array.isArray(result) ? result : [result];
         if (rows.every((r) => r !== null && typeof r === "object" && !Array.isArray(r))) {
+          // Fail-fast: a caller that explicitly requested csv/jsonl must not be
+          // silently handed empty output or JSON when apcore-toolkit is missing
+          // (that drops data without the LLM/caller ever knowing). Surface a
+          // clear error instead.
+          let toolkit: Record<string, unknown> & { default?: Record<string, unknown> };
           try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const toolkit = await import("apcore-toolkit") as any;
-            const formatCsv = toolkit.formatCsv ?? toolkit.default?.formatCsv;
-            const formatJsonl = toolkit.formatJsonl ?? toolkit.default?.formatJsonl;
+            toolkit = await import("apcore-toolkit");
+          } catch (err) {
+            throw new Error(
+              `outputFormat="${this._outputFormat}" requires apcore-toolkit, ` +
+              `which is not installed or failed to load: ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+            );
+          }
+          const formatCsv = toolkit.formatCsv ?? toolkit.default?.formatCsv;
+          const formatJsonl = toolkit.formatJsonl ?? toolkit.default?.formatJsonl;
 
-            if (this._outputFormat === "csv" && typeof formatCsv === "function") {
-              return formatCsv(rows);
+          if (this._outputFormat === "csv") {
+            if (typeof formatCsv !== "function") {
+              throw new Error(
+                `outputFormat="csv" requires apcore-toolkit's formatCsv(), which is not exported by the installed version.`,
+              );
             }
-            if (this._outputFormat === "jsonl" && typeof formatJsonl === "function") {
-              return formatJsonl(rows);
+            return formatCsv(rows);
+          }
+          if (this._outputFormat === "jsonl") {
+            if (typeof formatJsonl !== "function") {
+              throw new Error(
+                `outputFormat="jsonl" requires apcore-toolkit's formatJsonl(), which is not exported by the installed version.`,
+              );
             }
-          } catch {
-            console.warn(`apcore-toolkit not available for builtin format: ${this._outputFormat}`);
+            return formatJsonl(rows);
           }
         } else {
           console.warn(`outputFormat=${this._outputFormat} requested but result is not tabular; falling back to JSON`);

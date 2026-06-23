@@ -19,6 +19,18 @@ export interface ApprovalStore {
   savePending(approvalId: string, moduleId: string, arguments_: Record<string, unknown>): Promise<void>;
   getResult(approvalId: string): Promise<ApprovalRecord | null>;
   resolve(approvalId: string, options: { approved: boolean; reason?: string }): Promise<boolean>;
+  /**
+   * Optional lifecycle hook. When present, serve()/asyncServe()/APCoreMCP call
+   * it before the transport binds so the store can spin up background work
+   * (e.g. InMemoryApprovalStore's sweep timer). Duck-typed everywhere it is
+   * invoked, so implementations may omit it.
+   */
+  start?(): void;
+  /**
+   * Optional lifecycle hook. Called on shutdown / close() to release any
+   * background resources (timers, connections). Duck-typed at every call site.
+   */
+  stop?(): void;
 }
 
 interface InternalRecord extends ApprovalRecord {

@@ -28,6 +28,8 @@ import type {
 } from "./types.js";
 import type { Authenticator } from "./auth/types.js";
 import { buildExplorerAuthHook } from "./auth/hooks.js";
+import type { ApprovalStore } from "./approval-store.js";
+import { StorageBackedApprovalHandler } from "./adapters/approval.js";
 import pkg from "../package.json" with { type: "json" };
 
 export const VERSION: string = pkg.version;
@@ -428,6 +430,21 @@ export interface BaseServeOptions {
   exemptPaths?: string[];
   /** Optional approval handler passed to the Executor (e.g. ElicitationApprovalHandler). */
   approvalHandler?: unknown;
+  /**
+   * Pluggable ApprovalStore for Phase B async polling. When provided and no
+   * explicit `approvalHandler` is given, a StorageBackedApprovalHandler is
+   * auto-created and wired as the Executor's approval handler. If the store
+   * exposes `start()`/`stop()`, its lifecycle is managed by serve()/asyncServe()
+   * (e.g. the background sweep timer is started before the transport binds and
+   * stopped on shutdown), preventing unbounded record growth.
+   */
+  approvalStore?: ApprovalStore;
+  /**
+   * Optional callback invoked when a new approval is requested. Used together
+   * with `approvalStore` to fan out to Slack/email/webhooks.
+   * Signature: (approvalId, moduleId, args) => Promise<void>
+   */
+  approvalNotify?: (approvalId: string, moduleId: string, args: Record<string, unknown>) => Promise<void>;
   /** Execution strategy name passed to the Executor constructor (e.g. "standard", "internal"). */
   strategy?: string;
   /**
@@ -529,6 +546,8 @@ export async function serve(
     requireAuth: optRequireAuth,
     exemptPaths,
     approvalHandler,
+    approvalStore,
+    approvalNotify,
     outputFormatter,
     outputFormat,
     redactOutput,
@@ -539,6 +558,16 @@ export async function serve(
     observability: observabilityFlag,
     async: asyncFlag,
   } = options;
+
+  // Phase B: when an ApprovalStore is supplied without an explicit handler,
+  // auto-create a StorageBackedApprovalHandler so direct serve() callers get
+  // the same wiring as the APCoreMCP class. Store lifecycle (start/stop) is
+  // managed below so the background sweep timer runs even for this path.
+  const effectiveApprovalHandler =
+    approvalHandler ??
+    (approvalStore
+      ? new StorageBackedApprovalHandler(approvalStore, { notifyCallback: approvalNotify })
+      : undefined);
 
   // Save original console methods before suppression. Suppression itself
   // happens AFTER Config Bus resolution so that `mcp.log_level` from YAML or
@@ -579,11 +608,17 @@ export async function serve(
 
   const registry = resolveRegistry(registryOrExecutor);
   const executor = await resolveExecutor(registryOrExecutor, {
-    approvalHandler,
+    approvalHandler: effectiveApprovalHandler,
     strategy: resolvedStrategy,
     middleware: combinedMiddleware,
     acl: effectiveAcl,
   });
+
+  // Phase B: start the store's background sweep before the transport binds so
+  // resolved/abandoned records are reclaimed. Stopped in the finally below.
+  if (approvalStore && typeof approvalStore.start === "function") {
+    approvalStore.start();
+  }
 
   // ── F-044: observability auto-wire (metrics + usage middleware) ──────
   const obsStack = await installObservability(
@@ -722,6 +757,9 @@ export async function serve(
         origWarn("[apcore-mcp] AsyncTaskManager shutdown failed:", err);
       }
     }
+    if (approvalStore && typeof approvalStore.stop === "function") {
+      approvalStore.stop();
+    }
     await onShutdown?.();
   }
 }
@@ -730,6 +768,11 @@ export async function serve(
 export interface AsyncServeOptions extends BaseServeOptions {
   /** MCP endpoint path. Default: "/mcp" */
   endpoint?: string;
+  /**
+   * Enable dynamic tool registration/unregistration via RegistryListener.
+   * Default: false. The listener is torn down by the returned `close()`.
+   */
+  dynamic?: boolean;
 }
 
 /** Return type of asyncServe(). */
@@ -790,17 +833,28 @@ export async function asyncServe(
     requireAuth: optRequireAuth,
     exemptPaths,
     approvalHandler,
+    approvalStore,
+    approvalNotify,
     endpoint,
     outputFormatter,
     outputFormat,
     redactOutput,
     strategy,
     trace,
+    dynamic,
     middleware: callerMiddleware,
     acl: callerAcl,
     observability: observabilityFlag,
     async: asyncFlag,
   } = options;
+
+  // Phase B: auto-create a StorageBackedApprovalHandler from an ApprovalStore
+  // when no explicit handler is given. See serve() for rationale.
+  const effectiveApprovalHandler =
+    approvalHandler ??
+    (approvalStore
+      ? new StorageBackedApprovalHandler(approvalStore, { notifyCallback: approvalNotify })
+      : undefined);
 
   // Save original console methods before suppression. Suppression itself
   // happens AFTER Config Bus resolution so that `mcp.log_level` from YAML or
@@ -840,11 +894,16 @@ export async function asyncServe(
 
   const registry = resolveRegistry(registryOrExecutor);
   const executor = await resolveExecutor(registryOrExecutor, {
-    approvalHandler,
+    approvalHandler: effectiveApprovalHandler,
     strategy: resolvedStrategy,
     middleware: combinedMiddleware,
     acl: effectiveAcl,
   });
+
+  // Phase B: start the store's background sweep. Stopped in the wrapped close().
+  if (approvalStore && typeof approvalStore.start === "function") {
+    approvalStore.start();
+  }
 
   // ── F-044: observability auto-wire ───────────────────────────────────
   const obsStack = await installObservability(
@@ -895,6 +954,16 @@ export async function asyncServe(
   });
   factory.registerHandlers(server, tools, router);
   factory.registerResourceHandlers(server, registry);
+
+  // Start dynamic tool registration listener if enabled. The embedded handler
+  // has no explicit stop hook, so the listener's teardown is wired into the
+  // returned close() below. [item 3]
+  let registryListener: RegistryListener | null = null;
+  if (dynamic) {
+    registryListener = new RegistryListener(registry, factory);
+    registryListener.start();
+    console.info("Dynamic tool registration enabled via RegistryListener");
+  }
 
   console.info(
     `Building MCP app '${name}' v${version} with ${tools.length} tools`,
@@ -951,12 +1020,18 @@ export async function asyncServe(
   const originalClose = app.close;
   app.close = async () => {
     await originalClose();
+    if (registryListener) {
+      registryListener.stop();
+    }
     if (asyncBridge?.manager.shutdown) {
       try {
         await asyncBridge.manager.shutdown();
       } catch (err) {
         origWarn("[apcore-mcp] AsyncTaskManager shutdown failed:", err);
       }
+    }
+    if (approvalStore && typeof approvalStore.stop === "function") {
+      approvalStore.stop();
     }
     console.debug = origDebug;
     console.info = origInfo;
