@@ -103,6 +103,43 @@ describe("ElicitationApprovalHandler", () => {
     expect(result.reason).toContain("failed");
   });
 
+  it("sends a non-empty approval schema to the elicit callback", async () => {
+    const elicitFn = vi.fn().mockResolvedValue({ action: "accept", content: {} });
+    await handler.requestApproval({
+      moduleId: "test.module",
+      arguments: {},
+      context: { data: { [MCP_ELICIT_KEY]: elicitFn } },
+    });
+
+    expect(elicitFn).toHaveBeenCalledTimes(1);
+    const schema = elicitFn.mock.calls[0][1] as Record<string, unknown>;
+    expect(schema).toBeTruthy();
+    expect(schema.type).toBe("object");
+    expect(schema.properties).toHaveProperty("approve");
+  });
+
+  it("returns rejected when accept carries content.approve=false", async () => {
+    const elicitFn = vi.fn().mockResolvedValue({ action: "accept", content: { approve: false } });
+    const result = await handler.requestApproval({
+      moduleId: "test.module",
+      arguments: {},
+      context: { data: { [MCP_ELICIT_KEY]: elicitFn } },
+    });
+
+    expect(result.status).toBe("rejected");
+  });
+
+  it("returns approved when accept carries content.approve=true", async () => {
+    const elicitFn = vi.fn().mockResolvedValue({ action: "accept", content: { approve: true } });
+    const result = await handler.requestApproval({
+      moduleId: "test.module",
+      arguments: {},
+      context: { data: { [MCP_ELICIT_KEY]: elicitFn } },
+    });
+
+    expect(result.status).toBe("approved");
+  });
+
   it("checkApproval always returns rejected (Phase B not supported)", async () => {
     const result = await handler.checkApproval("some-id");
 

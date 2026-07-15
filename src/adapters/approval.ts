@@ -21,6 +21,26 @@ export interface ApprovalResult {
   reason?: string | null;
 }
 
+/**
+ * JSON Schema (MCP elicitation requestedSchema) for a yes/no approval prompt.
+ * A boolean gives form-rendering clients (Cursor, Codex, ...) a concrete control
+ * to display; an empty schema is tolerated by minimal SDK clients but
+ * ignored/rejected by form-rendering clients, so the request returns no response
+ * and the gate fails closed.
+ */
+const APPROVAL_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  title: "Approval required",
+  properties: {
+    approve: {
+      type: "boolean",
+      title: "Approve this action?",
+      description: "Select yes to allow the operation to proceed.",
+    },
+  },
+  required: ["approve"],
+};
+
 export class ElicitationApprovalHandler {
   /**
    * Request approval via MCP elicitation.
@@ -35,7 +55,10 @@ export class ElicitationApprovalHandler {
     }
 
     const elicitCallback = data[MCP_ELICIT_KEY] as
-      | ((message: string) => Promise<{ action: string; content?: Record<string, unknown> } | null>)
+      | ((
+          message: string,
+          requestedSchema?: Record<string, unknown>,
+        ) => Promise<{ action: string; content?: Record<string, unknown> } | null>)
       | undefined;
 
     if (!elicitCallback) {
@@ -49,7 +72,9 @@ export class ElicitationApprovalHandler {
 
     let result: { action: string; content?: Record<string, unknown> } | null;
     try {
-      result = await elicitCallback(message);
+      // Send a non-empty schema so form-rendering clients can display an
+      // approve/deny control; an empty schema is silently dropped by them.
+      result = await elicitCallback(message, APPROVAL_SCHEMA);
     } catch {
       return { status: "rejected", reason: "Elicitation request failed" };
     }
@@ -58,12 +83,19 @@ export class ElicitationApprovalHandler {
       return { status: "rejected", reason: "Elicitation returned no response" };
     }
 
-    const action = result.action;
-    if (action === "accept") {
-      return { status: "approved" };
+    if (result.action !== "accept") {
+      return { status: "rejected", reason: `User action: ${result.action}` };
     }
 
-    return { status: "rejected", reason: `User action: ${action}` };
+    // action === "accept": honor an explicit approve=false from the form;
+    // clients that render no field send none, so accept itself means approval.
+    const content = result.content;
+    const approve =
+      content && typeof content.approve !== "undefined" ? Boolean(content.approve) : true;
+    if (!approve) {
+      return { status: "rejected", reason: "User declined approval" };
+    }
+    return { status: "approved" };
   }
 
   /**
