@@ -39,11 +39,24 @@ export interface OpenAPIBackendOptions {
   include?: string;
   exclude?: string;
   includeDeprecated?: boolean;
+  /** Extra headers for the spec fetch only. Never sent with proxied calls. */
   headers?: Record<string, string>;
+  /**
+   * Spec-fetch timeout in **seconds** — `mcp.openapi.timeout`, documented in
+   * seconds across all three SDKs (`docs/features/openapi-backend.md` line
+   * 367: "spec fetch timeout, seconds"). Converted to milliseconds at the
+   * `loadSpec` boundary. Not the per-call proxy timeout, which is
+   * apcore-toolkit's own default.
+   */
   timeout?: number;
   authHeaderFactory?: () => Record<string, string>;
   registry?: Registry;
   hasOtherBackendSource?: boolean;
+  /**
+   * Overrides the base a relative `spec` resolves against. Omitted — the
+   * normal case, including both the Config Bus and CLI routes — reads
+   * `Config.projectRoot` (apcore 0.30.0) in `openapiBackend` instead.
+   */
   projectRoot?: string;
   acknowledgeUnapprovedWrites?: boolean;
   transformOperation?: (
@@ -145,16 +158,27 @@ export async function openapiBackend(
   }
 
   // --- 1. Locate and load ---------------------------------------------------
-  const resolved = resolveSpecLocation(spec, {
-    projectRoot: options.projectRoot,
-    logger: log,
-  });
+  // `Config.projectRoot` is resolved HERE rather than at each call site: a
+  // relative `spec` must resolve against the project root on every route (the
+  // Config Bus, the CLI, and a direct call), and every route but a caller
+  // passing `projectRoot` explicitly reaches this one function. Resolving per
+  // call site is what left the Config Bus and CLI routes falling back to CWD.
+  const projectRoot =
+    options.projectRoot ?? (typeof spec === "string" ? await configProjectRoot() : undefined);
+  const resolved = resolveSpecLocation(spec, { projectRoot, logger: log });
   if (resolved === null) {
     throw new Error("mcp.openapi.spec is required and resolved to nothing.");
   }
   const document =
     typeof resolved === "string"
-      ? await loadSpec(resolved, { headers: options.headers, timeout: options.timeout })
+      ? await loadSpec(resolved, {
+          headers: options.headers,
+          // `timeout` is SECONDS on this bridge's contract and MILLISECONDS on
+          // `loadSpec` (apcore-toolkit-typescript `openapi-loader.ts`), so it
+          // converts here rather than passing straight through — which made
+          // the documented default of 30 a 30 ms fetch budget.
+          timeout: options.timeout === undefined ? undefined : options.timeout * 1000,
+        })
       : (resolved as Record<string, unknown>);
 
   // --- 2. Scan --------------------------------------------------------------
@@ -305,6 +329,27 @@ function warnIfWritesHaveNoApprovalPath(
 }
 
 /**
+ * Read `Config.projectRoot` (apcore 0.30.0), or `undefined` to fall back to CWD.
+ *
+ * Mirrors Python's `_resolve_project_root`: any failure degrades to CWD rather
+ * than aborting startup — the base is a convenience, and a spec resolving under
+ * CWD is what every pre-0.30.0 deployment already had.
+ */
+async function configProjectRoot(): Promise<string | undefined> {
+  try {
+    const apcore = (await import("apcore-js")) as Record<string, any>;
+    const Config = apcore.Config ?? apcore.default?.Config;
+    if (!Config) return undefined;
+    const config =
+      typeof Config.getInstance === "function" ? Config.getInstance() : new Config();
+    const root = config?.projectRoot;
+    return typeof root === "string" && root !== "" ? root : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Build a `Registry` from a Config Bus `mcp.openapi` mapping, or `null`.
  *
  * Mirrors `acl-builder.ts`'s `buildAclFromConfig`: the raw `mcp.openapi`
@@ -323,10 +368,19 @@ function warnIfWritesHaveNoApprovalPath(
  * `authHeaderFactory` is deliberately not read from `openapiConfig`: it is a
  * function, and a Config Bus value sourced from YAML/JSON/env can never
  * carry one.
+ *
+ * `projectRoot` IS resolved here, because a caller reaching this route holds
+ * no `Config` of its own and a relative `spec` must resolve against
+ * `Config.projectRoot` rather than the process CWD — see `resolveSpecLocation`
+ * rule 3. Mirrors Python's `_resolve_project_root`.
  */
 export async function buildOpenapiBackendFromConfig(
   openapiConfig: unknown,
-  options: { registry?: Registry; hasOtherBackendSource?: boolean } = {},
+  options: {
+    registry?: Registry;
+    hasOtherBackendSource?: boolean;
+    projectRoot?: string;
+  } = {},
 ): Promise<Registry | null> {
   if (!openapiConfig || typeof openapiConfig !== "object") return null;
   const cfg = openapiConfig as Record<string, unknown>;
@@ -346,6 +400,7 @@ export async function buildOpenapiBackendFromConfig(
     timeout: typeof cfg.timeout === "number" ? cfg.timeout : 30,
     registry: options.registry,
     hasOtherBackendSource: options.hasOtherBackendSource ?? false,
+    projectRoot: options.projectRoot,
     acknowledgeUnapprovedWrites:
       typeof cfg.acknowledge_unapproved_writes === "boolean"
         ? cfg.acknowledge_unapproved_writes

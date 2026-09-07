@@ -6,6 +6,57 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.21.0] - 2026-09-07
+
+Bugfix release for two OpenAPI-backend defects in this package, found in a cross-SDK sweep that
+compared all three bridges line by line against `docs/features/openapi-backend.md`. One fix changes
+the effective value of a shipped configuration key by a factor of 1000 — see **Changed** — which is
+why this is a minor bump rather than a patch. Released together with `apcore-mcp-rust` 0.21.0 and
+`apcore-mcp-python` 0.21.0. 800 tests pass (was 793).
+
+### Changed
+
+- **`mcp.openapi.timeout`'s effective value changes by a factor of 1000.** The key is documented in
+  seconds and was passed to `loadSpec` — whose parameter is milliseconds — without conversion, so
+  what shipped was a millisecond budget wearing a seconds label. A deployment that discovered this
+  empirically and compensated (writing `timeout: 30000` to get 30 seconds) will now get 30000
+  seconds. Such a configuration should drop the compensation and use the documented seconds value.
+  See **Fixed** for why the old behaviour was a defect.
+
+### Fixed
+
+- **`mcp.openapi.timeout` is seconds and `loadSpec` takes milliseconds, so the documented default
+  was a 30 ms spec-fetch budget**
+  ([#10](https://github.com/aiperceivable/apcore-mcp-typescript/issues/10)).
+  `buildOpenapiBackendFromConfig` defaulted the key to `30` and passed it straight through to
+  `loadSpec`, whose option is milliseconds (`apcore-toolkit` `openapi-loader.ts`: "Request timeout
+  in milliseconds. Defaults to 30_000"). `docs/features/openapi-backend.md` line 367 documents it
+  in seconds — `timeout: 30.0  # spec fetch timeout, seconds` — so any remote spec URL that did not
+  answer within 30 ms aborted, looking like an intermittent network problem rather than a
+  configuration bug. It got *worse* the more carefully it was configured: the documented
+  `timeout: 5` produced a 5 ms budget. The value now converts at the `loadSpec` boundary, keeping
+  the Config Bus key in seconds to match the docs and the other two SDKs.
+
+- **The Config Bus and CLI routes never resolved `Config.projectRoot`**
+  ([apcore-mcp#19](https://github.com/aiperceivable/apcore-mcp/issues/19)). `resolveSpecLocation`
+  implemented the rule correctly, but nothing on either route ever supplied the base, so a relative
+  `mcp.openapi.spec` fell back to `process.cwd()` — precisely the population
+  `docs/features/openapi-backend.md` requirement 3 was written for (a supervisor spawning a worker,
+  a container whose entrypoint chdirs, a CLI invoked from a subdirectory). The lookup now happens
+  once inside `openapiBackend`, so every route reaches it rather than each call site having to
+  remember. `OpenAPIBackendOptions.projectRoot` becomes an override: omitted, it reads
+  `Config.projectRoot`, mirroring Python's `_resolve_project_root`. A `Config` that cannot be
+  loaded degrades to the CWD rather than aborting startup.
+
+### Added
+
+- `tests/openapi-backend-wiring.test.ts` (7 tests) — both defects above were invisible to the
+  existing suite, which hands `openapiBackend` an already-parsed document and calls
+  `resolveSpecLocation` directly with an explicit `projectRoot`: it covers the pure functions and
+  never the wiring between them, so no test ever performed a real fetch. These run a local HTTP
+  server answering after 120 ms and a temporary `Config.projectRoot`. Each was confirmed to fail
+  against the pre-fix code.
+
 ## [0.20.0] - 2026-09-06
 
 Bugfix release from a `/apcore-skills:sync` pass across all three bridges. 0.20.0's tests all passed
