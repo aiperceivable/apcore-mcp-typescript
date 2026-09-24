@@ -231,15 +231,43 @@ export class SchemaConverter {
         const resolved = this._resolveRef(refPath, defs);
 
         // Track this ref as active during recursion
+        let inlinedTarget: unknown;
         activeRefs.add(refPath);
         try {
-          const result = this._inlineRefs(resolved, defs, activeRefs, depth + 1);
-          return result;
+          inlinedTarget = this._inlineRefs(resolved, defs, activeRefs, depth + 1);
         } finally {
           // [SC-2] Use try/finally so an exception mid-recursion doesn't
           // leave activeRefs poisoned for subsequent sibling branches.
           activeRefs.delete(refPath);
         }
+
+        // [SC-SIB] Sibling keys written beside `$ref` (e.g.
+        // `{"$ref": "#/$defs/Token", "x-sensitive": true}`) MUST survive
+        // resolution — dropping them silently is a credential-disclosure
+        // path, since the router's output redaction reads `x-sensitive` off
+        // the *resolved* schema (see docs/features/schema-converter.md
+        // #ref-sibling-keys-are-preserved). Shallow-merge every key besides
+        // `$ref` OVER the resolved-and-inlined target, with the sibling
+        // winning on conflict — it is the caller's explicit, more specific
+        // value, and the $defs entry is only the default. A chained
+        // `$ref`-to-`$ref` carries siblings contributed at each hop, with
+        // the outermost sibling winning, because each recursion level here
+        // applies its own siblings last, on top of what the inner call
+        // already merged in. A sibling that is itself a subschema is
+        // independently walked through `_inlineRefs` so it cannot smuggle
+        // an unresolved nested `$ref` past the resolver.
+        const siblingKeys = Object.keys(obj).filter((key) => key !== "$ref");
+        if (siblingKeys.length === 0) {
+          return inlinedTarget;
+        }
+        const merged: Record<string, unknown> =
+          inlinedTarget !== null && typeof inlinedTarget === "object" && !Array.isArray(inlinedTarget)
+            ? { ...(inlinedTarget as Record<string, unknown>) }
+            : {};
+        for (const key of siblingKeys) {
+          merged[key] = this._inlineRefs(obj[key], defs, activeRefs, depth + 1);
+        }
+        return merged;
       }
 
       // Otherwise, recurse into each key (skip $defs)

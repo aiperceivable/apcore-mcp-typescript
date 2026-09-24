@@ -12,11 +12,11 @@ importers:
         specifier: '>=1.26.0'
         version: 1.26.0(zod@4.3.6)
       apcore-js:
-        specifier: '>=0.30.0'
-        version: 0.30.0
+        specifier: '>=0.31.0'
+        version: 0.31.0
       apcore-toolkit:
-        specifier: '>=0.11.1'
-        version: 0.11.1(@sinclair/typebox@0.34.48)
+        specifier: '>=0.12.0'
+        version: 0.12.0(@sinclair/typebox@0.34.48)
       jsonwebtoken:
         specifier: '>=9.0.3'
         version: 9.0.3
@@ -783,6 +783,9 @@ packages:
   ajv@8.18.0:
     resolution: {integrity: sha512-PlXPeEWMXMZ7sPYOHqmDyCJzcfNrUr3fGNKtezX14ykXOEIvyK81d+qydx89KY5O71FKMPaQ2vBfBFI5NHR63A==}
 
+  ajv@8.20.0:
+    resolution: {integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==}
+
   ansi-regex@5.0.1:
     resolution: {integrity: sha512-quJQXlTSUGL2LH9SUXo8VwsY4soanhgo6LNSm84E1LBcE8s3O0wpdiRzyR9z/ZZJMlMWv37qOOb9pdJlMUEKFQ==}
     engines: {node: '>=8'}
@@ -799,12 +802,12 @@ packages:
     resolution: {integrity: sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg==}
     engines: {node: '>=12'}
 
-  apcore-js@0.30.0:
-    resolution: {integrity: sha512-bsAD5ZYZGBAVltpYHbF68Cg9kJ/cXwfFNPORKZJ3yPJNxVCR07SLIsnqRPg4BYb4dbOONpXzhJs+PgewHnfCtA==}
+  apcore-js@0.31.0:
+    resolution: {integrity: sha512-zZeo3F5hExOcoX0KeVhd2hmFG4KY6LAm6zC7Fb+Y0RDIJhGQgahIIaG4GJ9eMlQoRBLpsfEPgeCmzlh45QM6iw==}
     engines: {node: '>=20.0.0'}
 
-  apcore-toolkit@0.11.1:
-    resolution: {integrity: sha512-8xr/kvfQMQ9wveGeuIXVTOhXniN2ew/forc15nIdzZUeiMeAuWzPp0pyzq5a85787cUDKuG/da0mvnptdhsg9g==}
+  apcore-toolkit@0.12.0:
+    resolution: {integrity: sha512-W0MpqRJe0P63Uz24HIxG/qoODNb/jwbljrtpA8EROC9WnQHXgY2Hw8H7YOTSF9GMUjSzemo8qW0CPvzHSkEu/w==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       '@sinclair/typebox': '>=0.31.0'
@@ -1084,6 +1087,9 @@ packages:
   fast-uri@3.1.0:
     resolution: {integrity: sha512-iPeeDKJSWf4IEOasVVrknXpaBV0IApz/gp7S2bb7Z4Lljbl2MGJRqInZiUrQwV16cpzw/D3S5j5Julj/gT52AA==}
 
+  fast-uri@3.1.8:
+    resolution: {integrity: sha512-GZMtZUTNRpOVIECoXwLNZS5xUGE+mVNbTB8h/7Rwh2TFWcBQiPzTgyZi05BF9UMZKkLJv8XBRJTlU7zg8+ZfMg==}
+
   fdir@6.5.0:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
     engines: {node: '>=12.0.0'}
@@ -1259,6 +1265,10 @@ packages:
 
   js-yaml@4.1.1:
     resolution: {integrity: sha512-qQKT4zQxXl8lLwBtHMWwaTcGfFOZviOJet3Oy/xmGk2gZH677CJM9EvtfdSkgWcATZhj/55JZ0rmy3myCT5lsA==}
+    hasBin: true
+
+  js-yaml@4.3.2:
+    resolution: {integrity: sha512-SFNOvSJ+Dgf/9An904Yx+CgSlIPCkIpao4qo51lpee25TIRejdH3rhR4EZMGoNx3/TP3O+wzWuiTFl4sqbltzA==}
     hasBin: true
 
   json-buffer@3.0.1:
@@ -1672,8 +1682,8 @@ packages:
   uri-js@4.4.1:
     resolution: {integrity: sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg==}
 
-  uuid@11.1.0:
-    resolution: {integrity: sha512-0/A9rDy9P7cJ+8w1c9WD9V//9Wj15Ce2MPz8Ri6032usz+NfePxx5AcN3bN+r6ZL6jEo066/yNYB3tn4pQEx+A==}
+  uuid@11.1.1:
+    resolution: {integrity: sha512-vIYxrBCC/N/K+Js3qSN88go7kIfNPssr/hHCesKCQNAjmgvYS2oqr69kIufEG+O4+PfezOH4EbIeHCfFov8ZgQ==}
     hasBin: true
 
   vary@1.1.2:
@@ -2364,6 +2374,13 @@ snapshots:
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
+  ajv@8.20.0:
+    dependencies:
+      fast-deep-equal: 3.1.3
+      fast-uri: 3.1.8
+      json-schema-traverse: 1.0.0
+      require-from-string: 2.0.2
+
   ansi-regex@5.0.1: {}
 
   ansi-regex@6.2.2: {}
@@ -2374,18 +2391,18 @@ snapshots:
 
   ansi-styles@6.2.3: {}
 
-  apcore-js@0.30.0:
+  apcore-js@0.31.0:
     dependencies:
       '@sinclair/typebox': 0.34.48
-      js-yaml: 4.1.1
-      uuid: 11.1.0
+      js-yaml: 4.3.2
+      uuid: 11.1.1
 
-  apcore-toolkit@0.11.1(@sinclair/typebox@0.34.48):
+  apcore-toolkit@0.12.0(@sinclair/typebox@0.34.48):
     dependencies:
       '@sinclair/typebox': 0.34.48
-      ajv: 8.18.0
-      apcore-js: 0.30.0
-      js-yaml: 4.1.1
+      ajv: 8.20.0
+      apcore-js: 0.31.0
+      js-yaml: 4.3.2
 
   apdev-js@0.2.4(typescript@5.9.3):
     dependencies:
@@ -2726,6 +2743,8 @@ snapshots:
 
   fast-uri@3.1.0: {}
 
+  fast-uri@3.1.8: {}
+
   fdir@6.5.0(picomatch@4.0.3):
     optionalDependencies:
       picomatch: 4.0.3
@@ -2893,6 +2912,10 @@ snapshots:
   js-tokens@9.0.1: {}
 
   js-yaml@4.1.1:
+    dependencies:
+      argparse: 2.0.1
+
+  js-yaml@4.3.2:
     dependencies:
       argparse: 2.0.1
 
@@ -3320,7 +3343,7 @@ snapshots:
     dependencies:
       punycode: 2.3.1
 
-  uuid@11.1.0: {}
+  uuid@11.1.1: {}
 
   vary@1.1.2: {}
 

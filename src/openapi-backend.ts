@@ -49,7 +49,15 @@ export interface OpenAPIBackendOptions {
    * apcore-toolkit's own default.
    */
   timeout?: number;
-  authHeaderFactory?: () => Record<string, string>;
+  /**
+   * Called once per request to produce auth headers. May return a promise —
+   * apcore-toolkit 0.12.0 widened `HTTPProxyRegistryWriter.authHeaderFactory`
+   * to accept `Record<string, string> | Promise<Record<string, string>>` and
+   * awaits it internally (a no-op for a synchronous factory), so this option
+   * is forwarded verbatim at the `HTTPProxyRegistryWriter` construction below
+   * rather than converted.
+   */
+  authHeaderFactory?: () => Record<string, string> | Promise<Record<string, string>>;
   registry?: Registry;
   hasOtherBackendSource?: boolean;
   /**

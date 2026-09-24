@@ -6,6 +6,78 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.22.0] - 2026-09-24
+
+> **Shipped in all three bridges.** Implemented in `apcore-mcp-python`, `apcore-mcp-typescript` and
+> `apcore-mcp-rust`. See the docs repo's [CHANGELOG](https://github.com/aiperceivable/apcore-mcp/blob/main/CHANGELOG.md#0220---2026-09-24)
+> for the cross-bridge summary.
+
+Raises the required floor to apcore-js 0.31.0 and apcore-toolkit 0.12.0, fixes a credential-disclosure
+defect found while reviewing what those two releases changed, and passes through a capability
+apcore-toolkit 0.12.0 added. 809 tests pass (was 800).
+
+### Security
+
+- **`$ref` sibling keys were discarded during `SchemaConverter._inlineRefs`, dropping
+  `x-sensitive`** ([`schema_converter.json`](https://github.com/aiperceivable/apcore-mcp/blob/main/conformance/fixtures/schema_converter.json),
+  new fixture, 8 cases + 1 error case). A node like `{"$ref": "#/$defs/Token", "x-sensitive": true}`
+  resolved to the referenced `$defs` entry **alone** — the early `return result;` inside the
+  `try`/`finally` in `src/adapters/schema.ts::_inlineRefs` skipped the loop that would otherwise
+  have copied sibling keys, so every key written beside `$ref` (`x-sensitive`, `description`,
+  `deprecated`, ...) vanished. This is a credential-disclosure path, not a fidelity nicety: the
+  `ExecutionRouter`'s output redaction (`src/server/router.ts::_maybeRedact`) reads `x-sensitive`
+  off the *resolved* output schema to decide what to mask, so a field marked sensitive behind a
+  `$ref` reached the redactor with nothing to redact on and was returned in plaintext.
+
+  `_inlineRefs` now resolves the `$ref` target, recursively inlines refs within it (unchanged), and
+  **shallow-merges the node's sibling keys over the resolved-and-inlined result, sibling winning on
+  key conflict** — the sibling is the caller's explicit, more specific value; the `$defs` entry is
+  only the default. A sibling that is itself a subschema is independently walked through
+  `_inlineRefs`, so it cannot smuggle an unresolved nested `$ref` past the resolver, and a chained
+  `$ref`-to-`$ref` carries siblings contributed at each hop, with the outermost sibling winning. A
+  `$ref` naming a definition absent from `$defs` still throws unchanged — `_resolveRef`'s error
+  behavior, including the `PROTO_DENY_LIST` guard, was not touched; this only changes what happens
+  to siblings once a reference *does* resolve. See
+  [`docs/features/schema-converter.md#ref-sibling-keys-are-preserved`](https://github.com/aiperceivable/apcore-mcp/blob/main/docs/features/schema-converter.md#ref-sibling-keys-are-preserved).
+
+  Found by reviewing what apcore 0.31.0 (decision D-98/D-124) and apcore-toolkit 0.12.0 changed:
+  both fixed the identical defect in their own `$ref` resolvers. `SchemaConverter._inlineRefs` is a
+  fully independent implementation with no shared code path to either, so it was not fixed by
+  bumping the dependency floor and carried the same latent bug.
+
+  New: `tests/schema-converter-conformance.test.ts` (9 tests) — drives every `test_cases[]` and
+  `error_cases[]` entry in the shared fixture through the public
+  `SchemaConverter.convertInputSchema(descriptor, { strict: false })` path (`strict: false` per the
+  fixture's `entry_point`, so `additionalProperties` injection doesn't add noise). Confirmed to fail
+  against the pre-fix code on the sibling-preservation cases.
+
+### Changed — dependency floor
+
+- **Required `apcore-js` floor raised to `>=0.31.0`** (from `>=0.30.0`) and **required
+  `apcore-toolkit` floor raised to `>=0.12.0`** (from `>=0.11.1`) in `package.json`; `pnpm-lock.yaml`
+  regenerated and now resolves `apcore-js@0.31.0` / `apcore-toolkit@0.12.0`. apcore-js 0.31.0 is two
+  joined audit cycles (`PROTOCOL_SPEC` v1.37.0 → v1.59.0) settling 54 cross-language divergences,
+  five of them security defects, none on a surface this package uses (Context/Identity
+  construction, `Registry`, `Module`, `ModuleError`, `redactSensitive`, ACL — grepped against every
+  symbol both changelogs named as changed). apcore-toolkit 0.12.0 adds the Device Authorization Flow
+  (unused here) and `BindingLoader.load`'s `pattern` parameter (`BindingLoader` is not used by this
+  package — confirmed via grep), and raises its own apcore floor to 0.31.0. After running the full
+  suite (below) and `pnpm run build`/`pnpm run typecheck`, the floor raise itself required no other
+  code change beyond the security fix above and the `authHeaderFactory` widening below.
+
+### Added
+
+- **`OpenApiBackendOptions.authHeaderFactory` accepts an async factory.** Widened from
+  `() => Record<string, string>` to `() => Record<string, string> | Promise<Record<string, string>>`
+  in `src/openapi-backend.ts`, matching apcore-toolkit 0.12.0's own widening of
+  `HTTPProxyRegistryWriter.authHeaderFactory`. This package's option is forwarded to
+  `HTTPProxyRegistryWriter` as a direct pass-through (`authHeaderFactory: options.authHeaderFactory`
+  at the `openapiBackend` writer construction), which already awaits the value internally — awaiting
+  a non-promise is a no-op — so no other code changed. Purely additive and backward-compatible:
+  every existing synchronous factory keeps working unchanged, and callers can now also pass a
+  credential factory that performs a token refresh (e.g. an OAuth client-credentials exchange)
+  before returning headers.
+
 ## [0.21.0] - 2026-09-07
 
 Bugfix release for two OpenAPI-backend defects in this package, found in a cross-SDK sweep that
