@@ -277,7 +277,7 @@ describe("CLI (cli.ts)", () => {
     expect(mockServe).toHaveBeenCalled();
     const registryArg = mockServe.mock.calls[0]?.[0] as { list: () => string[] } | undefined;
     expect(registryArg).toBeDefined();
-    expect(registryArg!.list()).toContain("listpets");
+    expect(registryArg!.list()).toContain("list_pets");
   });
 
   it("fails when --extensions-dir path does not exist", async () => {

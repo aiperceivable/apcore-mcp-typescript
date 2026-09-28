@@ -82,28 +82,35 @@ export interface OpenAPIBackendOptions {
 }
 
 /**
- * Map a scanner-derived module ID into apcore's legal alphabet, or `null`.
+ * Map a module ID into apcore's legal alphabet, or `null`.
  *
- * apcore-toolkit's `deriveModuleId` sanitizes to `[A-Za-z0-9_.-]`. apcore's
- * registry accepts only lowercase, digits, underscores and dots — "no hyphens"
- * — so the two alphabets differ and the scanner's output is not directly
- * registrable. Measured against apcore 0.30.0 and apcore-toolkit 0.11.1, only
- * two of nine realistic operation shapes register unrepaired, and the canonical
- * Swagger Petstore (`listPets`, `createPets`, `showPetById`) is entirely in the
- * rejected set: it scans cleanly, fails registration on every operation as a
- * per-module `WriteResult`, and yields an **empty registry**.
+ * The projection is lowercase, then `-` -> `_`. A segment that still does not
+ * begin with a lowercase letter (`v1.2fa.post`) cannot be repaired without
+ * inventing a character, so the result is `null`.
  *
- * The projection is lowercase, then `-` -> `_`. Both are mechanical and
- * lossless up to case. It deliberately stops there: a segment that still does
- * not begin with a lowercase letter (`/v1/2fa` -> `v1.2fa.post`) can only be
- * repaired by *inventing* a character, which is a naming decision that belongs
- * to the operator's own hook rather than to a silent default.
+ * @deprecated apcore-toolkit >= 0.13.0 emits every `moduleId` in apcore's
+ *   Canonical ID alphabet itself — camelCase split into words (`listPets` ->
+ *   `list_pets`), `-` and other characters replaced with `_`, a legal ID never
+ *   rewritten — so this projection is no longer needed, and nothing in
+ *   apcore-mcp calls it any more. Kept, with its behaviour unchanged, for
+ *   callers that imported it; it will be removed in a later minor release.
+ *   It does NOT agree with the toolkit: it lowercases without splitting words
+ *   (`listPets` -> `listpets`).
  */
 export function projectModuleId(moduleId: string): string | null {
   const candidate = moduleId.toLowerCase().replace(/-/g, "_");
   if (!candidate) return null;
   if (!candidate.split(".").every((seg) => MODULE_ID_SEGMENT.test(seg))) return null;
   return candidate;
+}
+
+/**
+ * The first segment of `moduleId` apcore's registry would refuse, or `null`
+ * when every segment is legal. An empty ID yields the empty segment, which is
+ * illegal too.
+ */
+function illegalSegment(moduleId: string): string | null {
+  return moduleId.split(".").find((seg) => !MODULE_ID_SEGMENT.test(seg)) ?? null;
 }
 
 /**
@@ -190,51 +197,45 @@ export async function openapiBackend(
       : (resolved as Record<string, unknown>);
 
   // --- 2. Scan --------------------------------------------------------------
-  const skipped: Array<{ derived: string; segment: string }> = [];
-
-  /**
-   * Caller hook first, projection last.
-   *
-   * The order is normative: running the projection last makes the invariant
-   * *every registered module ID is apcore-legal* hold unconditionally, whatever
-   * a caller's own hook returns. It also runs BEFORE the scanner's
-   * `deduplicateIds` — which happens after this callback — because lowercasing
-   * can CREATE a collision the document did not have (`listPets`/`listpets`).
-   */
-  const project = (mod: ScannedModule): ScannedModule | null => {
-    let module: ScannedModule | null = mod;
-    if (options.transformModule) {
-      module = options.transformModule(module);
-      if (module === null) return null;
-    }
-    const projected = projectModuleId(module.moduleId);
-    if (projected === null) {
-      const lowered = module.moduleId.toLowerCase().replace(/-/g, "_");
-      const bad = lowered.split(".").find((s) => !MODULE_ID_SEGMENT.test(s)) ?? module.moduleId;
-      skipped.push({ derived: module.moduleId, segment: bad });
-      return null;
-    }
-    return projected === module.moduleId ? module : { ...module, moduleId: projected };
-  };
-
-  const modules = await new OpenAPIScanner().scan(document, {
+  // The caller's hooks are forwarded verbatim. apcore-toolkit >= 0.13.0
+  // normalises every module ID into apcore's Canonical ID alphabet itself —
+  // after basePathPrefix and both ID-affecting hooks, and before its own
+  // deduplicateIds — so the bridge applies no projection of its own.
+  const scanned = await new OpenAPIScanner().scan(document, {
     include: options.include,
     exclude: options.exclude,
     basePathPrefix: options.prefix,
     includeDeprecated: options.includeDeprecated ?? true,
     transformOperation: options.transformOperation,
-    transformModule: project,
+    transformModule: options.transformModule,
     deriveModuleId: options.deriveModuleId,
   });
 
-  for (const s of skipped) {
+  // --- 3. Skip what apcore's registry would refuse (FR-OPENAPI-008) ---------
+  // Normalisation cannot repair a segment that begins with a digit
+  // (`/v1/2fa` -> `v1.2fa.post`) or an empty ID from a hook; the scanner still
+  // emits such a module, with a legality warning. The check runs HERE, on the
+  // ID `scan` returned — never inside `transformModule`, which sees the ID
+  // before the toolkit's final normalisation (a hook returning `MyThing` or a
+  // `PetStore` prefix is still to be normalised there) — and before the
+  // preflight and the writer, so a skipped module never becomes a failed
+  // WriteResult. Its scan warnings, the toolkit's legality warning among them,
+  // are superseded by the one skip warning below.
+  const modules: ScannedModule[] = [];
+  for (const m of scanned) {
+    const segment = illegalSegment(m.moduleId);
+    if (segment === null) {
+      modules.push(m);
+      continue;
+    }
     log.warn(
-      `OpenAPI operation skipped: derived module ID '${s.derived}' is not a legal apcore module ` +
-        `ID — the segment '${s.segment}' does not match ${MODULE_ID_SEGMENT.source}. apcore's ` +
-        `registry would refuse it. Supply a deriveModuleId or transformModule hook to name this ` +
-        `operation yourself.`,
+      `OpenAPI operation skipped: module ID '${m.moduleId}' is not a legal apcore module ID — ` +
+        `the segment '${segment}' does not match ${MODULE_ID_SEGMENT.source}. apcore's registry ` +
+        `would refuse it. Supply a deriveModuleId or transformModule hook to name this operation ` +
+        `yourself.`,
     );
   }
+
   for (const m of modules) {
     for (const w of m.warnings ?? []) log.warn(`OpenAPI scan warning for ${m.moduleId}: ${w}`);
   }
@@ -242,7 +243,7 @@ export async function openapiBackend(
     log.warn("OpenAPI document yielded zero modules; the server will start with no tools from it.");
   }
 
-  // --- 3. Collision preflight -----------------------------------------------
+  // --- 4. Collision preflight -----------------------------------------------
   const target = options.registry ?? new Registry();
   const existing = new Set(registryIds(target));
   const collisions = modules
@@ -257,7 +258,7 @@ export async function openapiBackend(
     );
   }
 
-  // --- 4. Base URL ----------------------------------------------------------
+  // --- 5. Base URL ----------------------------------------------------------
   const baseUrl = options.baseUrl ?? documentServerUrl(document);
   if (!baseUrl) {
     throw new Error(
@@ -266,7 +267,7 @@ export async function openapiBackend(
     );
   }
 
-  // --- 5. Write -------------------------------------------------------------
+  // --- 6. Write -------------------------------------------------------------
   const writer = new HTTPProxyRegistryWriter({
     baseUrl,
     authHeaderFactory: options.authHeaderFactory,

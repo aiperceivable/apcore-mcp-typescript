@@ -32,8 +32,8 @@ For full documentation, including Quick Start guides for both Python and TypeScr
 ## Requirements
 
 - Node.js >= 18.0.0
-- `apcore-js >= 0.21.1`
-- Optional: `apcore-toolkit >= 0.6.1` for Markdown-rendered tool descriptions (declared under `optionalDependencies`).
+- `apcore-js >= 0.31.0`
+- `apcore-toolkit >= 0.13.0` — a runtime dependency: Markdown-rendered tool descriptions, the output formatters, and the OpenAPI backend. 0.13.0 is the floor because the OpenAPI backend registers the module IDs its `OpenAPIScanner` emits, and only 0.13.0+ emits them in apcore's Canonical ID alphabet.
 
 ## Installation
 

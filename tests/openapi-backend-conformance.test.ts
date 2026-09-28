@@ -57,9 +57,22 @@ const NORMALIZER = new ModuleIDNormalizer();
 
 function collector() {
   const messages: string[] = [];
+  const warnings: string[] = [];
+  const errors: string[] = [];
   return {
     messages,
-    logger: { warn: (m: string) => messages.push(m), error: (m: string) => messages.push(m) },
+    warnings,
+    errors,
+    logger: {
+      warn: (m: string) => {
+        messages.push(m);
+        warnings.push(m);
+      },
+      error: (m: string) => {
+        messages.push(m);
+        errors.push(m);
+      },
+    },
   };
 }
 
@@ -88,7 +101,7 @@ describe("conformance: openapiBackend modules", () => {
   }
   for (const c of FIXTURE.test_cases) {
     it(c.id, async () => {
-      const { messages, logger } = collector();
+      const { messages, warnings, errors, logger } = collector();
       const registry = await openapiBackend(c.document, { ...toOptions(c.options), logger });
 
       expect(ids(registry).sort()).toEqual(c.expected_modules.map((m) => m.module_id).sort());
@@ -120,13 +133,23 @@ describe("conformance: openapiBackend modules", () => {
         }
       }
 
+      // `notes.expected_skipped` in the fixture: a warning naming the emitted
+      // ID and the segment is necessary but, since apcore-toolkit 0.13.0
+      // appends its own legality warning, no longer sufficient. What proves
+      // the skip is that the module never reached the writer — no error names it.
       for (const skip of c.expected_skipped ?? []) {
-        // A transformModule returning null drops the module SILENTLY — the
-        // warning is the bridge's to emit.
-        expect(messages.join(" "), `${c.id}: no warning named the skipped operation`).toContain(
-          skip.derived_module_id,
-        );
-        expect(messages.join(" ")).toContain(skip.reason_substring);
+        expect(
+          warnings.some(
+            (w) => w.includes(skip.derived_module_id) && w.includes(skip.reason_substring),
+          ),
+          `${c.id}: no warning named the skipped module ${skip.derived_module_id} together with ` +
+            `the offending segment ${skip.reason_substring}`,
+        ).toBe(true);
+        expect(
+          errors.filter((e) => e.includes(skip.derived_module_id)),
+          `${c.id}: ${skip.derived_module_id} reached the writer and failed there; the bridge ` +
+            `must skip it BEFORE HTTPProxyRegistryWriter.write`,
+        ).toEqual([]);
       }
     });
   }

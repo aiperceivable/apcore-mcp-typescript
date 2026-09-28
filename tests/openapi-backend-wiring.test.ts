@@ -87,7 +87,7 @@ describe("#10: mcp.openapi.timeout is seconds, loadSpec takes milliseconds", () 
       base_url: "https://api.example.com",
     });
     expect(registry).not.toBeNull();
-    expect(registry!.list()).toContain("listpets");
+    expect(registry!.list()).toContain("list_pets");
   });
 
   it("an explicit timeout is honoured in seconds, not milliseconds", async () => {
@@ -95,7 +95,7 @@ describe("#10: mcp.openapi.timeout is seconds, loadSpec takes milliseconds", () 
       baseUrl: "https://api.example.com",
       timeout: 5,
     });
-    expect(registry.list()).toContain("listpets");
+    expect(registry.list()).toContain("list_pets");
   });
 
   it("a sub-fetch-duration timeout still aborts, so the value is not ignored", async () => {
@@ -125,14 +125,14 @@ describe("#19: a relative spec resolves against Config.projectRoot", () => {
       base_url: "https://api.example.com",
     });
     expect(registry).not.toBeNull();
-    expect(registry!.list()).toContain("listpets");
+    expect(registry!.list()).toContain("list_pets");
   });
 
   it("reads Config.projectRoot on a direct call with no explicit projectRoot", async () => {
     const registry = await openapiBackend("./openapi.json", {
       baseUrl: "https://api.example.com",
     });
-    expect(registry.list()).toContain("listpets");
+    expect(registry.list()).toContain("list_pets");
   });
 
   it("an explicit projectRoot still wins over Config", async () => {
@@ -143,7 +143,7 @@ describe("#19: a relative spec resolves against Config.projectRoot", () => {
       baseUrl: "https://api.example.com",
       projectRoot: other,
     });
-    expect(registry.list()).toContain("listpets");
+    expect(registry.list()).toContain("list_pets");
   });
 
   it("falls back to the CWD when Config carries no project root", async () => {
