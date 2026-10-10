@@ -128,6 +128,22 @@ describe("ErrorMapper", () => {
     expect(result.details).not.toBeNull();
   });
 
+  it.each([
+    [{ path: "/items/0/a~1b~0c", keyword: "type", message: "invalid" }, "/items/0/a~1b~0c"],
+    [{ path: "", keyword: "required", message: "invalid" }, "<root>"],
+    [{ path: "/", keyword: "type", message: "invalid" }, "/"],
+    [{ path: null, field: "legacy", message: "invalid" }, "legacy"],
+    [{ path: 42, field: "legacy", message: "invalid" }, "legacy"],
+    [{ path: "/name", field: "legacy", keyword: "type", message: "invalid" }, "/name"],
+  ])("formats canonical validation path %j", (entry, location) => {
+    const details = { errors: [entry] };
+    const result = mapper.toMcpError(
+      createModuleError("SCHEMA_VALIDATION_ERROR", "Validation failed", details),
+    );
+    expect(result.message).toBe(`Schema validation failed:\n  ${location}: invalid`);
+    expect(result.details).toEqual(details);
+  });
+
   // TC-ERROR-004: ACLDeniedError -> sanitized
   it("sanitizes ACL_DENIED to 'Access denied' without leaking caller info", () => {
     const error = createModuleError(

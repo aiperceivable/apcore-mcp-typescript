@@ -438,7 +438,9 @@ export class ErrorMapper {
    * Format a schema validation error message with field-level details.
    *
    * Extracts the `errors` array from details and formats each entry
-   * as "field: message" lines appended to the base message.
+   * as "location: message" lines appended to the base message. A string
+   * JSON Pointer path takes precedence over the legacy field key; an empty
+   * pointer is displayed as <root>.
    */
   private _formatValidationError(
     details: Record<string, unknown> | null,
@@ -458,7 +460,8 @@ export class ErrorMapper {
       .map((err) => {
         if (err !== null && typeof err === "object") {
           const entry = err as Record<string, unknown>;
-          const field = entry["field"] ?? "unknown";
+          const path = entry["path"];
+          const field = typeof path === "string" ? (path || "<root>") : (entry["field"] ?? "unknown");
           const message = entry["message"] ?? "validation error";
           return `  ${String(field)}: ${String(message)}`;
         }
