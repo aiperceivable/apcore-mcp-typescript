@@ -235,7 +235,12 @@ export class AsyncTaskBridge {
    * `metadata.async === true` OR `annotations.extra["mcp_async"] === "true"`.
    */
   isAsyncModule(descriptor: ModuleDescriptor | null | undefined): boolean {
-    if (!this._enabled || !descriptor) return false;
+    return this._enabled && AsyncTaskBridge.isAsyncModuleDescriptor(descriptor);
+  }
+
+  /** Detect descriptor hints independently of whether this bridge is enabled. */
+  static isAsyncModuleDescriptor(descriptor: ModuleDescriptor | null | undefined): boolean {
+    if (!descriptor) return false;
     const meta = descriptor.metadata ?? {};
     // Accept both boolean true AND the string "true" — Python and Rust
     // both accept the string form (registries that store annotations as
@@ -243,7 +248,7 @@ export class AsyncTaskBridge {
     // semantics so that `"True"` / `"TRUE"` round-tripped through YAML
     // dispatchers agree across SDKs. [A-D-021 / A-003 cross-lang fix]
     const isTruthyAsyncString = (v: unknown): boolean =>
-      typeof v === "string" && v.toLowerCase() === "true";
+      typeof v === "string" && v.trim().toLowerCase() === "true";
     const asyncFlag = meta["async"];
     if (asyncFlag === true || isTruthyAsyncString(asyncFlag)) return true;
     const annotations = descriptor.annotations;

@@ -8,6 +8,7 @@
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { observeStructuredProtocol, supportsStructuredOutput, addStructuredOutput } from "./structured-output.js";
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
@@ -29,7 +30,7 @@ import type { Registry, ModuleDescriptor, JsonSchema } from "../types.js";
 import type { ExecutionRouter } from "./router.js";
 import type { HandleCallExtra } from "./router.js";
 import { buildTraceparent } from "./trace-context.js";
-import { APCORE_META_TOOL_PREFIX, type AsyncTaskBridge } from "./async-task-bridge.js";
+import { APCORE_META_TOOL_PREFIX, AsyncTaskBridge } from "./async-task-bridge.js";
 import { ApprovalBridge } from "./approval-bridge.js";
 import {
   isMarkdownAvailable,
@@ -185,7 +186,9 @@ export class MCPServerFactory {
       }
     }
 
-    return new Server({ name, version }, { capabilities });
+    const server = new Server({ name, version }, { capabilities });
+    observeStructuredProtocol(server);
+    return server;
   }
 
   /**
@@ -305,6 +308,10 @@ export class MCPServerFactory {
         openWorldHint: mcpAnnotations.openWorldHint,
       },
     };
+
+    if (descriptor.outputSchema.type === "object" && !AsyncTaskBridge.isAsyncModuleDescriptor(descriptor)) {
+      tool.outputSchema = structuredClone(descriptor.outputSchema) as Tool["outputSchema"];
+    }
 
     const hasStreaming = descriptor.annotations?.streaming === true;
 
@@ -609,6 +616,7 @@ export class MCPServerFactory {
     router: ExecutionRouter,
     options?: { asyncTaskBridge?: AsyncTaskBridge; approvalBridge?: ApprovalBridge },
   ): void {
+    observeStructuredProtocol(server);
     // [D11-014] If asyncTaskBridge is provided, extend tools list with meta-tools.
     const bridge = options?.asyncTaskBridge;
     const approvalBridge = options?.approvalBridge;
@@ -620,8 +628,12 @@ export class MCPServerFactory {
     }
 
     // Handle tools/list requests
-    server.setRequestHandler(ListToolsRequestSchema, async () => {
-      return { tools: allTools };
+    server.setRequestHandler(ListToolsRequestSchema, async (_request, extra) => {
+      const listedTools = supportsStructuredOutput(server, extra) ? allTools : allTools.map(tool => {
+        const { outputSchema: _outputSchema, ...legacyTool } = tool;
+        return legacyTool;
+      });
+      return { tools: listedTools };
     });
 
     // Handle tools/call requests
@@ -725,7 +737,9 @@ export class MCPServerFactory {
         };
       }
 
-      return result;
+      return supportsStructuredOutput(server, extra)
+        ? addStructuredOutput(result, allTools.find(tool => tool.name === name))
+        : result;
     });
   }
 }

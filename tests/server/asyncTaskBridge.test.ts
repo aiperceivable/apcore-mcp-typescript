@@ -32,6 +32,16 @@ function makeDescriptor(overrides: Partial<ModuleDescriptor> = {}): ModuleDescri
   };
 }
 
+describe("AsyncTaskBridge hint parity", () => {
+  it("normalizes whitespace in both metadata and annotation hints", () => {
+    const bridge = new AsyncTaskBridge(buildManager());
+    expect(bridge.isAsyncModule(makeDescriptor({ metadata: { async: " true " } }))).toBe(true);
+    const annotations = { readonly: false, destructive: false, idempotent: false, requiresApproval: false, openWorld: false, streaming: false, extra: { mcp_async: " TRUE " } };
+    expect(bridge.isAsyncModule(makeDescriptor({ annotations }))).toBe(true);
+    expect(new AsyncTaskBridge(buildManager(), { enabled: false }).isAsyncModule(makeDescriptor({ metadata: { async: " true " } }))).toBe(false);
+  });
+});
+
 describe("AsyncTaskBridge", () => {
   it("isAsyncModule detects metadata.async=true", () => {
     const bridge = new AsyncTaskBridge(buildManager());

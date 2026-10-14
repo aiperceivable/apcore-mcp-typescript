@@ -636,8 +636,8 @@ export class TransportManager {
             }
           };
 
+          // Server.connect starts the SDK transport after installing callbacks.
           await server.connect(transport);
-          await transport.start();
         } else if (url.pathname === messagesEndpoint && req.method === "POST") {
           // Route message to the correct session transport
           const sessionId = url.searchParams.get("sessionId");

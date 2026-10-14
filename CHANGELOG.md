@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-10-14
+
+Prepared locally; publish after apcore 0.32.1 is available and the dependency floor is raised to that release.
+
+### Added
+
+- Advertise synchronous object output schemas and return structured objects derived from the primary already-redacted JSON text for supported modern MCP clients. Preserve additional trace text and legacy wire formats.
+- Validate the exact advertised schema after redaction, using local references and declared schema dialects without fetching external schemas. Invalid or unrepresentable output returns a payload-free tool error.
+
+### Fixed
+
+- Track protocol negotiation for caller-supplied MCP servers through public transport APIs; distinguish SSE session state from Streamable HTTP request headers.
+- Remove duplicate SSE transport startup, normalize async hints, reject non-finite or precision-losing output numbers, and clear stale structured payloads. Preserve negotiated protocol state when a second transport connection is rejected.
+- Use a declared Ajv dependency to validate raw schemas without lossy TypeBox conversion, including reference siblings, anchors, and composition constraints.
+
+### Compatibility
+
+- Existing public factory and router signatures remain unchanged. Configure handlers before MCP initialization; legacy clients receive no new fields.
+- Reference-based sensitive output requires the core 0.32.1 dependency fix: https://github.com/aiperceivable/apcore-typescript/issues/38. Publish that core patch and update the dependency floor before publishing this SDK.
+
 ## [0.22.3] - 2026-10-09
 
 ### Changed

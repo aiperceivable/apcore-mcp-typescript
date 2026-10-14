@@ -393,6 +393,53 @@ const mcp = new APCoreMCP("./extensions", { outputFormat: "csv" });
 
 Supports `json`, `csv`, and `jsonl`. Non-tabular data gracefully falls back to JSON.
 
+### Structured MCP Results (0.23.0, pending publication)
+
+The common structured-output validation subset is Draft-07, Draft 2019-09 and
+Draft 2020-12 (default). Mixed-draft embedded schemas and other declared drafts
+are rejected rather than reinterpreted; repeating the same draft is allowed.
+Numeric JSON text is promoted only when parsing and serialization preserve its
+decimal value. Rounded/underflowed values return a payload-free error when an
+output schema is advertised, otherwise the original text remains unchanged.
+Runtime integer ranges differ; use JSON strings for portable arbitrary-size IDs.
+
+This capability is prepared in the 0.23.0 development source. Publication awaits the corrected apcore dependency; published 0.22.3 does not include it.
+
+Clients negotiating MCP `2025-06-18` or a later supported version receive
+`outputSchema` for modules with an object output schema, and successful JSON
+object results include `structuredContent`. The schema preserves the descriptor's
+constraints and references. Async task submission wrappers omit the final module
+output schema because their response is a task envelope.
+
+Structured content is derived from the governed router's already-redacted JSON
+text, so `content` and `structuredContent` describe the same value. The bridge
+validates that value against the advertised raw JSON schema after redaction.
+Validation defaults to Draft 2020-12 and respects explicitly declared Draft-07
+or Draft 2019-09 semantics. Local references and anchors are resolved without fetching external
+schemas; unresolved references or unsupported dialects fail closed. Formats are
+annotations, and validation does not coerce values, insert defaults, or remove
+additional properties. In-document embedded resources respect their identifier
+scopes. Every reference-bearing schema resource is checked, including unused
+definitions and inactive branches; opaque defaults, examples and unknown
+vocabulary data are preserved. A mismatch,
+or an output that cannot represent the advertised object, returns a payload-free
+`isError: true` result. Arrays, scalars, and custom text without an advertised
+object schema remain text-only. Custom CSV/JSONL output cannot satisfy an
+advertised object schema; use JSON output for those structured tool calls.
+
+MCP `2025-03-26` and `2024-11-05` clients retain text-only results and omit these
+fields. Streamable HTTP selects the format from each request's
+`MCP-Protocol-Version` header, defaulting to `2025-03-26` when absent; request
+body metadata cannot enable structured results.
+
+`registerHandlers` supports caller-supplied MCP SDK `Server` instances. Register
+handlers before client initialization so the bridge can observe the SDK's
+negotiated protocol. A server already connected but awaiting initialization is
+supported. An initialization completed before handler registration cannot be
+recovered through the upstream SDK's public API; such session transports retain
+legacy output until initialization is observed. HTTP requests still select the
+format from their protocol-version header.
+
 ### Tool Explorer
 
 When `explorer: true` is passed to `serve()`, a browser-based Tool Explorer UI is mounted on HTTP transports. It provides an interactive page for browsing tool schemas and testing tool execution.
