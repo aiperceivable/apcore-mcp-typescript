@@ -8,6 +8,16 @@ Automatic MCP Server & OpenAI Tools Bridge for [apcore](https://github.com/aiper
 
 Converts apcore module registries into [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) tool definitions and [OpenAI-compatible function calling](https://platform.openai.com/docs/guides/function-calling) formats — zero boilerplate required.
 
+## MCP input schemas
+
+MCP discovery preserves the module's runtime input semantics: optional properties,
+explicit nullable values, defaults, local references and free-form objects remain
+unchanged. Arguments pass through without null-placeholder deletion. Explicit
+additional-property restrictions still apply. Factory `strict` options are retained
+for compatibility and do not project OpenAI strict schemas onto MCP. OpenAI tool
+exports and standalone SchemaConverter APIs retain their existing behavior.
+
+
 ## Features
 
 - **MCP Server** — Expose apcore modules as MCP tools over stdio, Streamable HTTP, or SSE

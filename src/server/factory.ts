@@ -24,7 +24,6 @@ import type {
   ReadResourceResult,
 } from "@modelcontextprotocol/sdk/types.js";
 
-import { SchemaConverter } from "../adapters/schema.js";
 import { AnnotationMapper } from "../adapters/annotations.js";
 import type { Registry, ModuleDescriptor, JsonSchema } from "../types.js";
 import type { ExecutionRouter } from "./router.js";
@@ -70,13 +69,16 @@ const MANAGEMENT_EXTENSION_PROTOCOL_VERSION = "1.30.0";
 export interface BuildToolsOptions {
   tags?: string[] | null;
   prefix?: string | null;
+  /** Retained for compatibility; MCP schemas always preserve the runtime contract. */
   strict?: boolean;
   registry?: Registry;
 }
 
 /** Options for building a single MCP tool. */
 export interface BuildToolOptions {
+  /** Retained for compatibility; MCP schemas always preserve the runtime contract. */
   strict?: boolean;
+  /** Retained for compatibility; OpenAI strict schema export is not used by MCP. */
   registry?: Registry;
 }
 
@@ -99,13 +101,11 @@ export interface MCPServerFactoryOptions {
 }
 
 export class MCPServerFactory {
-  private readonly _schemaConverter: SchemaConverter;
   private readonly _annotationMapper: AnnotationMapper;
   private readonly _richDescription: boolean;
   private _warnedToolkitMissing = false;
 
   constructor(options: MCPServerFactoryOptions = {}) {
-    this._schemaConverter = new SchemaConverter();
     this._annotationMapper = new AnnotationMapper();
     
     this._richDescription = options.richDescription ?? false;
@@ -197,10 +197,10 @@ export class MCPServerFactory {
    * Maps descriptor fields to MCP Tool format:
    * - name = descriptor.moduleId
    * - description = descriptor.description
-   * - inputSchema = converted via SchemaConverter
+   * - inputSchema = independent copy of the runtime input schema
    * - annotations = mapped from AnnotationMapper with camelCase keys
    */
-  buildTool(descriptor: ModuleDescriptor, options?: BuildToolOptions): Tool {
+  buildTool(descriptor: ModuleDescriptor, _options?: BuildToolOptions): Tool {
     if (!descriptor.moduleId || typeof descriptor.moduleId !== "string") {
       throw new Error("ModuleDescriptor.moduleId is required and must be a string");
     }
@@ -226,23 +226,23 @@ export class MCPServerFactory {
       descriptor.annotations,
     );
 
-    const strict = options?.strict ?? true;
-    let convertedSchema: JsonSchema | undefined;
-    if (strict && options?.registry && typeof options.registry.exportSchema === "function") {
-      try {
-        const exported = options.registry.exportSchema(descriptor.moduleId, true);
-        const inputSchema = (exported as Record<string, unknown> | null)?.["input_schema"]
-          ?? (exported as Record<string, unknown> | null)?.["inputSchema"];
-        if (inputSchema && typeof inputSchema === "object") {
-          convertedSchema = inputSchema as JsonSchema;
-        }
-      } catch {
-        // Fall through to local conversion
-      }
+    // Preserve the runtime input contract. OpenAI strict projection changes
+    // optionality/nullability and must not be used for MCP discovery.
+    const sourceSchema = descriptor.inputSchema ?? {};
+    if (typeof sourceSchema !== "object" || Array.isArray(sourceSchema)) {
+      throw new Error("MCP input schema must be an object");
     }
-    if (!convertedSchema) {
-      convertedSchema = this._schemaConverter.convertInputSchema(descriptor, { strict });
+    const convertedSchema: JsonSchema = structuredClone(sourceSchema);
+    if (Object.keys(convertedSchema).length === 0) convertedSchema.properties = {};
+    const rootType = convertedSchema.type;
+    const validTypes = ["object", "array", "string", "number", "integer", "boolean", "null"];
+    const objectUnion = Array.isArray(rootType) && rootType.includes("object")
+      && rootType.every(member => typeof member === "string" && validTypes.includes(member))
+      && new Set(rootType).size === rootType.length;
+    if (rootType !== undefined && rootType !== "object" && !objectUnion) {
+      throw new Error("MCP input schema must allow an object root");
     }
+    convertedSchema.type = "object";
 
     const hasApproval = this._annotationMapper.hasRequiresApproval(descriptor.annotations);
 
