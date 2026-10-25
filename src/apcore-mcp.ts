@@ -36,6 +36,7 @@ import type { Authenticator } from "./auth/types.js";
 import type { MetricsExporter } from "./server/transport.js";
 import type { ObservabilityFlag } from "./server/observability.js";
 import type { ApprovalStore } from "./approval-store.js";
+import { withStdioOutput } from "./server/stdio-output.js";
 import { StorageBackedApprovalHandler } from "./adapters/approval.js";
 import {
   serve,
@@ -345,17 +346,25 @@ export class APCoreMCP {
    * @param options - Transport and lifecycle options.
    */
   async serve(options: APCoreMCPServeOptions = {}): Promise<void> {
-    const backend = await this._resolveBackend();
-    const store = this._approvalStore;
-    if (store && typeof (store as unknown as { start?: () => void }).start === "function") {
-      (store as unknown as { start: () => void }).start();
-    }
-    try {
-      await serve(backend, this._buildServeOptions(options));
-    } finally {
-      if (store && typeof (store as unknown as { stop?: () => void }).stop === "function") {
-        (store as unknown as { stop: () => void }).stop();
+    const launch = async (): Promise<void> => {
+      const backend = await this._resolveBackend();
+      const store = this._approvalStore;
+      if (store && typeof (store as unknown as { start?: () => void }).start === "function") {
+        (store as unknown as { start: () => void }).start();
       }
+      try {
+        await serve(backend, this._buildServeOptions(options));
+      } finally {
+        if (store && typeof (store as unknown as { stop?: () => void }).stop === "function") {
+          (store as unknown as { stop: () => void }).stop();
+        }
+      }
+    };
+    if (options.transport !== undefined && options.transport !== "stdio") {
+      await launch();
+    } else {
+      // Lazy Registry construction and extension imports precede function serve().
+      await withStdioOutput(launch);
     }
   }
 

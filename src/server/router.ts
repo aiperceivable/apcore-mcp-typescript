@@ -10,6 +10,7 @@
  */
 
 import * as crypto from "node:crypto";
+import { registerStdioExecution } from "./stdio-output.js";
 import { CancelToken } from "apcore-js";
 import { ErrorMapper } from "../adapters/errors.js";
 import type { Executor, TextContentDict, McpErrorResponse } from "../types.js";
@@ -71,6 +72,8 @@ export type CallResult = [TextContentDict[], boolean, string | undefined];
  * - `_meta.traceparent` — W3C trace_context header propagated from caller
  */
 export interface HandleCallExtra {
+  /** MCP request cancellation, including transport disconnect. */
+  signal?: AbortSignal;
   sendNotification?: (notification: Record<string, unknown>) => Promise<void>;
   sendRequest?: (request: Record<string, unknown>, resultSchema: unknown) => Promise<unknown>;
   _meta?: {
@@ -434,10 +437,18 @@ export class ExecutionRouter {
         ? String(rawCallId)
         : crypto.randomUUID();
     const cancelToken = this._registerCancelToken(callId);
+    const onAbort = (): void => { cancelToken.cancel(); };
+    if (extra?.signal?.aborted) onAbort();
+    else extra?.signal?.addEventListener("abort", onAbort, { once: true });
     try {
       return await this._handleCallInner(toolName, args, extra, cancelToken);
     } finally {
-      this._releaseCancelToken(callId);
+      try {
+        registerStdioExecution(cancelToken);
+      } finally {
+        extra?.signal?.removeEventListener("abort", onAbort);
+        this._releaseCancelToken(callId);
+      }
     }
   }
 

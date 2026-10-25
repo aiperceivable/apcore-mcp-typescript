@@ -547,6 +547,7 @@ export class MCPServerFactory {
         // would for an equivalent tools/call. Mirrors the identity
         // propagation in registerHandlers()'s CallToolRequestSchema path.
         const handleCallExtra: HandleCallExtra = {
+          signal: extra?.signal,
           sessionId: (extra as { sessionId?: string } | undefined)?.sessionId,
         };
         try {
@@ -647,6 +648,7 @@ export class MCPServerFactory {
 
       // Build HandleCallExtra from MCP SDK extra
       const handleCallExtra: HandleCallExtra = {
+        signal: extra?.signal,
         sendNotification: extra?.sendNotification
           ? (notification: Record<string, unknown>) =>
               extra.sendNotification(notification as any)

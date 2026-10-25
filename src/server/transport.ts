@@ -500,7 +500,9 @@ export class TransportManager {
         return closing;
       };
       const onEnd = (): void => {
-        void lease.drain().then(closeTransport).catch(onFailure);
+        // SDK close aborts extra.signal and rejects elicitation/sampling waits.
+        // Those operations must be interrupted before awaiting their handlers.
+        void closeTransport().catch(onFailure);
       };
       const onFailure = (error: Error): void => {
         rejectClosed(error);

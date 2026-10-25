@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { bindStdioWork, observeStdioWork, withStdioOutput } from "../../src/server/stdio-output.js";
+import { bindStdioWork, observeStdioWork, registerStdioExecution, withStdioOutput } from "../../src/server/stdio-output.js";
 
 describe("stdio output lease", () => {
   it("redirects stdout overloads to stderr and restores after a failed bootstrap", async () => {
@@ -135,5 +135,48 @@ describe("protocol output failure", () => {
       expect(process.stdout.write).toBe(write);
     } finally { write.mockRestore(); }
     expect(process.stdout.write).toBe(original);
+  });
+});
+
+describe("owned execution cleanup failure", () => {
+  it("retains an undefined cleanup rejection until the owner drains and restores output", async () => {
+    const stdout = process.stdout.write;
+    await expect(withStdioOutput(async (lease) => {
+      lease.trackCleanup(() => Promise.reject(undefined));
+      await lease.drain();
+    })).rejects.toBeUndefined();
+    expect(process.stdout.write).toBe(stdout);
+  });
+});
+
+
+describe("nested HTTP request scope", () => {
+  it("does not inherit cleanup ownership from the stdio handler that invokes it", async () => {
+    type Handler = () => Promise<void>;
+    const makeServer = () => {
+      let registered!: Handler;
+      const server = { setRequestHandler: (_schema: unknown, callback: Handler) => { registered = callback; } };
+      observeStdioWork(server as never);
+      return { server, invoke: () => registered() };
+    };
+    const stdio = makeServer();
+    const http = makeServer();
+    let release!: () => void;
+    const cleanup = new Promise<void>((resolve) => { release = resolve; });
+    http.server.setRequestHandler({}, async () => {
+      registerStdioExecution({ drain: () => cleanup });
+    });
+    stdio.server.setRequestHandler({}, async () => { await http.invoke(); });
+    await withStdioOutput(async (lease) => {
+      const unbind = bindStdioWork(stdio.server as never, lease);
+      await stdio.invoke();
+      let drained = false;
+      const draining = lease.drain().then(() => { drained = true; });
+      try {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(drained).toBe(true);
+      } finally { release(); await draining; unbind(); }
+    });
   });
 });

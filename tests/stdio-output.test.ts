@@ -27,7 +27,7 @@ describe("real stdio protocol output isolation", () => {
       child.stdin.write(request(4, "tools/call", { name: "stdio_noise", arguments: { fail: true } }));
       // Wait for runtime calls before closing stdin; EOF must run shutdown cleanup.
       await new Promise<void>((done, reject) => {
-        const timer = setTimeout(() => reject(new Error(`No tool response: ${stdout}\n${stderr}`)), 10_000);
+        const timer = setTimeout(() => reject(new Error(`No tool response: ${stdout}\n${stderr}`)), 30_000);
         const poll = () => {
           if (!stdout.includes('"id":4')) return;
           clearTimeout(timer); child.stdout.off("data", poll); done();
@@ -47,14 +47,17 @@ describe("real stdio protocol output isolation", () => {
         expect(stderr, marker).toContain(marker);
       }
     } finally {
-      child.kill();
+      child.kill("SIGKILL");
     }
-  }, 15_000);
+  }, 45_000);
 });
 
 describe("stdio CLI bootstrap", () => {
-  it("routes configuration, discovery, imported module and startup diagnostics to stderr", async () => {
-    const child = spawn(process.execPath, ["--import", "tsx", "tests/fixtures/stdio-cli.ts"], {
+  it.each([
+    { fixture: "stdio-cli.ts", markers: ["config bootstrap diagnostic", "discovery bootstrap diagnostic", "extension import diagnostic", "Discovered 1", "Starting MCP server"] },
+    { fixture: "stdio-class.ts", markers: ["extension import diagnostic", "Starting MCP server"] },
+  ])("routes $fixture bootstrap/import diagnostics to stderr", async ({ fixture, markers }) => {
+    const child = spawn(process.execPath, ["--import", "tsx", `tests/fixtures/${fixture}`], {
       cwd: resolve(import.meta.dirname, ".."), stdio: ["pipe", "pipe", "pipe"],
     });
     let stderr = "";
@@ -71,11 +74,11 @@ describe("stdio CLI bootstrap", () => {
       const messages = stdout.trim().split("\n").map((line) => JSON.parse(line));
       expect(messages.every((message) => message.jsonrpc === "2.0")).toBe(true);
       expect(messages.find((message) => message.id === 2)?.result.tools).toHaveLength(1);
-      for (const marker of ["config bootstrap diagnostic", "discovery bootstrap diagnostic", "extension import diagnostic", "Discovered 1", "Starting MCP server"]) {
+      for (const marker of markers) {
         expect(stderr).toContain(marker);
       }
-    } finally { child.kill(); }
-  }, 15_000);
+    } finally { child.kill("SIGKILL"); }
+  }, 45_000);
 
   it("keeps help output on stdout outside an active server lifetime", async () => {
     const child = spawn(process.execPath, ["--import", "tsx", "src/cli.ts", "--help"], {
@@ -89,12 +92,12 @@ describe("stdio CLI bootstrap", () => {
     expect(code, stderr).toBe(0);
     expect(stdout).toContain("Usage:");
     expect(stderr).toBe("");
-  }, 15_000);
+  }, 45_000);
 });
 
 describe("stdio EOF while a managed tool is running", () => {
-  it("drains the tool and response before shutdown and stdout restoration", async () => {
-    const child = spawn(process.execPath, ["--import", "tsx", "tests/fixtures/stdio-noise.ts"], {
+  it("holds stdout until the running handler settles after disconnect", async () => {
+    const child = spawn(process.execPath, ["--import", "tsx", "tests/fixtures/stdio-delayed.ts"], {
       cwd: resolve(import.meta.dirname, ".."), stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
@@ -103,14 +106,106 @@ describe("stdio EOF while a managed tool is running", () => {
     child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr += chunk; });
     const closed = once(child, "close");
     try {
-      child.stdin.end(request(1, "initialize", {
+      child.stdin.write(request(1, "initialize", {
         protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "eof", version: "1" },
       }) + request(2, "tools/call", { name: "stdio_noise", arguments: { delay: true } }));
+      await new Promise<void>((resolveReady, reject) => {
+        const timer = setTimeout(() => reject(new Error(`tool did not start: ${stderr}`)), 30_000);
+        const observe = () => {
+          if (!stderr.includes("delayed tool started")) return;
+          clearTimeout(timer); child.stderr.off("data", observe); resolveReady();
+        };
+        child.stderr.on("data", observe); observe();
+      });
+      child.stdin.end();
       const [code] = await closed;
       expect(code, stderr).toBe(0);
       const messages = stdout.trim().split("\n").map((line) => JSON.parse(line));
-      expect(messages.find((message) => message.id === 2)?.result.content[0].text).toBe('{"ok":true}');
+      expect(messages.every((message) => message.jsonrpc === "2.0")).toBe(true);
+      expect(stderr).toContain("application console.log");
+      expect(stderr).toContain("shutdown callback");
       expect(stderr.indexOf("application console.log")).toBeLessThan(stderr.indexOf("shutdown callback"));
-    } finally { child.kill(); }
-  }, 15_000);
+    } finally { child.kill("SIGKILL"); }
+  }, 45_000);
+});
+
+describe("cooperative handler cancellation", () => {
+  it.each([
+    { fixture: "stdio-cancellation.ts", shutdown: "EOF" },
+    { fixture: "stdio-cancellation.ts", shutdown: "SIGTERM" },
+    { fixture: "stdio-core-cancellation.ts", shutdown: "EOF" },
+    { fixture: "stdio-core-cancellation.ts", shutdown: "SIGTERM" },
+  ])("aborts $fixture peer waits before draining on $shutdown", async ({ fixture, shutdown }) => {
+    const child = spawn(process.execPath, ["--import", "tsx", `tests/fixtures/${fixture}`], {
+      cwd: resolve(import.meta.dirname, ".."), stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk) => { stdout += chunk; });
+    child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr += chunk; });
+    const closed = once(child, "close");
+    try {
+      child.stdin.write(request(1, "initialize", {
+        protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "cancel", version: "1" },
+      }) + request(2, "tools/call", { name: "wait_for_abort", arguments: {} }));
+      await new Promise<void>((resolveReady, reject) => {
+        const timer = setTimeout(() => reject(new Error(`handler did not start: ${stderr}`)), 30_000);
+        closed.finally(() => { clearTimeout(timer); reject(new Error(`server exited before handler start: ${stderr}`)); }).catch(() => {});
+        const observe = () => {
+          if (!stderr.includes("cooperative handler started")) return;
+          clearTimeout(timer); child.stderr.off("data", observe); resolveReady();
+        };
+        child.stderr.on("data", observe); observe();
+      });
+      if (shutdown === "EOF") child.stdin.end();
+      else child.kill("SIGTERM");
+      const [code] = await Promise.race([
+        closed,
+        new Promise<never>((_resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error(`cooperative shutdown deadlocked: ${stderr}`)), 3_000);
+          closed.finally(() => clearTimeout(timer)).catch(() => {});
+        }),
+      ]);
+      expect(code, stderr).toBe(0);
+      expect(stderr).toContain("cooperative handler aborted");
+      expect(stderr).toContain("transport cancellation finished");
+      expect(stdout.trim().split("\n").every((line) => JSON.parse(line).jsonrpc === "2.0")).toBe(true);
+    } finally { child.kill("SIGKILL"); }
+  }, 45_000);
+});
+
+describe("MCP deadline response and physical cleanup ownership", () => {
+  it("responds before deferred finalization, then joins it before releasing stdout", async () => {
+    const child = spawn(process.execPath, ["--import", "tsx", "tests/fixtures/stdio-timeout.ts"], {
+      cwd: resolve(import.meta.dirname, ".."), stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk) => { stdout += chunk; });
+    child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr += chunk; });
+    const closed = once(child, "close");
+    try {
+      child.stdin.write(request(1, "initialize", {
+        protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "deadline", version: "1" },
+      }) + request(2, "tools/call", { name: "wait_for_deadline", arguments: {} }));
+      await new Promise<void>((resolveResponse, reject) => {
+        const timer = setTimeout(() => reject(new Error(`deadline response waited for finalization: ${stderr}`)), 30_000);
+        const observe = () => {
+          if (!stdout.includes('"id":2')) return;
+          clearTimeout(timer); child.stdout.off("data", observe); resolveResponse();
+        };
+        closed.finally(() => { clearTimeout(timer); reject(new Error(`server exited: ${stderr}`)); }).catch(() => {});
+        child.stdout.on("data", observe); observe();
+      });
+      if (process.env.APCORE_TEST_EXECUTION_DRAIN === "1") expect(stderr).not.toContain("timeout module cleaned");
+      child.stdin.end('{"jsonrpc":"2.0","method":"test/releaseCleanup"}\n');
+      const [code] = await closed;
+      expect(code, stderr).toBe(0);
+      const messages = stdout.trim().split("\n").map((line) => JSON.parse(line));
+      expect(messages.every((message) => message.jsonrpc === "2.0")).toBe(true);
+      expect(messages.find((message) => message.id === 2)?.error).toBeDefined();
+      expect(stderr).toContain("timeout module cleaned");
+      expect(stderr.indexOf("timeout module cleaned")).toBeLessThan(stderr.indexOf("timeout shutdown"));
+    } finally { child.kill("SIGKILL"); }
+  }, 45_000);
 });

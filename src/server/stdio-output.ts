@@ -4,6 +4,7 @@ import { setImmediate } from "node:timers/promises";
 import { Writable } from "node:stream";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 
+const requestContext = new AsyncLocalStorage<StdioOutputLease>();
 const ownerContext = new AsyncLocalStorage<StdioOutputLease>();
 let activeOwner: StdioOutputLease | undefined;
 
@@ -16,6 +17,7 @@ export class StdioOutputLease {
   private released = false;
   private transportClaimed = false;
   private readonly pendingWork = new Set<Promise<unknown>>();
+  private cleanupFailure: { error: unknown } | undefined;
 
   constructor() {
     // The protocol writer bypasses only our JS redirection. Writable retains
@@ -47,6 +49,12 @@ export class StdioOutputLease {
     return pending;
   }
 
+  trackCleanup(callback: () => Promise<void>): void {
+    void this.track(callback).catch((error: unknown) => {
+      this.cleanupFailure ??= { error };
+    });
+  }
+
   async drain(): Promise<void> {
     do {
       await Promise.allSettled([...this.pendingWork]);
@@ -57,6 +65,7 @@ export class StdioOutputLease {
     await new Promise<void>((resolve, reject) => {
       this.protocolOutput.write("", (error?: Error | null) => error ? reject(error) : resolve());
     });
+    if (this.cleanupFailure) throw this.cleanupFailure.error;
   }
 
   release(): void {
@@ -104,7 +113,17 @@ export function observeStdioWork(server: Server): void {
   server.setRequestHandler = (schema, handler) => {
     setRequestHandler(schema, (request, extra) => {
       const lease = serverOwners.get(server);
-      return lease ? lease.track(() => handler(request, extra)) : handler(request, extra);
+      return lease
+        ? lease.track(() => requestContext.run(lease, () => handler(request, extra)))
+        : requestContext.exit(() => handler(request, extra));
     });
   };
+}
+
+/** Register physical cleanup with its owner without delaying the MCP response. */
+export function registerStdioExecution(token: unknown): void {
+  const lease = requestContext.getStore();
+  if (!lease) return;
+  const drain = (token as { drain?: () => Promise<void> }).drain;
+  if (typeof drain === "function") lease.trackCleanup(() => drain.call(token));
 }

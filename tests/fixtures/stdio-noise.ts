@@ -9,7 +9,10 @@ registry.register("stdio_noise", {
   inputSchema: { type: "object", properties: { fail: { type: "boolean" }, delay: { type: "boolean" } } },
   outputSchema: { type: "object" },
   async execute(inputs: Record<string, unknown>) {
-    if (inputs.delay) await new Promise((resolve) => setTimeout(resolve, 40));
+    if (inputs.delay) {
+      console.log("delayed tool started");
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
     console.log("application console.log");
     process.stdout.write("application stdout.write\n");
     new DisplayResolver().resolve([], { bindingData: { stdio_noise: {} } });

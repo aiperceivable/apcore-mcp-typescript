@@ -244,3 +244,27 @@ describe("APCoreMCP", () => {
     });
   });
 });
+
+describe("APCoreMCP bootstrap output ownership", () => {
+  it("reserves lazy stdio setup and store lifecycle, then restores stdout", async () => {
+    const stdout = process.stdout.write;
+    const store = {
+      start: vi.fn(() => { expect(process.stdout.write).not.toBe(stdout); }),
+      stop: vi.fn(() => { expect(process.stdout.write).not.toBe(stdout); }),
+    };
+    const mcp = new APCoreMCP(createMockExecutor(), {
+      async: false, approvalStore: store as never, approvalHandler: {} as never,
+    });
+    await mcp.serve({ transport: "stdio" });
+    expect(store.start).toHaveBeenCalledOnce();
+    expect(store.stop).toHaveBeenCalledOnce();
+    expect(process.stdout.write).toBe(stdout);
+  });
+
+  it.each(["streamable-http", "sse"] as const)("leaves explicit %s class setup on ordinary stdout", async (transport) => {
+    const stdout = process.stdout.write;
+    const mcp = new APCoreMCP(createMockExecutor(), { async: false });
+    await mcp.serve({ transport, onStartup: () => { expect(process.stdout.write).toBe(stdout); } });
+    expect(process.stdout.write).toBe(stdout);
+  });
+});
