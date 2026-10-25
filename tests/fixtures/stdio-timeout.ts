@@ -1,4 +1,5 @@
 import { CancelToken, Registry, type Context } from "apcore-js";
+import { setTimeout } from "node:timers/promises";
 import { serve } from "../../src/index.js";
 const requireDrain = process.env.APCORE_TEST_EXECUTION_DRAIN === "1";
 if (requireDrain && typeof (new CancelToken() as CancelToken & { drain?: unknown }).drain !== "function") {
@@ -9,12 +10,13 @@ const cleanup = new Promise<void>((resolve) => { releaseCleanup = resolve; });
 const releaseFromPeer = (chunk: Buffer) => {
   if (chunk.toString().includes('"test/releaseCleanup"')) releaseCleanup();
 };
-process.stdin.on("data", releaseFromPeer);
 const registry = new Registry();
 registry.register("wait_for_deadline", {
   description: "Timeout promptly while finalization remains owned", resources: { timeout: 30 },
   inputSchema: { type: "object" }, outputSchema: { type: "object" },
   async execute(_inputs: Record<string, unknown>, context: Context) {
+    // The MCP transport must own stdin before this observer starts it flowing.
+    process.stdin.on("data", releaseFromPeer);
     try {
       await new Promise<void>((resolve) => {
         if (context.signal.aborted) resolve();
@@ -30,6 +32,8 @@ registry.register("wait_for_deadline", {
 try {
   await serve(registry as never, {
     transport: "stdio", async: false,
+    // Early client requests must survive asynchronous server startup.
+    onStartup: () => setTimeout(50),
     onShutdown: () => { console.log("timeout shutdown"); },
   });
 } finally { process.stdin.off("data", releaseFromPeer); }
