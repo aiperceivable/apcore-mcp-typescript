@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+## [0.23.2] - 2026-10-25
+
+### Fixed
+
+- Reserve protocol stdout for the complete stdio lifetime, including CLI
+  configuration, discovery, startup, request execution and shutdown. Route
+  ordinary JavaScript stdout diagnostics to stderr while preserving a separate
+  protocol writer.
+- Share ownership across nested serving layers, reject unrelated concurrent
+  stdio sessions and duplicate active transport claims, and allow sequential
+  sessions after cleanup completes.
+- Close the SDK transport on EOF, SIGINT and SIGTERM before draining handlers,
+  so peer-dependent elicitation and sampling waits can be cancelled. Forward
+  request abort signals to apcore cancellation tokens.
+- Keep timeout responses prompt while retaining ownership of deferred module
+  finalizers until shutdown cleanup completes, when supported by the core SDK.
+- Drain buffered protocol writes before the next session takes ownership;
+  preserve write callbacks, backpressure and protocol write errors.
+- Preserve HTTP/SSE host output and leave stdio ownership available while a real
+  network request is active.
+
+### Compatibility
+
+- Keep the installable dependency floor at `apcore-js >=0.32.2`. Complete
+  physical module execution and finalizer drainage requires `apcore-js 0.32.3`
+  or newer. With 0.32.2, the bridge drains managed MCP handlers but cannot join
+  module execution that outlives an executor timeout or cancellation response.
+- Public serving APIs and MCP wire formats remain unchanged.
+
+### Tests
+
+- Cover noisy stdio lifecycles, EOF/signal cancellation, deferred finalizers,
+  protocol backpressure and sequential handoff, plus live HTTP/SSE output and
+  ownership preservation.
+- Make deep-JSON projection tests portable across runtime encoder capabilities
+  and verify encoder failures deterministically; add no production nesting cap.
+
 ## [0.23.1] - 2026-10-19
 
 ### Fixed — MCP object root validation
