@@ -6,6 +6,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { TransportManager } from "../../src/server/transport.js";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { AddressInfo } from "node:net";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 
 describe("TransportManager", () => {
   const manager = new TransportManager();
@@ -350,6 +351,67 @@ describe("TransportManager", () => {
   });
 
   describe("[A-D-TR-2] runStdio async-task teardown", () => {
+    it("retains ownership through a backed-up response when closed before the next session", async () => {
+      const first = new TransportManager();
+      const second = new TransportManager();
+      const frames: Buffer[] = [];
+      let releaseWrite!: () => void;
+      let notifyWrite!: () => void;
+      const writeStarted = new Promise<void>((resolve) => { notifyWrite = resolve; });
+      let holding = true;
+      const write = vi.spyOn(process.stdout, "write").mockImplementation(((chunk, _encoding, callback) => {
+        const bytes = Buffer.from(chunk);
+        let completed = false;
+        const complete = (): void => {
+          if (completed) return;
+          completed = true;
+          frames.push(bytes);
+          callback?.();
+        };
+        if (holding && bytes.length > 0) {
+          holding = false;
+          releaseWrite = complete;
+          notifyWrite();
+        } else complete();
+        return false;
+      }) as typeof process.stdout.write);
+      let firstTransport!: Transport;
+      let secondTransport!: Transport;
+      const firstServer = { connect: vi.fn(async (transport: Transport) => { firstTransport = transport; }) } as unknown as Server;
+      const secondServer = { connect: vi.fn(async (transport: Transport) => { secondTransport = transport; }) } as unknown as Server;
+      const running = first.runStdio(firstServer);
+      let sending: Promise<void> | undefined;
+      try {
+        await Promise.resolve();
+        sending = firstTransport.send({ jsonrpc: "2.0", id: 1, result: { value: "x".repeat(128 * 1024) } });
+        await writeStarted;
+        await first.close();
+        let stopped = false;
+        void running.then(() => { stopped = true; });
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(stopped).toBe(false);
+        await expect(second.runStdio(secondServer)).rejects.toThrow("already owns stdout");
+        expect(secondServer.connect).not.toHaveBeenCalled();
+        releaseWrite();
+        await sending;
+        await running;
+        const next = second.runStdio(secondServer);
+        await Promise.resolve();
+        await secondTransport.send({ jsonrpc: "2.0", id: 2, result: {} });
+        await second.close();
+        await next;
+        const decoded = Buffer.concat(frames).toString().trim().split("\n").map(line => JSON.parse(line) as { id: number });
+        expect(decoded.map(frame => frame.id)).toEqual([1, 2]);
+      } finally {
+        releaseWrite?.();
+        await first.close();
+        await sending;
+        await running;
+        await second.close();
+        write.mockRestore();
+      }
+    });
+
     it("mints a session id and cancels session tasks when the transport closes", async () => {
       const mgr = new TransportManager();
       const cancelSessionTasks = vi.fn().mockResolvedValue(0);

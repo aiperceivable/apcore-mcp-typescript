@@ -198,13 +198,32 @@ describe("structured MCP results", () => {
     expect(JSON.stringify(error)).not.toContain("private");
   });
 
-  it("keeps deeply nested JSON payloads from causing projection stack failures", () => {
+  it("projects deeply nested JSON only when the runtime encoder supports it", () => {
     const text = '{"nested":'.repeat(20000) + '1' + '}'.repeat(20000);
     const result = { content: [{ type: "text" as const, text }] };
-    expect(addStructuredOutput(result).structuredContent).toBeUndefined();
-    expect(addStructuredOutput(result).content).toEqual(result.content);
+    let encodable = true;
+    try { JSON.stringify(JSON.parse(text)); } catch { encodable = false; }
+    // Newer V8 encoders serialize depths that older recursive encoders reject.
+    // Compare shallow flags so assertion formatting cannot recurse into the data.
+    const projected = addStructuredOutput(result);
+    expect(projected.structuredContent !== undefined).toBe(encodable);
+    expect(projected.content).toBe(result.content);
     const tool = new MCPServerFactory().buildTool({ ...descriptor, outputSchema: { type: "object" } });
-    expect(addStructuredOutput(result, tool).isError).toBe(true);
+    expect(addStructuredOutput(result, tool).isError === true).toBe(!encodable);
+  });
+
+  it("fails safely when parsed JSON exceeds the runtime encoder limit", () => {
+    const result = { content: [{ type: "text" as const, text: '{"nested":{"value":1}}' }] };
+    const tool = new MCPServerFactory().buildTool({ ...descriptor, outputSchema: { type: "object" } });
+    const encode = vi.spyOn(JSON, "stringify");
+    try {
+      encode.mockImplementationOnce(() => { throw new RangeError("Maximum call stack size exceeded"); });
+      const projected = addStructuredOutput(result);
+      expect(projected.structuredContent).toBeUndefined();
+      expect(projected.content).toBe(result.content);
+      encode.mockImplementationOnce(() => { throw new RangeError("Maximum call stack size exceeded"); });
+      expect(addStructuredOutput(result, tool).isError).toBe(true);
+    } finally { encode.mockRestore(); }
   });
 
   it("does not assume a modern protocol for servers initialized before registration", async () => {
