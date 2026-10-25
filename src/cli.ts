@@ -9,10 +9,12 @@
  *   apcore-mcp --extensions-dir ./extensions --transport sse --port 8000
  */
 
-import { existsSync, statSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { serve, VERSION, JWTAuthenticator, ElicitationApprovalHandler } from "./index.js";
+import { withStdioOutput } from "./server/stdio-output.js";
 import type { Algorithm } from "jsonwebtoken";
 
 function printUsage(): void {
@@ -119,263 +121,281 @@ export async function main(): Promise<void> {
     process.exit(0);
   }
 
-  // Backend-source rule: at least one, both allowed, both requires a prefix.
-  // A third route — mcp.openapi.spec configured on the Config Bus alone,
-  // with neither CLI flag — also counts (PRD F-054 Acceptance Criterion 1).
-  // serve() -> its Config-Bus fallback picks it up automatically once a
-  // (possibly undefined) registry reaches it, so this CLI's own job is only
-  // to not reject that case before it gets there.
-  const extensionsDir = values["extensions-dir"];
-  const fromOpenapi = values["from-openapi"];
-  const openapiPrefix = values["openapi-prefix"];
-  if (!extensionsDir && !fromOpenapi) {
-    let hasConfigBusOpenapi = false;
-    try {
-      const apcore = await import("apcore-js");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const Config = (apcore as any).Config;
-      const config = typeof Config?.getInstance === "function" ? Config.getInstance() : undefined;
-      hasConfigBusOpenapi = Boolean(config?.get?.("mcp.openapi"));
-    } catch {
-      // apcore-js not installed — treated the same as "no Config Bus value".
+  const launch = async (): Promise<void> => {
+    // Backend-source rule: at least one, both allowed, both requires a prefix.
+    // A third route — mcp.openapi.spec configured on the Config Bus alone,
+    // with neither CLI flag — also counts (PRD F-054 Acceptance Criterion 1).
+    // serve() -> its Config-Bus fallback picks it up automatically once a
+    // (possibly undefined) registry reaches it, so this CLI's own job is only
+    // to not reject that case before it gets there.
+    const extensionsDir = values["extensions-dir"];
+    const fromOpenapi = values["from-openapi"];
+    const openapiPrefix = values["openapi-prefix"];
+    if (!extensionsDir && !fromOpenapi) {
+      let hasConfigBusOpenapi = false;
+      try {
+        const apcore = await import("apcore-js");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const Config = (apcore as any).Config;
+        const config = typeof Config?.getInstance === "function" ? Config.getInstance() : undefined;
+        hasConfigBusOpenapi = Boolean(config?.get?.("mcp.openapi"));
+      } catch {
+        // apcore-js not installed — treated the same as "no Config Bus value".
+      }
+      if (!hasConfigBusOpenapi) {
+        fail(
+          "a backend source is required — pass --extensions-dir, --from-openapi, set " +
+            "mcp.openapi.spec on the Config Bus, or combine them.",
+          2,
+        );
+      }
     }
-    if (!hasConfigBusOpenapi) {
+    if (extensionsDir && fromOpenapi && !openapiPrefix) {
       fail(
-        "a backend source is required — pass --extensions-dir, --from-openapi, set " +
-          "mcp.openapi.spec on the Config Bus, or combine them.",
+        "--openapi-prefix is required when --extensions-dir and --from-openapi are combined, " +
+          "so the two module-ID spaces cannot collide.",
         2,
       );
     }
-  }
-  if (extensionsDir && fromOpenapi && !openapiPrefix) {
-    fail(
-      "--openapi-prefix is required when --extensions-dir and --from-openapi are combined, " +
-        "so the two module-ID spaces cannot collide.",
-      2,
-    );
-  }
 
-  let resolvedDir: string | undefined;
-  if (extensionsDir) {
-    resolvedDir = resolve(extensionsDir);
-    if (!existsSync(resolvedDir)) {
-      fail(`--extensions-dir '${extensionsDir}' does not exist.`);
-    }
-    if (!statSync(resolvedDir).isDirectory()) {
-      fail(`--extensions-dir '${extensionsDir}' is not a directory.`);
-    }
-  }
-
-  // Validate transport
-  const transport = values.transport as string;
-  const validTransports = ["stdio", "streamable-http", "sse"];
-  if (!validTransports.includes(transport)) {
-    fail(
-      `--transport must be one of: ${validTransports.join(", ")}. Got '${transport}'.`,
-    );
-  }
-
-  // Validate port
-  const port = parseInt(values.port as string, 10);
-  if (isNaN(port) || port < 1 || port > 65535) {
-    fail(`--port must be in range 1-65535, got '${values.port}'.`);
-  }
-
-  // Validate name length
-  const name = values.name as string;
-  if (name.length > 255) {
-    fail(`--name must be at most 255 characters, got ${name.length}.`);
-  }
-
-  // Dynamic import of apcore Registry (peer dependency)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let Registry: new (options?: { extensionsDir?: string }) => {
-    discover(): Promise<number>;
-  };
-  try {
-    const apcore = await import("apcore-js");
-    Registry = apcore.Registry;
-  } catch {
-    fail(
-      "Failed to import 'apcore-js' package. Install it with: npm install apcore-js",
-    );
-  }
-
-  // Create the Registry. The union is assembled in a fixed order —
-  // extensions directory first, then OpenAPI operations — so a collision
-  // report names the OpenAPI side, which is the one the operator can
-  // rename with a prefix. Neither flag given: pass `undefined` through to
-  // serve() -> its Config-Bus fallback, rather than handing it an empty
-  // stand-in Registry() that would be mistaken for a second, explicit
-  // backend source and wrongly require mcp.openapi.prefix.
-  let registry: { discover(): Promise<number> } | undefined;
-  if (resolvedDir) {
-    registry = new Registry({ extensionsDir: resolvedDir });
-    const numModules = await registry.discover();
-    if (numModules === 0) {
-      console.warn(`Warning: No modules discovered in '${extensionsDir}'.`);
-    } else {
-      console.info(`Discovered ${numModules} module(s) in '${extensionsDir}'.`);
-    }
-  } else if (fromOpenapi) {
-    registry = new Registry();
-  }
-
-  if (fromOpenapi) {
-    const { openapiBackend } = await import("./openapi-backend.js");
-    const headers: Record<string, string> = {};
-    for (const raw of values["openapi-header"] ?? []) {
-      const idx = raw.indexOf(":");
-      if (idx === -1) {
-        fail(`--openapi-header must be KEY:VALUE, got '${raw}'.`, 2);
+    let resolvedDir: string | undefined;
+    if (extensionsDir) {
+      resolvedDir = resolve(extensionsDir);
+      if (!existsSync(resolvedDir)) {
+        fail(`--extensions-dir '${extensionsDir}' does not exist.`);
       }
-      headers[raw.slice(0, idx).trim()] = raw.slice(idx + 1).trim();
+      if (!statSync(resolvedDir).isDirectory()) {
+        fail(`--extensions-dir '${extensionsDir}' is not a directory.`);
+      }
     }
-    try {
-      await openapiBackend(fromOpenapi, {
-        baseUrl: values["openapi-base-url"],
-        prefix: openapiPrefix,
-        include: values["openapi-include"],
-        exclude: values["openapi-exclude"],
-        includeDeprecated: !values["openapi-no-deprecated"],
-        headers: Object.keys(headers).length > 0 ? headers : undefined,
-        registry: registry as never,
-        hasOtherBackendSource: Boolean(extensionsDir),
-      });
-    } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
-    }
-  }
 
-  // Validate log-level
-  const logLevel = values["log-level"] as string | undefined;
-  const validLogLevels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
-  if (logLevel && !validLogLevels.includes(logLevel)) {
-    fail(
-      `--log-level must be one of: ${validLogLevels.join(", ")}. Got '${logLevel}'.`,
-    );
-  }
-
-  // Validate and build approval handler
-  const approvalMode = values.approval as string;
-  const validApprovalModes = ["elicit", "auto-approve", "always-deny", "off"];
-  if (!validApprovalModes.includes(approvalMode)) {
-    fail(
-      `--approval must be one of: ${validApprovalModes.join(", ")}. Got '${approvalMode}'.`,
-    );
-  }
-
-  // Validate strategy
-  const strategy = values.strategy as string | undefined;
-  if (strategy) {
-    const validStrategies = ["standard", "internal", "testing", "performance", "minimal"];
-    if (!validStrategies.includes(strategy)) {
+    // Validate transport
+    const transport = values.transport as string;
+    const validTransports = ["stdio", "streamable-http", "sse"];
+    if (!validTransports.includes(transport)) {
       fail(
-        `--strategy must be one of: ${validStrategies.join(", ")}. Got '${strategy}'.`,
+        `--transport must be one of: ${validTransports.join(", ")}. Got '${transport}'.`,
       );
     }
-  }
 
-  // Validate output-format
-  const outputFormat = values["output-format"] as string | undefined;
-  const validOutputFormats = ["json", "csv", "jsonl"];
-  if (outputFormat && !validOutputFormats.includes(outputFormat)) {
-    fail(
-      `--output-format must be one of: ${validOutputFormats.join(", ")}. Got '${outputFormat}'.`,
-    );
-  }
+    // Validate port
+    const port = parseInt(values.port as string, 10);
+    if (isNaN(port) || port < 1 || port > 65535) {
+      fail(`--port must be in range 1-65535, got '${values.port}'.`);
+    }
 
-  let approvalHandler: unknown;
-  if (approvalMode === "elicit") {
-    approvalHandler = new ElicitationApprovalHandler();
-  } else if (approvalMode === "auto-approve" || approvalMode === "always-deny") {
+    // Validate name length
+    const name = values.name as string;
+    if (name.length > 255) {
+      fail(`--name must be at most 255 characters, got ${name.length}.`);
+    }
+
+    // Dynamic import of apcore Registry (peer dependency)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let Registry: new (options?: { extensionsDir?: string }) => {
+      discover(): Promise<number>;
+    };
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const apcore = await import("apcore-js") as any;
-      if (approvalMode === "auto-approve") {
-        const AutoApprove = apcore.AutoApproveHandler ?? apcore.default?.AutoApproveHandler;
-        if (AutoApprove) {
-          approvalHandler = new AutoApprove();
-        } else {
-          fail("apcore-js does not export AutoApproveHandler.");
-        }
-      } else {
-        const AlwaysDeny = apcore.AlwaysDenyHandler ?? apcore.default?.AlwaysDenyHandler;
-        if (AlwaysDeny) {
-          approvalHandler = new AlwaysDeny();
-        } else {
-          fail("apcore-js does not export AlwaysDenyHandler.");
-        }
-      }
+      const apcore = await import("apcore-js");
+      Registry = apcore.Registry;
     } catch {
-      fail(`Failed to import approval handler from apcore-js for mode '${approvalMode}'.`);
+      fail(
+        "Failed to import 'apcore-js' package. Install it with: npm install apcore-js",
+      );
     }
-  }
 
-  // Build JWT authenticator.
-  // Resolution: --jwt-key-file > --jwt-secret > APCORE_JWT_SECRET env var
-  let jwtKey: string | undefined;
-  const keyFile = values["jwt-key-file"] as string | undefined;
-  if (keyFile) {
-    const { readFileSync } = await import("fs");
+    // Create the Registry. The union is assembled in a fixed order —
+    // extensions directory first, then OpenAPI operations — so a collision
+    // report names the OpenAPI side, which is the one the operator can
+    // rename with a prefix. Neither flag given: pass `undefined` through to
+    // serve() -> its Config-Bus fallback, rather than handing it an empty
+    // stand-in Registry() that would be mistaken for a second, explicit
+    // backend source and wrongly require mcp.openapi.prefix.
+    let registry: { discover(): Promise<number> } | undefined;
+    if (resolvedDir) {
+      registry = new Registry({ extensionsDir: resolvedDir });
+      const numModules = await registry.discover();
+      if (numModules === 0) {
+        console.warn(`Warning: No modules discovered in '${extensionsDir}'.`);
+      } else {
+        console.info(`Discovered ${numModules} module(s) in '${extensionsDir}'.`);
+      }
+    } else if (fromOpenapi) {
+      registry = new Registry();
+    }
+
+    if (fromOpenapi) {
+      const { openapiBackend } = await import("./openapi-backend.js");
+      const headers: Record<string, string> = {};
+      for (const raw of values["openapi-header"] ?? []) {
+        const idx = raw.indexOf(":");
+        if (idx === -1) {
+          fail(`--openapi-header must be KEY:VALUE, got '${raw}'.`, 2);
+        }
+        headers[raw.slice(0, idx).trim()] = raw.slice(idx + 1).trim();
+      }
+      try {
+        await openapiBackend(fromOpenapi, {
+          baseUrl: values["openapi-base-url"],
+          prefix: openapiPrefix,
+          include: values["openapi-include"],
+          exclude: values["openapi-exclude"],
+          includeDeprecated: !values["openapi-no-deprecated"],
+          headers: Object.keys(headers).length > 0 ? headers : undefined,
+          registry: registry as never,
+          hasOtherBackendSource: Boolean(extensionsDir),
+        });
+      } catch (error) {
+        fail(error instanceof Error ? error.message : String(error));
+      }
+    }
+
+    // Validate log-level
+    const logLevel = values["log-level"] as string | undefined;
+    const validLogLevels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
+    if (logLevel && !validLogLevels.includes(logLevel)) {
+      fail(
+        `--log-level must be one of: ${validLogLevels.join(", ")}. Got '${logLevel}'.`,
+      );
+    }
+
+    // Validate and build approval handler
+    const approvalMode = values.approval as string;
+    const validApprovalModes = ["elicit", "auto-approve", "always-deny", "off"];
+    if (!validApprovalModes.includes(approvalMode)) {
+      fail(
+        `--approval must be one of: ${validApprovalModes.join(", ")}. Got '${approvalMode}'.`,
+      );
+    }
+
+    // Validate strategy
+    const strategy = values.strategy as string | undefined;
+    if (strategy) {
+      const validStrategies = ["standard", "internal", "testing", "performance", "minimal"];
+      if (!validStrategies.includes(strategy)) {
+        fail(
+          `--strategy must be one of: ${validStrategies.join(", ")}. Got '${strategy}'.`,
+        );
+      }
+    }
+
+    // Validate output-format
+    const outputFormat = values["output-format"] as string | undefined;
+    const validOutputFormats = ["json", "csv", "jsonl"];
+    if (outputFormat && !validOutputFormats.includes(outputFormat)) {
+      fail(
+        `--output-format must be one of: ${validOutputFormats.join(", ")}. Got '${outputFormat}'.`,
+      );
+    }
+
+    let approvalHandler: unknown;
+    if (approvalMode === "elicit") {
+      approvalHandler = new ElicitationApprovalHandler();
+    } else if (approvalMode === "auto-approve" || approvalMode === "always-deny") {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const apcore = await import("apcore-js") as any;
+        if (approvalMode === "auto-approve") {
+          const AutoApprove = apcore.AutoApproveHandler ?? apcore.default?.AutoApproveHandler;
+          if (AutoApprove) {
+            approvalHandler = new AutoApprove();
+          } else {
+            fail("apcore-js does not export AutoApproveHandler.");
+          }
+        } else {
+          const AlwaysDeny = apcore.AlwaysDenyHandler ?? apcore.default?.AlwaysDenyHandler;
+          if (AlwaysDeny) {
+            approvalHandler = new AlwaysDeny();
+          } else {
+            fail("apcore-js does not export AlwaysDenyHandler.");
+          }
+        }
+      } catch {
+        fail(`Failed to import approval handler from apcore-js for mode '${approvalMode}'.`);
+      }
+    }
+
+    // Build JWT authenticator.
+    // Resolution: --jwt-key-file > --jwt-secret > APCORE_JWT_SECRET env var
+    let jwtKey: string | undefined;
+    const keyFile = values["jwt-key-file"] as string | undefined;
+    if (keyFile) {
+      const { readFileSync } = await import("fs");
+      try {
+        jwtKey = readFileSync(keyFile, "utf-8").trim();
+      } catch (err) {
+        fail(`Cannot read JWT key file: ${keyFile} (${err})`);
+      }
+    } else {
+      jwtKey = (values["jwt-secret"] as string) || process.env.APCORE_JWT_SECRET;
+    }
+    const jwtRequireAuth = values["jwt-permissive"] ? false : (values["jwt-require-auth"] as boolean);
+    const authenticator = jwtKey
+      ? new JWTAuthenticator({
+          secret: jwtKey,
+          algorithms: values["jwt-algorithm"]
+            ? [values["jwt-algorithm"] as Algorithm]
+            : undefined,
+          audience: values["jwt-audience"],
+          issuer: values["jwt-issuer"],
+          requireAuth: jwtRequireAuth,
+        })
+      : undefined;
+
+    // Parse exempt paths
+    const exemptPathsRaw = values["exempt-paths"] as string | undefined;
+    const exemptPaths = exemptPathsRaw
+      ? exemptPathsRaw.split(",").map((p) => p.trim())
+      : undefined;
+
+    const observabilityEnabled = values.observability as boolean;
+    const asyncDisabled = values["no-async"] as boolean;
+    const asyncEnabled = asyncDisabled ? false : (values.async as boolean);
+
+    // Launch the MCP server
     try {
-      jwtKey = readFileSync(keyFile, "utf-8").trim();
-    } catch (err) {
-      fail(`Cannot read JWT key file: ${keyFile} (${err})`);
+      await serve(registry as never, {
+        transport: transport as "stdio" | "streamable-http" | "sse",
+        host: values.host as string,
+        port,
+        name,
+        version: values.version ?? undefined,
+        logLevel: logLevel as "DEBUG" | "INFO" | "WARNING" | "ERROR" | undefined,
+        explorer: values.explorer as boolean,
+        explorerPrefix: values["explorer-prefix"] as string,
+        allowExecute: values["allow-execute"] as boolean,
+        authenticator,
+        exemptPaths,
+        approvalHandler,
+        strategy,
+        outputFormat: outputFormat as "json" | "csv" | "jsonl",
+        observability: observabilityEnabled,
+        async: asyncEnabled,
+      });
+    } catch (error) {
+      console.error("Server startup failed:", error);
+      process.exit(2);
     }
+  };
+  if (values.transport === "stdio") {
+    await withStdioOutput(launch);
   } else {
-    jwtKey = (values["jwt-secret"] as string) || process.env.APCORE_JWT_SECRET;
-  }
-  const jwtRequireAuth = values["jwt-permissive"] ? false : (values["jwt-require-auth"] as boolean);
-  const authenticator = jwtKey
-    ? new JWTAuthenticator({
-        secret: jwtKey,
-        algorithms: values["jwt-algorithm"]
-          ? [values["jwt-algorithm"] as Algorithm]
-          : undefined,
-        audience: values["jwt-audience"],
-        issuer: values["jwt-issuer"],
-        requireAuth: jwtRequireAuth,
-      })
-    : undefined;
-
-  // Parse exempt paths
-  const exemptPathsRaw = values["exempt-paths"] as string | undefined;
-  const exemptPaths = exemptPathsRaw
-    ? exemptPathsRaw.split(",").map((p) => p.trim())
-    : undefined;
-
-  const observabilityEnabled = values.observability as boolean;
-  const asyncDisabled = values["no-async"] as boolean;
-  const asyncEnabled = asyncDisabled ? false : (values.async as boolean);
-
-  // Launch the MCP server
-  try {
-    await serve(registry as never, {
-      transport: transport as "stdio" | "streamable-http" | "sse",
-      host: values.host as string,
-      port,
-      name,
-      version: values.version ?? undefined,
-      logLevel: logLevel as "DEBUG" | "INFO" | "WARNING" | "ERROR" | undefined,
-      explorer: values.explorer as boolean,
-      explorerPrefix: values["explorer-prefix"] as string,
-      allowExecute: values["allow-execute"] as boolean,
-      authenticator,
-      exemptPaths,
-      approvalHandler,
-      strategy,
-      outputFormat: outputFormat as "json" | "csv" | "jsonl",
-      observability: observabilityEnabled,
-      async: asyncEnabled,
-    });
-  } catch (error) {
-    console.error("Server startup failed:", error);
-    process.exit(2);
+    await launch();
   }
 }
 
-main().catch((error) => {
-  console.error("Unexpected error:", error);
-  process.exit(2);
-});
+// Importing the exported main must not start a second, competing stdio owner.
+function isEntrypoint(): boolean {
+  try {
+    return Boolean(process.argv[1]) && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isEntrypoint()) {
+  main().catch((error) => {
+    console.error("Unexpected error:", error);
+    process.exit(2);
+  });
+}

@@ -35,7 +35,7 @@ describe("CLI (cli.ts)", () => {
   let infoMessages: string[];
   let warnMessages: string[];
 
-  // Suppress unhandled rejections from module-level main().catch() auto-invocation
+  // Exit sentinels are expected test control flow.
   const suppressUnhandled = (err: unknown) => {
     if (err instanceof ExitSentinel) return; // expected
   };
@@ -144,9 +144,7 @@ describe("CLI (cli.ts)", () => {
     }));
 
     const mod = await import("../src/cli.js");
-
-    // Wait a tick for the module-level main().catch() auto-invocation to settle
-    await new Promise((r) => setTimeout(r, 50));
+    expect(mockServe).not.toHaveBeenCalled();
 
     const { main } = mod;
 
@@ -368,8 +366,7 @@ describe("CLI (cli.ts)", () => {
     );
 
     expect(exitCode).toBe(-1); // no process.exit
-    // main() is called manually + once by module-level auto-invocation
-    expect(mockServe).toHaveBeenCalled();
+    expect(mockServe).toHaveBeenCalledOnce();
   });
 
   it("warns when 0 modules are discovered", async () => {

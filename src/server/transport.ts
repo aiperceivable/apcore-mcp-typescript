@@ -10,6 +10,7 @@
 import * as crypto from "node:crypto";
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { bindStdioWork, withStdioOutput } from "./stdio-output.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
@@ -83,6 +84,8 @@ export function readBody(req: IncomingMessage, maxBytes: number = MAX_BODY_BYTES
 }
 
 export class TransportManager {
+  private _closeStdio?: () => Promise<void>;
+
   /** The underlying HTTP server, if an HTTP-based transport is active. */
   httpServer?: HttpServer;
 
@@ -477,28 +480,67 @@ export class TransportManager {
    * @param server - The MCP Server instance to connect
    */
   async runStdio(server: Server): Promise<void> {
-    const transport = new StdioServerTransport();
-
-    // [A-D-TR-2] stdio has no wire-level session id, so synthesize one and wire
-    // teardown cancellation the same way runSse and runStreamableHttp do. The
-    // set_async_task_bridge contract is not restricted to network transports —
-    // Python honours it on stdio (transport.py:106-113) — and without this,
-    // async tasks submitted over stdio outlived the client's exit.
-    if (this._asyncTaskBridge) {
+    await withStdioOutput(async (lease) => {
+      const releaseTransport = lease.claimTransport();
+      const unbindWork = bindStdioWork(server, lease);
+      const transport = new StdioServerTransport(process.stdin, lease.protocolOutput);
       const sessionId = crypto.randomUUID();
-      const existing = transport.onclose;
-      transport.onclose = () => {
-        this._asyncTaskBridge?.cancelSessionTasks(sessionId).catch((err: unknown) => {
-          console.warn(
-            `cancelSessionTasks failed for stdio session ${sessionId}:`,
-            err,
-          );
-        });
-        if (existing) existing();
+      let resolveClosed!: () => void;
+      let rejectClosed!: (error: Error) => void;
+      const closed = new Promise<void>((resolve, reject) => {
+        resolveClosed = resolve;
+        rejectClosed = reject;
+      });
+      // A write error can occur while connect is still awaiting start().
+      // Mark this promise handled until the lifetime await below is attached.
+      void closed.catch(() => {});
+      let closing: Promise<void> | undefined;
+      const closeTransport = (): Promise<void> => {
+        closing ??= transport.close();
+        return closing;
       };
-    }
-
-    await server.connect(transport);
+      const onEnd = (): void => {
+        void lease.drain().then(closeTransport).catch(onFailure);
+      };
+      const onFailure = (error: Error): void => {
+        rejectClosed(error);
+        void closeTransport().catch(() => {});
+      };
+      transport.onerror = (error) => { console.error("MCP stdio transport error:", error); };
+      let transportClosed = false;
+      transport.onclose = () => {
+        if (transportClosed) return;
+        transportClosed = true;
+        Promise.resolve().then(() => this._asyncTaskBridge?.cancelSessionTasks(sessionId)).catch((error: unknown) => {
+          console.warn(`cancelSessionTasks failed for stdio session ${sessionId}:`, error);
+        }).then(resolveClosed, rejectClosed);
+      };
+      process.stdin.once("end", onEnd);
+      process.stdin.once("error", onFailure);
+      process.once("SIGINT", onEnd);
+      process.once("SIGTERM", onEnd);
+      lease.protocolOutput.once("error", onFailure);
+      this._closeStdio = closeTransport;
+      try {
+        await server.connect(transport);
+        if (process.stdin.readableEnded) onEnd();
+        await closed;
+      } finally {
+        process.stdin.off("end", onEnd);
+        process.stdin.off("error", onFailure);
+        process.off("SIGINT", onEnd);
+        process.off("SIGTERM", onEnd);
+        this._closeStdio = undefined;
+        try {
+          await closeTransport();
+          await lease.drain();
+        } finally {
+          lease.protocolOutput.off("error", onFailure);
+          unbindWork();
+          releaseTransport();
+        }
+      }
+    });
   }
 
   /**
@@ -762,6 +804,7 @@ export class TransportManager {
    * Close the HTTP server if one is running.
    */
   async close(): Promise<void> {
+    await this._closeStdio?.();
     if (!this.httpServer) return;
 
     return new Promise((resolve) => {

@@ -14,6 +14,7 @@ import { MCPServerFactory } from "./server/factory.js";
 import { ExecutionRouter } from "./server/router.js";
 import { RegistryListener } from "./server/listener.js";
 import { TransportManager } from "./server/transport.js";
+import { withStdioOutput, type StdioOutputLease } from "./server/stdio-output.js";
 import { registerMcpNamespace } from "./config.js";
 import { registerMcpFormatter } from "./adapters/mcp-error-formatter.js";
 import type { MetricsExporter } from "./server/transport.js";
@@ -718,6 +719,19 @@ export async function serve(
   registryOrExecutor: RegistryOrExecutor | undefined = undefined,
   options: ServeOptions = {},
 ): Promise<void> {
+  if (options.transport !== undefined && options.transport !== "stdio") {
+    return serveInternal(registryOrExecutor, options);
+  }
+  // Until Config Bus resolution, an unspecified transport reserves stdout
+  // conservatively. Explicit HTTP/SSE callers never change process output.
+  return withStdioOutput((lease) => serveInternal(registryOrExecutor, options, lease));
+}
+
+async function serveInternal(
+  registryOrExecutor: RegistryOrExecutor | undefined,
+  options: ServeOptions,
+  stdioLease?: StdioOutputLease,
+): Promise<void> {
   // [D9-002] Apply caller-wins precedence: caller option → Config Bus → hardcoded
   // default. We can't tell at the destructure step whether a value came from the
   // caller or from a hardcoded default, so for the 9 scalar keys we destructure
@@ -780,6 +794,9 @@ export async function serve(
   const { resolvedStrategy, combinedMiddleware, effectiveAcl, configOpenapi, configBusDefaults } =
     await loadConfigBusOverrides(strategy, callerMiddleware, callerAcl);
 
+  const transport = optTransport ?? configBusDefaults.transport ?? "stdio";
+  if (transport !== "stdio") stdioLease?.release();
+
   // PRD F-054 Acceptance Criterion 1: `mcp.openapi.spec` alone, with no
   // explicit backend and no CLI flag, must start a server. When a backend
   // IS given and `mcp.openapi` is ALSO configured, the two are unioned
@@ -812,7 +829,6 @@ export async function serve(
   }
 
   // [D9-002] Resolve scalar config values: caller → Config Bus → hardcoded default.
-  const transport = optTransport ?? configBusDefaults.transport ?? "stdio";
   const host = optHost ?? configBusDefaults.host ?? "127.0.0.1";
   const port = optPort ?? configBusDefaults.port ?? 8000;
   const name = optName ?? configBusDefaults.name ?? "apcore-mcp";
@@ -826,170 +842,174 @@ export async function serve(
   // Config-Bus-resolved values.
   validateServeOptions({ name, tags, prefix, explorer, explorerPrefix });
 
-  // Apply log-level suppression (post-resolution so Config Bus values apply).
-  if (logLevel) {
-    const levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
-    const minLevel = levels.indexOf(logLevel);
-    if (minLevel > 0) console.debug = () => { };
-    if (minLevel > 1) console.info = () => { };
-    if (minLevel > 2) console.warn = () => { };
-    if (minLevel > 3) console.error = () => { };
-  }
-
-  const registry = resolveRegistry(resolvedBackend);
-  const executor = await resolveExecutor(resolvedBackend, {
-    approvalHandler: effectiveApprovalHandler,
-    strategy: resolvedStrategy,
-    middleware: combinedMiddleware,
-    acl: effectiveAcl,
-  });
-
-  // aiperceivable/apcore-mcp#15(b): ACL/approval/policy are fully wired by
-  // this point (resolveExecutor above). Warn — before the server actually
-  // starts — when system.control.* is registered and reachable with no
-  // recognised gate in front of it. Uses origWarn (not console.warn) so the
-  // warning is never silenced by `logLevel`. Warning only; never blocks
-  // startup.
-  const governanceState = tryGovernanceState(executor);
-  if (governanceState) {
-    const warning = formatUnprotectedControlSurfaceWarning(governanceState);
-    if (warning) origWarn(warning);
-  }
-
-  // FR-ACL-004 / §6.2.1 tier 2: report ACL rules that loaded cleanly and can
-  // protect nothing (e.g. ["$not", "*"]) — a well-formed pattern array that
-  // matches no legal module ID. Same placement and advisory contract as the
-  // governance-state warning above: never blocks startup, uses origWarn so
-  // it survives `logLevel` suppression.
-  const aclFindings = tryValidateAclRules(effectiveAcl);
-  if (aclFindings) {
-    const warning = formatAclNeverMatchesWarnings(aclFindings);
-    if (warning) origWarn(warning);
-  }
-
-  // Phase B: start the store's background sweep before the transport binds so
-  // resolved/abandoned records are reclaimed. Stopped in the finally below.
-  if (approvalStore && typeof approvalStore.start === "function") {
-    approvalStore.start();
-  }
-
-  // ── F-044: observability auto-wire (metrics + usage middleware) ──────
-  const obsStack = await installObservability(
-    executor,
-    metricsCollector,
-    observabilityFlag,
-  );
-  const resolvedMetricsCollector = obsStack.metricsCollector;
-
-  // Register MCP config namespace and error formatter (idempotent)
-  registerMcpNamespace();
-  await registerMcpFormatter();
-
-  // Build output schema map for redaction
-  const outputSchemaMap = buildOutputSchemaMap(registry);
-
-  // ── F-043: AsyncTaskBridge ───────────────────────────────────────────
-  const asyncOpt = typeof asyncFlag === "object" ? asyncFlag : null;
-  const asyncEnabled = asyncFlag === undefined ? true : asyncFlag !== false;
-  const asyncBridge: AsyncTaskBridge | null = asyncEnabled
-    ? await createAsyncTaskBridge(executor, {
-        enabled: true,
-        maxConcurrent: asyncOpt?.maxConcurrent,
-        maxTasks: asyncOpt?.maxTasks,
-        outputSchemaMap,
-        // [A-D-008]: enable ASYNC_MODULE_NOT_ASYNC enforcement on
-        // __apcore_task_submit by giving the bridge a way to fetch the
-        // descriptor for a module id.
-        descriptorLookup: (moduleId: string) =>
-          (registry as { getDefinition?: (id: string) => ModuleDescriptor | null | undefined })
-            .getDefinition?.(moduleId) ?? null,
-      })
-    : null;
-
-  // Build MCP server components
-  const factory = new MCPServerFactory();
-  // aiperceivable/apcore-mcp#16 phase A: advertise `com.aiperceivable/management`
-  // in `initialize` capabilities only for surfaces actually registered.
-  const managementSurfaces = computeManagementSurfaces(registry);
-  const server = factory.createServer(name, version, managementSurfaces);
-  let tools = factory.buildTools(registry, { tags, prefix });
-  tools = factory.attachAsyncMetaTools(tools, asyncBridge ?? undefined);
-  const router = new ExecutionRouter(executor, {
-    validateInputs,
-    outputFormatter,
-    outputFormat,
-    redactOutput,
-    outputSchemaMap,
-    trace,
-    asyncTaskBridge: asyncBridge ?? undefined,
-  });
-  factory.registerHandlers(server, tools, router);
-  factory.registerResourceHandlers(server, registry, router);
-
-  // Start dynamic tool registration listener if enabled
-  if (options.dynamic) {
-    const listener = new RegistryListener(registry, factory);
-    listener.start();
-    origInfo("Dynamic tool registration enabled via RegistryListener");
-  }
-
-  origInfo(
-    `Starting MCP server '${name}' v${version} with ${tools.length} tools via ${transport}`,
-  );
-
-  // Invoke startup callback
-  await onStartup?.();
-
-  // Select and run transport
-  const transportManager = new TransportManager();
-  transportManager.setModuleCount(tools.length);
-  if (resolvedMetricsCollector) {
-    transportManager.setMetricsCollector(resolvedMetricsCollector);
-  }
-  if (obsStack.usageCollector) {
-    transportManager.setUsageCollector(obsStack.usageCollector);
-  }
-  // [A-D-018] Wire the bridge so transport-level disconnect events
-  // trigger cancelSessionTasks(sessionId) for cooperative cancellation.
-  // Defensive call — older mocks/test doubles may lack the setter.
-  if (asyncBridge && typeof transportManager.setAsyncTaskBridge === "function") {
-    transportManager.setAsyncTaskBridge(asyncBridge);
-  }
-  if (authenticator) {
-    transportManager.setAuthenticator(authenticator);
-  }
-  if (requireAuth !== undefined) {
-    transportManager.setRequireAuth(requireAuth);
-  }
-  if (exemptPaths) {
-    transportManager.setExemptPaths(exemptPaths);
-  }
-
-  // Mount explorer for HTTP transports only
-  const transportLower = transport.toLowerCase();
-  if (explorer && (transportLower === "streamable-http" || transportLower === "sse")) {
-    // Build auth hook for POST (tool execution) calls
-    const authHook = authenticator
-      ? buildExplorerAuthHook(authenticator, { requireAuth })
-      : undefined;
-
-    const explorerNodeHandler = createNodeHandler(
-      tools as UITool[],
-      async (name: string, args: Record<string, unknown>) => router.handleCall(name, args),
-      {
-        prefix: explorerPrefix,
-        allowExecute,
-        authHook,
-        title: explorerTitle,
-        projectName: explorerProjectName,
-        projectUrl: explorerProjectUrl,
-      },
-    );
-    transportManager.setExplorer(explorerNodeHandler, explorerPrefix);
-    origInfo(`Tool Explorer enabled at ${explorerPrefix}`);
-  }
-
+  let asyncBridge: AsyncTaskBridge | null = null;
+  let approvalStoreStarted = false;
+  let listener: RegistryListener | undefined;
   try {
+    // Apply log-level suppression (post-resolution so Config Bus values apply).
+    if (logLevel) {
+      const levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
+      const minLevel = levels.indexOf(logLevel);
+      if (minLevel > 0) console.debug = () => { };
+      if (minLevel > 1) console.info = () => { };
+      if (minLevel > 2) console.warn = () => { };
+      if (minLevel > 3) console.error = () => { };
+    }
+
+    const registry = resolveRegistry(resolvedBackend);
+    const executor = await resolveExecutor(resolvedBackend, {
+      approvalHandler: effectiveApprovalHandler,
+      strategy: resolvedStrategy,
+      middleware: combinedMiddleware,
+      acl: effectiveAcl,
+    });
+
+    // aiperceivable/apcore-mcp#15(b): ACL/approval/policy are fully wired by
+    // this point (resolveExecutor above). Warn — before the server actually
+    // starts — when system.control.* is registered and reachable with no
+    // recognised gate in front of it. Uses origWarn (not console.warn) so the
+    // warning is never silenced by `logLevel`. Warning only; never blocks
+    // startup.
+    const governanceState = tryGovernanceState(executor);
+    if (governanceState) {
+      const warning = formatUnprotectedControlSurfaceWarning(governanceState);
+      if (warning) origWarn(warning);
+    }
+
+    // FR-ACL-004 / §6.2.1 tier 2: report ACL rules that loaded cleanly and can
+    // protect nothing (e.g. ["$not", "*"]) — a well-formed pattern array that
+    // matches no legal module ID. Same placement and advisory contract as the
+    // governance-state warning above: never blocks startup, uses origWarn so
+    // it survives `logLevel` suppression.
+    const aclFindings = tryValidateAclRules(effectiveAcl);
+    if (aclFindings) {
+      const warning = formatAclNeverMatchesWarnings(aclFindings);
+      if (warning) origWarn(warning);
+    }
+
+    // Phase B: start the store's background sweep before the transport binds so
+    // resolved/abandoned records are reclaimed. Stopped in the finally below.
+    if (approvalStore && typeof approvalStore.start === "function") {
+      approvalStore.start();
+      approvalStoreStarted = true;
+    }
+
+    // ── F-044: observability auto-wire (metrics + usage middleware) ──────
+    const obsStack = await installObservability(
+      executor,
+      metricsCollector,
+      observabilityFlag,
+    );
+    const resolvedMetricsCollector = obsStack.metricsCollector;
+
+    // Register MCP config namespace and error formatter (idempotent)
+    registerMcpNamespace();
+    await registerMcpFormatter();
+
+    // Build output schema map for redaction
+    const outputSchemaMap = buildOutputSchemaMap(registry);
+
+    // ── F-043: AsyncTaskBridge ───────────────────────────────────────────
+    const asyncOpt = typeof asyncFlag === "object" ? asyncFlag : null;
+    const asyncEnabled = asyncFlag === undefined ? true : asyncFlag !== false;
+    asyncBridge = asyncEnabled
+      ? await createAsyncTaskBridge(executor, {
+          enabled: true,
+          maxConcurrent: asyncOpt?.maxConcurrent,
+          maxTasks: asyncOpt?.maxTasks,
+          outputSchemaMap,
+          // [A-D-008]: enable ASYNC_MODULE_NOT_ASYNC enforcement on
+          // __apcore_task_submit by giving the bridge a way to fetch the
+          // descriptor for a module id.
+          descriptorLookup: (moduleId: string) =>
+            (registry as { getDefinition?: (id: string) => ModuleDescriptor | null | undefined })
+              .getDefinition?.(moduleId) ?? null,
+        })
+      : null;
+
+    // Build MCP server components
+    const factory = new MCPServerFactory();
+    // aiperceivable/apcore-mcp#16 phase A: advertise `com.aiperceivable/management`
+    // in `initialize` capabilities only for surfaces actually registered.
+    const managementSurfaces = computeManagementSurfaces(registry);
+    const server = factory.createServer(name, version, managementSurfaces);
+    let tools = factory.buildTools(registry, { tags, prefix });
+    tools = factory.attachAsyncMetaTools(tools, asyncBridge ?? undefined);
+    const router = new ExecutionRouter(executor, {
+      validateInputs,
+      outputFormatter,
+      outputFormat,
+      redactOutput,
+      outputSchemaMap,
+      trace,
+      asyncTaskBridge: asyncBridge ?? undefined,
+    });
+    factory.registerHandlers(server, tools, router);
+    factory.registerResourceHandlers(server, registry, router);
+
+    // Start dynamic tool registration listener if enabled
+    if (options.dynamic) {
+      listener = new RegistryListener(registry, factory);
+      listener.start();
+      console.info("Dynamic tool registration enabled via RegistryListener");
+    }
+
+    console.info(
+      `Starting MCP server '${name}' v${version} with ${tools.length} tools via ${transport}`,
+    );
+
+    // Invoke startup callback
+    await onStartup?.();
+
+    // Select and run transport
+    const transportManager = new TransportManager();
+    transportManager.setModuleCount(tools.length);
+    if (resolvedMetricsCollector) {
+      transportManager.setMetricsCollector(resolvedMetricsCollector);
+    }
+    if (obsStack.usageCollector) {
+      transportManager.setUsageCollector(obsStack.usageCollector);
+    }
+    // [A-D-018] Wire the bridge so transport-level disconnect events
+    // trigger cancelSessionTasks(sessionId) for cooperative cancellation.
+    // Defensive call — older mocks/test doubles may lack the setter.
+    if (asyncBridge && typeof transportManager.setAsyncTaskBridge === "function") {
+      transportManager.setAsyncTaskBridge(asyncBridge);
+    }
+    if (authenticator) {
+      transportManager.setAuthenticator(authenticator);
+    }
+    if (requireAuth !== undefined) {
+      transportManager.setRequireAuth(requireAuth);
+    }
+    if (exemptPaths) {
+      transportManager.setExemptPaths(exemptPaths);
+    }
+
+    // Mount explorer for HTTP transports only
+    const transportLower = transport.toLowerCase();
+    if (explorer && (transportLower === "streamable-http" || transportLower === "sse")) {
+      // Build auth hook for POST (tool execution) calls
+      const authHook = authenticator
+        ? buildExplorerAuthHook(authenticator, { requireAuth })
+        : undefined;
+
+      const explorerNodeHandler = createNodeHandler(
+        tools as UITool[],
+        async (name: string, args: Record<string, unknown>) => router.handleCall(name, args),
+        {
+          prefix: explorerPrefix,
+          allowExecute,
+          authHook,
+          title: explorerTitle,
+          projectName: explorerProjectName,
+          projectUrl: explorerProjectUrl,
+        },
+      );
+      transportManager.setExplorer(explorerNodeHandler, explorerPrefix);
+      console.info(`Tool Explorer enabled at ${explorerPrefix}`);
+    }
+
     if (transport === "stdio") {
       await transportManager.runStdio(server);
     } else if (transport === "streamable-http") {
@@ -1013,7 +1033,8 @@ export async function serve(
         origWarn("[apcore-mcp] AsyncTaskManager shutdown failed:", err);
       }
     }
-    if (approvalStore && typeof approvalStore.stop === "function") {
+    listener?.stop();
+    if (approvalStoreStarted && approvalStore && typeof approvalStore.stop === "function") {
       approvalStore.stop();
     }
     await onShutdown?.();

@@ -7,6 +7,7 @@
  * - Registering tools/list and tools/call request handlers
  */
 
+import { observeStdioWork } from "./stdio-output.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { observeStructuredProtocol, supportsStructuredOutput, addStructuredOutput } from "./structured-output.js";
 import {
@@ -188,6 +189,7 @@ export class MCPServerFactory {
 
     const server = new Server({ name, version }, { capabilities });
     observeStructuredProtocol(server);
+    observeStdioWork(server);
     return server;
   }
 
@@ -435,6 +437,7 @@ export class MCPServerFactory {
     registry: Registry,
     router?: ExecutionRouter,
   ): void {
+    observeStdioWork(server);
     // Build a map of module_id -> documentation for modules with docs
     const docsMap = new Map<string, string>();
     const moduleIds = registry.list();
@@ -617,6 +620,7 @@ export class MCPServerFactory {
     options?: { asyncTaskBridge?: AsyncTaskBridge; approvalBridge?: ApprovalBridge },
   ): void {
     observeStructuredProtocol(server);
+    observeStdioWork(server);
     // [D11-014] If asyncTaskBridge is provided, extend tools list with meta-tools.
     const bridge = options?.asyncTaskBridge;
     const approvalBridge = options?.approvalBridge;

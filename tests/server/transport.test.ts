@@ -362,12 +362,14 @@ describe("TransportManager", () => {
         }),
       } as unknown as Server;
 
-      await mgr.runStdio(mockServer);
+      const running = mgr.runStdio(mockServer);
+      await Promise.resolve();
 
       expect(connected).toBeDefined();
       expect(connected!.onclose).toBeTypeOf("function");
 
-      connected!.onclose!();
+      await mgr.close();
+      await running;
 
       // The set_async_task_bridge contract is not restricted to network
       // transports: Python honours it on stdio (transport.py:106-113), and the
@@ -390,7 +392,8 @@ describe("TransportManager", () => {
         }),
       } as unknown as Server;
 
-      await mgr.runStdio(mockServer);
+      const running = mgr.runStdio(mockServer);
+      await Promise.resolve();
 
       const later = vi.fn();
       const wired = connected!.onclose!;
@@ -398,7 +401,9 @@ describe("TransportManager", () => {
         wired();
         later();
       };
-      connected!.onclose!();
+      await mgr.close();
+
+      await running;
 
       expect(cancelSessionTasks).toHaveBeenCalledTimes(1);
       expect(later).toHaveBeenCalledTimes(1);
@@ -413,10 +418,25 @@ describe("TransportManager", () => {
         }),
       } as unknown as Server;
 
-      await mgr.runStdio(mockServer);
+      const running = mgr.runStdio(mockServer);
+      await Promise.resolve();
 
-      expect(() => connected!.onclose?.()).not.toThrow();
+      expect(connected).toBeDefined();
+      await mgr.close();
+      await running;
     });
+  });
+
+  it("restores stdout and lifecycle listeners after connection startup fails", async () => {
+    const mgr = new TransportManager();
+    const stdout = process.stdout.write;
+    const endListeners = process.stdin.listenerCount("end");
+    const signalListeners = process.listenerCount("SIGTERM");
+    const server = { connect: vi.fn().mockRejectedValue(new Error("connect failed")) } as unknown as Server;
+    await expect(mgr.runStdio(server)).rejects.toThrow("connect failed");
+    expect(process.stdout.write).toBe(stdout);
+    expect(process.stdin.listenerCount("end")).toBe(endListeners);
+    expect(process.listenerCount("SIGTERM")).toBe(signalListeners);
   });
 
   describe("close", () => {

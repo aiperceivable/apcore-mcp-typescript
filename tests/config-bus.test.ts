@@ -157,3 +157,18 @@ describe("D9-002: Config Bus scalar key reads (transport/host/port)", () => {
     );
   });
 });
+
+describe("stdio reservation while resolving Config Bus transport", () => {
+  it("reserves unspecified bootstrap, then restores before Config-selected HTTP setup", async () => {
+    const stdout = process.stdout.write;
+    getInstanceSpy.mockImplementationOnce(() => {
+      expect(process.stdout.write).not.toBe(stdout);
+      return { get: (key: string) => key === "mcp.transport" ? "streamable-http" : null };
+    });
+    await serve(makeExecutor(makeRegistry()), {
+      async: false,
+      onStartup: () => { expect(process.stdout.write).toBe(stdout); },
+    });
+    expect(process.stdout.write).toBe(stdout);
+  });
+});

@@ -242,7 +242,11 @@ describe("serve() logLevel suppression (F2)", () => {
       capturedWarn = console.warn;
     });
 
-    await serve(executor, { transport: "stdio", logLevel: "ERROR" });
+    const infoSpy = vi.spyOn(console, "info");
+    try {
+      await serve(executor, { transport: "stdio", logLevel: "ERROR" });
+      expect(infoSpy).not.toHaveBeenCalled();
+    } finally { infoSpy.mockRestore(); }
 
     // During execution, all three were suppressed
     expect(capturedDebug).not.toBe(originalDebug);
@@ -406,5 +410,38 @@ describe("serve() approvalStore lifecycle", () => {
     await serve(executor, { transport: "stdio", approvalStore: store });
 
     expect(mockRunStdio).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("serve() output restoration", () => {
+  it("restores console suppression and stdout when pre-transport setup fails", async () => {
+    const stdout = process.stdout.write;
+    const info = console.info;
+    mockBuildTools.mockImplementationOnce(() => { throw new Error("tool build failed"); });
+    await expect(serve(createMockExecutor(createMockRegistry({})), {
+      transport: "stdio", logLevel: "ERROR", async: false,
+    })).rejects.toThrow("tool build failed");
+    expect(console.info).toBe(info);
+    expect(process.stdout.write).toBe(stdout);
+  });
+
+  it("restores stdout and invokes shutdown after startup callback failure", async () => {
+    const stdout = process.stdout.write;
+    const shutdown = vi.fn();
+    await expect(serve(createMockExecutor(createMockRegistry({})), {
+      transport: "stdio", async: false,
+      onStartup: () => { throw new Error("startup failed"); }, onShutdown: shutdown,
+    })).rejects.toThrow("startup failed");
+    expect(shutdown).toHaveBeenCalledOnce();
+    expect(process.stdout.write).toBe(stdout);
+  });
+
+  it.each(["streamable-http", "sse"] as const)("does not redirect explicit %s bootstrap/output", async (transport) => {
+    const stdout = process.stdout.write;
+    await serve(createMockExecutor(createMockRegistry({})), {
+      transport, async: false,
+      onStartup: () => { expect(process.stdout.write).toBe(stdout); },
+    });
+    expect(process.stdout.write).toBe(stdout);
   });
 });
