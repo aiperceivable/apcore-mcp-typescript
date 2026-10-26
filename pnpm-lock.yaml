@@ -18,8 +18,8 @@ importers:
         specifier: '>=0.32.3'
         version: 0.32.3
       apcore-toolkit:
-        specifier: '>=0.14.0'
-        version: 0.14.0(@sinclair/typebox@0.34.48)
+        specifier: '>=0.14.1'
+        version: 0.14.1(@sinclair/typebox@0.34.48)
       jsonwebtoken:
         specifier: '>=9.0.3'
         version: 9.0.3
@@ -806,8 +806,8 @@ packages:
     resolution: {integrity: sha512-kmIDULt35c4vv9fxopnUomDi2Vvb9TzX4JdO9xfv6+XAE62OxuH4a6cvIQCuu62A5ESsIiwa2evhNX+PbPyqtA==}
     engines: {node: '>=20.0.0'}
 
-  apcore-toolkit@0.14.0:
-    resolution: {integrity: sha512-S1vBRUx379NXMVn1Kg2qXpd0VXDmNRTyno43y8mx4sC8f2ge7yprBxWooczLkkHE5y7s7Sd8ReCfaNhW4jmtiw==}
+  apcore-toolkit@0.14.1:
+    resolution: {integrity: sha512-sB0rkV54b2XYz6o2yQWCUZ9KF2YWR+ETXtn1jDjVIvNxy2WNF/+7BDqQBbxbAwwTLz7+iP8WDJ+26RXz2XWEGA==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       '@sinclair/typebox': '>=0.31.0'
@@ -2387,7 +2387,7 @@ snapshots:
       js-yaml: 4.3.2
       uuid: 11.1.1
 
-  apcore-toolkit@0.14.0(@sinclair/typebox@0.34.48):
+  apcore-toolkit@0.14.1(@sinclair/typebox@0.34.48):
     dependencies:
       '@sinclair/typebox': 0.34.48
       ajv: 8.20.0
