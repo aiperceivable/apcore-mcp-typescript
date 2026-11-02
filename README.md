@@ -344,7 +344,11 @@ function serve(
 
 *Output handling*
 - `outputFormatter` — Custom function to format tool execution results. When undefined, results are serialized with `JSON.stringify(result)`
-- `redactOutput` — When `true` (default), redact sensitive fields from tool output via apcore's `redactSensitive()` before formatting
+- `redactOutput` — When `true` (default), redact sensitive fields from tool output via apcore's `redactSensitive()` before formatting. Missing output schemas still use default key-name rules. If redaction is unavailable or fails, the output is withheld and the call returns a safe tool error. Configured async-result redactors follow the same rule.
+
+Tool execution failures are returned as `CallToolResult` with `isError: true`; malformed MCP requests remain protocol errors. Execution failure logs do not include the original exception object.
+
+Output processing runs in this order: execution, redaction, formatting, then optional structured-output validation. For plain-object JSON results, a custom `outputFormatter` can compute a digest over the redacted representation before serializing it. Hash the same canonical data on both sides; a digest calculated inside the tool before redaction may no longer match. The formatter has no tool or redaction metadata, is bypassed by CSV/JSONL formats, and falls back to JSON serialization if it throws.
 
 *Auth (HTTP transports only)*
 - `authenticator` — `Authenticator` instance for request authentication

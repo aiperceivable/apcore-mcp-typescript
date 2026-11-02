@@ -42,7 +42,9 @@ describe("real stdio protocol output isolation", () => {
       const messages = lines.map((line) => JSON.parse(line));
       expect(messages.every((message) => message.jsonrpc === "2.0"), stdout).toBe(true);
       expect(messages.find((message) => message.id === 3)?.result.isError).not.toBe(true);
-      expect(messages.find((message) => message.id === 4)?.error).toBeDefined();
+      const failure = messages.find((message) => message.id === 4);
+      expect(failure?.result.isError).toBe(true);
+      expect(failure?.error).toBeUndefined();
       for (const marker of ["Starting MCP server", "startup callback", "shutdown callback", "application console.log", "application stdout.write", "DisplayResolver", "core subscriber", "START stdio_noise", '"traceId"']) {
         expect(stderr, marker).toContain(marker);
       }
@@ -203,7 +205,9 @@ describe("MCP deadline response and physical cleanup ownership", () => {
       expect(code, stderr).toBe(0);
       const messages = stdout.trim().split("\n").map((line) => JSON.parse(line));
       expect(messages.every((message) => message.jsonrpc === "2.0")).toBe(true);
-      expect(messages.find((message) => message.id === 2)?.error).toBeDefined();
+      const failure = messages.find((message) => message.id === 2);
+      expect(failure?.result.isError).toBe(true);
+      expect(failure?.error).toBeUndefined();
       expect(stderr).toContain("timeout module cleaned");
       expect(stderr.indexOf("timeout module cleaned")).toBeLessThan(stderr.indexOf("timeout shutdown"));
     } finally { child.kill("SIGKILL"); }

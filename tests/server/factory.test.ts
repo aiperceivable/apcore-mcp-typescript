@@ -269,7 +269,7 @@ describe("MCPServerFactory", () => {
       expect(callResult.isError).toBeUndefined();
     });
 
-    it("throws error when router returns isError=true so MCP SDK sets isError", async () => {
+    it("preserves router errors as tool results", async () => {
       const tools = [factory.buildTool(makeDescriptor())];
 
       const handlers = new Map<unknown, Function>();
@@ -292,9 +292,23 @@ describe("MCPServerFactory", () => {
       const callHandler = handlers.get(CallToolRequestSchema)!;
       await expect(
         callHandler({
-          params: { name: "bad.module", arguments: {} },
+          params: { name: "test.module", arguments: {} },
         }),
-      ).rejects.toThrow("Module not found");
+      ).resolves.toEqual({ content: [{ type: "text", text: "Module not found" }], isError: true });
+    });
+
+    it("rejects unknown tools before calling the execution router", async () => {
+      const tools = [factory.buildTool(makeDescriptor())];
+      const handlers = new Map<unknown, (request: unknown) => Promise<unknown>>();
+      const mockServer = {
+        setRequestHandler: (schema: unknown, handler: (request: unknown) => Promise<unknown>) => handlers.set(schema, handler),
+      };
+      const mockRouter = { handleCall: vi.fn() };
+      factory.registerHandlers(mockServer as any, tools, mockRouter as any);
+      await expect(handlers.get(CallToolRequestSchema)!({
+        params: { name: "bad.module", arguments: {} },
+      })).rejects.toMatchObject({ code: -32602 });
+      expect(mockRouter.handleCall).not.toHaveBeenCalled();
     });
 
     it("handles null arguments in tools/call", async () => {

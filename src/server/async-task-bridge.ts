@@ -557,20 +557,16 @@ export class AsyncTaskBridge {
         // [A-D-025] Inline result on terminal completed status — even
         // when info.result is null/undefined (Python always inlines;
         // pre-fix TS only inlined when truthy, silently dropping `null`).
-        // [A-D-026] Wrap redactor in try/catch — a buggy redactor must
-        // not bring down handle_status; fall back to original result.
+        // A configured redactor must succeed before a completed result leaves
+        // the bridge. The router maps failures to a safe tool error.
         if (info.status === "completed") {
-          const schema = this._outputSchemaMap[info.moduleId];
+          const schema = this._outputSchemaMap[info.moduleId] ?? {};
           let redacted: Record<string, unknown> | null = info.result;
-          if (this._redactSensitive && schema && info.result) {
+          if (this._redactSensitive && info.result) {
             try {
               redacted = this._redactSensitive(info.result, schema);
-            } catch (err) {
-              console.warn(
-                `task-result redactor raised for ${info.moduleId}; returning unredacted result`,
-                err,
-              );
-              redacted = info.result;
+            } catch {
+              throw new Error("Output redaction failed");
             }
           }
           projection.result = redacted;
@@ -780,7 +776,9 @@ export async function createAsyncTaskBridge(
         : undefined;
     return new AsyncTaskBridge(manager, {
       enabled: true,
-      redactSensitive: typeof redactSensitive === "function" ? redactSensitive : undefined,
+      redactSensitive: typeof redactSensitive === "function" ? redactSensitive : () => {
+        throw new Error("Output redaction failed");
+      },
       outputSchemaMap: options?.outputSchemaMap,
       descriptorLookup: options?.descriptorLookup,
       executor: executorLike,

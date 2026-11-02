@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+## [0.23.4] - 2026-11-02
+
+### Fixed
+
+- Return tool execution and approval failures as MCP tool results with
+  `isError: true`. Reject unknown tool names with JSON-RPC error `-32602`
+  before invoking the executor; failures inside known tools remain tool errors.
+- Apply default key-name redaction when an output schema is missing. If output
+  redaction is unavailable or fails, withhold the original output and return a
+  safe error, including for streaming chunks and configured async task results.
+- Avoid logging complete execution exceptions or redaction exception details,
+  which can contain sensitive values.
+
+### Compatibility
+
+- Output redaction runs before formatting. Existing `outputFormatter` callbacks
+  can calculate a digest over the redacted representation; formatter failures
+  still fall back to JSON serialization. Directly constructed async bridges
+  retain their optional redactor configuration.
+- Tool errors now use MCP tool results instead of JSON-RPC internal errors.
+  Callers should check `isError` in successful `tools/call` responses.
+
+### Tests
+
+- Cover unknown tools, known-tool failures, approval errors, missing schemas,
+  redaction failures, streaming, async results, sensitive logs and digests.
+
 ## [0.23.2] - 2026-10-25
 
 ### Fixed

@@ -130,8 +130,8 @@ export interface ExecutionRouterOptions {
   outputFormat?: "json" | "csv" | "jsonl";
   /**
    * When true (default), redact sensitive fields from output using apcore's
-   * `redactSensitive()` before formatting. Requires apcore-js to be installed
-   * and the tool to have an output_schema in `outputSchemaMap`.
+   * `redactSensitive()` before formatting. Missing schemas use the default
+   * key-name rules. Redaction failures withhold the output as a safe tool error.
    */
   redactOutput?: boolean;
   /**
@@ -286,38 +286,23 @@ export class ExecutionRouter {
     }
   }
 
-  /**
-   * Attempt to redact sensitive fields from the result using apcore's redactSensitive().
-   *
-   * Returns the original result if apcore-js is not available, redactSensitive is not
-   * exported, or if an error occurs during redaction.
-   */
+  /** Apply schema and default key rules, withholding output if redaction fails. */
   private async _maybeRedact(
     toolName: string,
     result: unknown,
   ): Promise<unknown> {
-    if (!this._redactOutput) return result;
-    const outputSchema = this._outputSchemaMap[toolName];
-    if (!outputSchema) return result;
-
+    if (!this._redactOutput || result == null) return result;
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const apcore = await import("apcore-js") as any;
       const redactSensitive = apcore.redactSensitive ?? apcore.default?.redactSensitive;
       if (typeof redactSensitive !== "function") {
-        console.debug(
-          `redactSensitive not available in apcore-js, skipping redaction for "${toolName}"`,
-        );
-        return result;
+        throw new Error("Output redaction failed");
       }
-      return redactSensitive(result, outputSchema);
-    } catch (err: unknown) {
-      console.warn(
-        `redactSensitive failed for "${toolName}", returning unredacted result: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-      return result;
+      return redactSensitive(result, this._outputSchemaMap[toolName] ?? {});
+    } catch {
+      // Never expose the original result or the redactor's exception details.
+      throw new Error("Output redaction failed");
     }
   }
 
@@ -762,7 +747,8 @@ export class ExecutionRouter {
       const traceId = effectiveTraceId;
       return [content, false, traceId];
     } catch (error: unknown) {
-      console.error(`handleCall error for ${toolName}:`, error);
+      // Error messages, stacks, codes and attached fields may contain secrets.
+      console.error("Tool execution failed");
       const errorInfo = this._errorMapper.toMcpError(error);
 
       const content: TextContentDict[] = [

@@ -113,7 +113,9 @@ describe("MCPServerFactory tools/call — traceparent round-trip", () => {
         handlers.set(schema.shape.method.value, handler);
       };
 
-    factory.registerHandlers(server, [], router);
+    factory.registerHandlers(server, [{
+      name: "demo.module", inputSchema: { type: "object" },
+    }], router);
 
     const callHandler = handlers.get(CallToolRequestSchema.shape.method.value)!;
     const incomingTraceId = "11112222333344445555666677778888";

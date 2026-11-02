@@ -13,6 +13,8 @@ import { observeStructuredProtocol, supportsStructuredOutput, addStructuredOutpu
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
+  ErrorCode,
+  McpError,
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
   ListResourceTemplatesRequestSchema,
@@ -644,6 +646,12 @@ export class MCPServerFactory {
     // Handle tools/call requests
     server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       const { name, arguments: args } = request.params;
+      // Unknown tools are protocol errors. Check before execution so a known
+      // tool's missing internal dependency remains a tool execution failure.
+      const tool = allTools.find(candidate => candidate.name === name);
+      if (!tool) {
+        throw new McpError(ErrorCode.InvalidParams, `Unknown tool: ${name}`);
+      }
       const toolArgs = (args ?? {}) as Record<string, unknown>;
 
       // Build HandleCallExtra from MCP SDK extra
@@ -706,10 +714,7 @@ export class MCPServerFactory {
       if (approvalBridge && ApprovalBridge.isMetaTool(name)) {
         const [apContent, apIsError] = await approvalBridge.handleMetaTool(name, toolArgs);
         const apTextContents = apContent.map(c => ({ type: "text" as const, text: c.text }));
-        if (apIsError) {
-          throw new Error(apTextContents[0]?.text ?? "Unknown approval error");
-        }
-        return { content: apTextContents };
+        return { content: apTextContents, ...(apIsError ? { isError: true } : {}) };
       }
 
       const [content, isError, traceId] = await router.handleCall(
@@ -720,12 +725,10 @@ export class MCPServerFactory {
 
       const textContents = content.map(c => ({ type: "text" as const, text: c.text }));
 
-      // NOTE: The MCP SDK decorator always wraps our return in
-      // CallToolResult(isError=false). Setting isError=true is not
-      // supported by the current SDK decorator. For errors, we raise
-      // so the SDK sets isError=true on the CallToolResult.
+      // Tool execution failures are successful JSON-RPC responses carrying
+      // isError. Throwing here turns them into protocol-level internal errors.
       if (isError) {
-        throw new Error(textContents[0]?.text ?? "Unknown error");
+        return { content: textContents, isError: true };
       }
 
       const result: CallToolResult & { _meta?: Record<string, unknown> } = {
@@ -744,7 +747,7 @@ export class MCPServerFactory {
       }
 
       return supportsStructuredOutput(server, extra)
-        ? addStructuredOutput(result, allTools.find(tool => tool.name === name))
+        ? addStructuredOutput(result, tool)
         : result;
     });
   }
