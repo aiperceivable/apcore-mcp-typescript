@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.23.5] - 2026-11-08
+
+### Fixed
+
+- Align the async task bridge with the apcore-js 0.32.3 manager API: construct
+  the manager with an options object, pass submission context through options,
+  and await asynchronous status, result and task-list operations.
+
+### Compatibility
+
+- Custom managers passed to `AsyncTaskBridge` must implement the apcore-js
+  0.32.3 async manager contract.
 
 ## [0.23.4] - 2026-11-02
 

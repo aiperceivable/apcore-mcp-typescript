@@ -88,14 +88,22 @@ export interface TaskInfoProjection {
   error?: string | null;
 }
 
-/** Minimal duck-typed `AsyncTaskManager` contract the bridge depends on. */
+/**
+ * Minimal duck-typed `AsyncTaskManager` contract the bridge depends on.
+ *
+ * This mirrors **apcore-js 0.32.3**, whose `submit` takes an options object and
+ * whose `getStatus` / `listTasks` are async. It is intentionally TS-local:
+ * apcore-python and apcore-rust still expose positional `context` and sync
+ * reads, so their bridges keep their own manager shape. The cross-language
+ * contract is the MCP `__apcore_task_*` envelope, not this interface.
+ */
 export interface AsyncTaskManagerLike {
   submit(
     moduleId: string,
     inputs: Record<string, unknown>,
-    context?: unknown | null,
+    opts?: { context?: unknown | null },
   ): Promise<string>;
-  getStatus(taskId: string): {
+  getStatus(taskId: string): Promise<{
     taskId: string;
     moduleId: string;
     status: string;
@@ -104,10 +112,10 @@ export interface AsyncTaskManagerLike {
     completedAt: number | null;
     result: Record<string, unknown> | null;
     error: string | null;
-  } | null;
-  getResult(taskId: string): Record<string, unknown>;
+  } | null>;
+  getResult(taskId: string): Promise<Record<string, unknown>>;
   cancel(taskId: string): Promise<boolean>;
-  listTasks(status?: string): Array<{
+  listTasks(status?: string): Promise<Array<{
     taskId: string;
     moduleId: string;
     status: string;
@@ -116,7 +124,7 @@ export interface AsyncTaskManagerLike {
     completedAt: number | null;
     result: Record<string, unknown> | null;
     error: string | null;
-  }>;
+  }>>;
   shutdown?(): Promise<void>;
 }
 
@@ -307,7 +315,7 @@ export class AsyncTaskBridge {
       }
     }
 
-    const taskId = await this._manager.submit(moduleId, inputs, context ?? null);
+    const taskId = await this._manager.submit(moduleId, inputs, { context: context ?? null });
     if (options?.progressToken !== undefined) {
       this._progressTokens.set(taskId, options.progressToken);
     }
@@ -542,7 +550,7 @@ export class AsyncTaskBridge {
         if (typeof taskId !== "string" || taskId.length === 0) {
           throw new Error("__apcore_task_status requires task_id (string)");
         }
-        const info = this._manager.getStatus(taskId);
+        const info = await this._manager.getStatus(taskId);
         if (!info) {
           // [D10-003] Return envelope (matching Python's `(content, is_error=True, None)`
           // and Rust's `Ok(envelope)`). Throwing here would force the caller's catch path
@@ -584,7 +592,7 @@ export class AsyncTaskBridge {
         // Without this, unknown task_ids silently return `{cancelled: false}` —
         // callers can't distinguish "task existed and is uncancellable" from
         // "task never existed".
-        if (!this._manager.getStatus(taskId)) {
+        if (!(await this._manager.getStatus(taskId))) {
           this._progressTokens.delete(taskId);
           return {
             error: "ASYNC_TASK_NOT_FOUND",
@@ -708,7 +716,7 @@ export class AsyncTaskBridge {
           }
           filter = status;
         }
-        const tasks = this._manager.listTasks(filter);
+        const tasks = await this._manager.listTasks(filter);
         return { tasks: tasks.map((t) => this._projectTaskInfo(t)) };
       }
       default:
@@ -762,11 +770,11 @@ export async function createAsyncTaskBridge(
     const apcore = (await import("apcore-js")) as any;
     const AsyncTaskManager = apcore.AsyncTaskManager ?? apcore.default?.AsyncTaskManager;
     if (!AsyncTaskManager) return null;
-    const manager = new AsyncTaskManager(
+    const manager = new AsyncTaskManager({
       executor,
-      options?.maxConcurrent ?? 10,
-      options?.maxTasks ?? 1000,
-    ) as AsyncTaskManagerLike;
+      maxConcurrent: options?.maxConcurrent ?? 10,
+      maxTasks: options?.maxTasks ?? 1000,
+    }) as AsyncTaskManagerLike;
     const redactSensitive = apcore.redactSensitive ?? apcore.default?.redactSensitive;
     // Pass the executor through so `__apcore_module_preview` can drive
     // `executor.validate()` (apcore PROTOCOL_SPEC §5.6).

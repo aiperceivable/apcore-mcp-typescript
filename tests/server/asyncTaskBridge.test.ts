@@ -12,10 +12,10 @@ import type { Executor, Registry, ModuleDescriptor } from "../../src/types.js";
 function buildManager(overrides: Partial<AsyncTaskManagerLike> = {}): AsyncTaskManagerLike {
   const defaults: AsyncTaskManagerLike = {
     submit: vi.fn().mockResolvedValue("task-1"),
-    getStatus: vi.fn().mockReturnValue(null),
-    getResult: vi.fn().mockReturnValue({}),
+    getStatus: vi.fn().mockResolvedValue(null),
+    getResult: vi.fn().mockResolvedValue({}),
     cancel: vi.fn().mockResolvedValue(true),
-    listTasks: vi.fn().mockReturnValue([]),
+    listTasks: vi.fn().mockResolvedValue([]),
     shutdown: vi.fn().mockResolvedValue(undefined),
   };
   return { ...defaults, ...overrides };
@@ -77,7 +77,7 @@ describe("AsyncTaskBridge", () => {
     const bridge = new AsyncTaskBridge(manager);
     const envelope = await bridge.submit("demo.module", { a: 1 });
     expect(envelope).toEqual({ task_id: "task-xyz", status: "pending" });
-    expect(manager.submit).toHaveBeenCalledWith("demo.module", { a: 1 }, null);
+    expect(manager.submit).toHaveBeenCalledWith("demo.module", { a: 1 }, { context: null });
   });
 
   it("buildMetaTools returns 5 reserved tools (apcore 0.21 adds preview)", () => {
@@ -500,7 +500,7 @@ describe("D11-015: Progress sink installation in submit()", () => {
       getStatus: vi.fn(),
       getResult: vi.fn(),
       cancel: vi.fn(),
-      listTasks: vi.fn().mockReturnValue([]),
+      listTasks: vi.fn().mockResolvedValue([]),
     };
     const bridge = new AsyncTaskBridge(manager);
 
@@ -530,7 +530,7 @@ describe("D11-015: Progress sink installation in submit()", () => {
       getStatus: vi.fn(),
       getResult: vi.fn(),
       cancel: vi.fn(),
-      listTasks: vi.fn().mockReturnValue([]),
+      listTasks: vi.fn().mockResolvedValue([]),
     };
     const bridge = new AsyncTaskBridge(manager);
     const context = { data: {} as Record<string, unknown> };
@@ -564,7 +564,7 @@ describe("D11-016: _projectTaskInfo curated projection (no extra field leakage)"
       }),
       getResult: vi.fn(),
       cancel: vi.fn(),
-      listTasks: vi.fn().mockReturnValue([]),
+      listTasks: vi.fn().mockResolvedValue([]),
     };
     const bridge = new AsyncTaskBridge(manager);
 
@@ -597,7 +597,7 @@ describe("D11-016: _projectTaskInfo curated projection (no extra field leakage)"
       }),
       getResult: vi.fn(),
       cancel: vi.fn(),
-      listTasks: vi.fn().mockReturnValue([]),
+      listTasks: vi.fn().mockResolvedValue([]),
     };
     const bridge = new AsyncTaskBridge(manager);
     const result = await bridge.handleMetaTool(META_TOOL_NAMES.STATUS, { task_id: "t2" }) as Record<string, unknown>;
@@ -620,7 +620,7 @@ describe("D11-016: _projectTaskInfo curated projection (no extra field leakage)"
       }),
       getResult: vi.fn(),
       cancel: vi.fn(),
-      listTasks: vi.fn().mockReturnValue([]),
+      listTasks: vi.fn().mockResolvedValue([]),
     };
     const bridge = new AsyncTaskBridge(manager);
     const result = await bridge.handleMetaTool(META_TOOL_NAMES.STATUS, { task_id: "t3" }) as Record<string, unknown>;
