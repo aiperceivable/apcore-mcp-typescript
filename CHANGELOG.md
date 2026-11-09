@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.23.6] - 2026-11-09
+
+### Changed
+
+- Requires `apcore-toolkit >=0.14.2`. `apcore-toolkit` 0.14.1 resolved its own
+  `package.json` through `createRequire(import.meta.url)` at module load, which
+  throws under `bun build --compile` (`Cannot find module '../package.json' from
+  '/$bunfs/root/<entry>'`) and reports the host application's version inside
+  bundles that emit real paths. Dependency floor only — `apcore-toolkit` stays an
+  external dependency, so no build output changes.
+
 ## [0.23.5] - 2026-11-08
 
 ### Fixed
