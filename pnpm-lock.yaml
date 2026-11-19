@@ -15,17 +15,17 @@ importers:
         specifier: ^8.17.1
         version: 8.20.0
       apcore-js:
-        specifier: '>=0.32.3'
-        version: 0.32.3
+        specifier: '>=0.33.0'
+        version: 0.33.0
       apcore-toolkit:
-        specifier: '>=0.14.2'
-        version: 0.14.2(@sinclair/typebox@0.34.48)
+        specifier: '>=0.14.3'
+        version: 0.14.3(@sinclair/typebox@0.34.48)
       jsonwebtoken:
         specifier: '>=9.0.3'
         version: 9.0.3
       mcp-embedded-ui:
-        specifier: '>=0.5.0'
-        version: 0.5.0
+        specifier: '>=0.5.1'
+        version: 0.5.1
     devDependencies:
       '@eslint/js':
         specifier: ^9.0.0
@@ -619,12 +619,12 @@ packages:
     resolution: {integrity: sha512-zbB9rCJAT1rbjiVDb2hqKFHNYLxgtk8NURxZ3IZwD3F6NtxbXZQCnnSi1Lkx+IDohdPlFp222wVALIheZJQSEg==}
     engines: {node: '>=8'}
 
-  apcore-js@0.32.3:
-    resolution: {integrity: sha512-kmIDULt35c4vv9fxopnUomDi2Vvb9TzX4JdO9xfv6+XAE62OxuH4a6cvIQCuu62A5ESsIiwa2evhNX+PbPyqtA==}
+  apcore-js@0.33.0:
+    resolution: {integrity: sha512-+0UPovkB37qKy9kUwZmgSK6an+RqOUy+XOU9sEAauXStmQYIWmPBV7ACymQ9nwPI4RVAKiWbU4upMIqrCitxoQ==}
     engines: {node: '>=20.0.0'}
 
-  apcore-toolkit@0.14.2:
-    resolution: {integrity: sha512-BQJdq5mVHKMvkDEbocqHkGioj+B+25gicyP1v5Tx2t7qIccyXQsZvALgEUyt40/aXZDJz6+cYtvYAo1r8SotFw==}
+  apcore-toolkit@0.14.3:
+    resolution: {integrity: sha512-BVUx8QPGfOI7y6io24tERWHjMXA74QI7wYha4Z/2mlzOssh6rOhPEEWrF0zdeJhpOcY4OHC4ZL15R/w3FuCa0Q==}
     engines: {node: '>=20.10.0'}
     peerDependencies:
       '@sinclair/typebox': '>=0.31.0'
@@ -1088,8 +1088,8 @@ packages:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
     engines: {node: '>= 0.4'}
 
-  mcp-embedded-ui@0.5.0:
-    resolution: {integrity: sha512-3+0DY1j1Xll37S98XK0aM5ss2Gc92cmdE9PjVruOVHgeN38blCJjL+D/OQJjaeJ3MNbbJQS8ofgXOYXsK7QR4g==}
+  mcp-embedded-ui@0.5.1:
+    resolution: {integrity: sha512-YIHJAuLcwRIa/gWAFprSHakzIhQ/9oaDqn850EanGstzoN7QKx/VG3pg/Hn6qNgJmKLEwyAxCNE4HVnuzEnuoQ==}
     engines: {node: '>=18.0.0'}
 
   media-typer@1.1.1:
@@ -1933,17 +1933,17 @@ snapshots:
     dependencies:
       color-convert: 2.0.1
 
-  apcore-js@0.32.3:
+  apcore-js@0.33.0:
     dependencies:
       '@sinclair/typebox': 0.34.48
       js-yaml: 4.3.2
       uuid: 11.1.1
 
-  apcore-toolkit@0.14.2(@sinclair/typebox@0.34.48):
+  apcore-toolkit@0.14.3(@sinclair/typebox@0.34.48):
     dependencies:
       '@sinclair/typebox': 0.34.48
       ajv: 8.20.0
-      apcore-js: 0.32.3
+      apcore-js: 0.33.0
       js-yaml: 4.3.2
 
   apdev-js@0.2.4(typescript@5.9.3):
@@ -2437,7 +2437,7 @@ snapshots:
 
   math-intrinsics@1.1.0: {}
 
-  mcp-embedded-ui@0.5.0:
+  mcp-embedded-ui@0.5.1:
     dependencies:
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
