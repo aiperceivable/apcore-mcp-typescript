@@ -13,7 +13,7 @@ import type { Executor, Registry } from "../src/types.js";
 // ---------------------------------------------------------------------------
 
 vi.mock("../src/server/transport.js", () => ({
-  TransportManager: vi.fn().mockImplementation(() => ({
+  TransportManager: vi.fn(function () { return {
     runStdio: vi.fn().mockResolvedValue(undefined),
     runStreamableHttp: vi.fn().mockResolvedValue(undefined),
     runSse: vi.fn().mockResolvedValue(undefined),
@@ -29,17 +29,17 @@ vi.mock("../src/server/transport.js", () => ({
     setRequireAuth: vi.fn(),
     setExemptPaths: vi.fn(),
     setExplorer: vi.fn(),
-  })),
+  }; }),
 }));
 
 vi.mock("../src/server/factory.js", () => ({
-  MCPServerFactory: vi.fn().mockImplementation(() => ({
+  MCPServerFactory: vi.fn(function () { return {
     createServer: vi.fn().mockReturnValue({}),
     buildTools: vi.fn().mockReturnValue([]),
     attachAsyncMetaTools: (tools: unknown[]) => tools,
     registerHandlers: vi.fn(),
     registerResourceHandlers: vi.fn(),
-  })),
+  }; }),
 }));
 
 const getInstanceSpy = vi.fn().mockReturnValue({ get: vi.fn().mockReturnValue(null) });

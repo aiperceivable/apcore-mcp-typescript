@@ -18,22 +18,22 @@ const mockCreateServer = vi.fn().mockReturnValue({});
 const mockRegisterHandlers = vi.fn();
 
 vi.mock("../src/server/transport.js", () => ({
-  TransportManager: vi.fn().mockImplementation(() => ({
+  TransportManager: vi.fn(function () { return {
     runStdio: mockRunStdio,
     runStreamableHttp: vi.fn(),
     runSse: vi.fn(),
     setModuleCount: vi.fn(),
-  })),
+  }; }),
 }));
 
 vi.mock("../src/server/factory.js", () => ({
-  MCPServerFactory: vi.fn().mockImplementation(() => ({
+  MCPServerFactory: vi.fn(function () { return {
     createServer: mockCreateServer,
     buildTools: mockBuildTools,
     attachAsyncMetaTools: (tools: unknown[]) => tools,
     registerHandlers: mockRegisterHandlers,
     registerResourceHandlers: vi.fn(),
-  })),
+  }; }),
 }));
 
 // Import serve after mocks are set up

@@ -109,9 +109,9 @@ describe("CLI (cli.ts)", () => {
       vi.doMock("apcore-js", async () => vi.importActual("apcore-js"));
     } else if (apcoreAvailable) {
       vi.doMock("apcore-js", () => ({
-        Registry: vi.fn().mockImplementation(() => ({
+        Registry: vi.fn(function () { return {
           discover: vi.fn().mockResolvedValue(discoverCount),
-        })),
+        }; }),
         // Only present when a test needs to exercise the mcp.openapi
         // Config-Bus fallback (A-001) — real apcore-js's Config.getInstance()
         // shape, narrowed to just what cli.ts reads.
@@ -136,11 +136,11 @@ describe("CLI (cli.ts)", () => {
     vi.doMock("../src/index.js", () => ({
       serve: mockServe,
       VERSION: "0.0.0-test",
-      JWTAuthenticator: vi.fn().mockImplementation(() => ({ authenticate: vi.fn() })),
-      ElicitationApprovalHandler: vi.fn().mockImplementation(() => ({
+      JWTAuthenticator: vi.fn(function () { return { authenticate: vi.fn() }; }),
+      ElicitationApprovalHandler: vi.fn(function () { return {
         requestApproval: vi.fn(),
         checkApproval: vi.fn(),
-      })),
+      }; }),
     }));
 
     const mod = await import("../src/cli.js");

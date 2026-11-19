@@ -161,7 +161,7 @@ export class MCPServerFactory {
     const capabilities: {
       tools: { listChanged: boolean };
       resources: { listChanged: boolean };
-      extensions?: Record<string, unknown>;
+      extensions?: Record<string, object>;
     } = {
       tools: { listChanged: true },
       resources: { listChanged: true },
