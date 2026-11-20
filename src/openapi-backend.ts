@@ -18,6 +18,7 @@ import {
   HTTPProxyRegistryWriter,
   OpenAPIScanner,
   loadSpec,
+  validateEffectiveProxyModules,
   type ScannedModule,
 } from "apcore-toolkit";
 
@@ -201,7 +202,7 @@ export async function openapiBackend(
   // normalises every module ID into apcore's Canonical ID alphabet itself —
   // after basePathPrefix and both ID-affecting hooks, and before its own
   // deduplicateIds — so the bridge applies no projection of its own.
-  const scanned = await new OpenAPIScanner().scan(document, {
+  const scanned = new OpenAPIScanner().scanWithEffectiveParameters(document, {
     include: options.include,
     exclude: options.exclude,
     basePathPrefix: options.prefix,
@@ -257,6 +258,8 @@ export async function openapiBackend(
         "mcp.openapi.prefix so the two ID spaces cannot overlap.",
     );
   }
+
+  validateEffectiveProxyModules(modules);
 
   // --- 5. Base URL ----------------------------------------------------------
   const baseUrl = options.baseUrl ?? documentServerUrl(document);

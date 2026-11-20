@@ -26,7 +26,10 @@ const DOCUMENT: Record<string, unknown> = {
   servers: [{ url: "https://api.example.com" }],
   paths: {
     "/pets": { get: { operationId: "listPets", ...OK } },
-    "/pets/{petId}": { get: OK },
+    "/pets/{petId}": {
+      parameters: [{ name: "petId", in: "path", required: true, schema: { type: "string" } }],
+      get: OK,
+    },
   },
 };
 
